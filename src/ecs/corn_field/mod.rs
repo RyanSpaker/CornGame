@@ -1,42 +1,27 @@
 pub mod init;
-pub mod render;
 
-use std::mem::size_of;
+use std::{ops::Range, mem::size_of};
 use bevy::{
     prelude::*,
     render::{
-        extract_component::ExtractComponent,
         render_resource::*,
-    }, utils::hashbrown::HashMap
+        renderer::{RenderDevice, RenderContext}, 
+        extract_component::ExtractComponent, RenderApp,
+    }, utils::hashbrown::HashMap, math::bool
 };
 use bytemuck::{Pod, Zeroable};
-use self::init::{CornFieldDataState, CornFieldInitPlugin};
+use self::init::*;
 
-/// Per Instance Corn Data
-/// contains the offset from the position of the corn field entity
-/// the scale is tacked onto the end of the offset_scale vector
-/// the rotation takes up the first 2 values of the rotation vector (sin and cos of the angle)
-/// the struct has to be a multiple of 16 bytes long due to storage buffer limitations
-#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
 #[repr(C)]
 pub struct PerCornData{
-    offset_scale: Vec4,
-    rotation: Vec4
+    offset: Vec3,
+    scale: f32,
+    rotation: Vec2,
+    uuid: u32, //32 possible uuids, one per bit for use in a bitmask
+    empty: u32
 }
 
-/// Component that stores the instance data of a corn field
-/// Added to corn field entities after the gpu initializes the data
-/// only if RenderedCornFields.read_back_data is true
-#[derive(Component)]
-pub struct CornInstanceData{
-    data: Vec<PerCornData>
-}
-
-/// The component representing a corn field
-/// center is the position of the corn field's center relative to the entities world position
-/// half_extents is the width and length of the corn field in world units
-/// resolution is the number of corn stalks along the width and length
-/// height_range is the min-max range of height scalars to randomize the corn with
 #[derive(Component, ExtractComponent, Clone, Debug)]
 pub struct CornField{
     center: Vec3,
@@ -56,36 +41,279 @@ impl CornField{
     }
 }
 
-/// Resource to store all of the corn fields and their data in the RenderApp
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct RenderedCornFields{
-    fields: HashMap<Entity, CornFieldRenderData>,
-    read_back_data: bool
+    pub buffer: DynamicInstanceBuffer,
+    pub data: HashMap<Entity, CornFieldRenderData>,
+    pub settings: CornInitShaderData
 }
-impl Default for RenderedCornFields{
-    fn default() -> Self {
-        Self{fields: HashMap::new(), read_back_data: false}
+impl RenderedCornFields{
+    pub fn init_buffer(&mut self, render_device: &RenderDevice) {
+        if self.buffer.is_initialized(){return;}
+        self.buffer.init(
+            render_device, 
+            "Corn Instance Buffer", 
+            40, 
+            size_of::<PerCornData>(), 
+            BufferUsages::STORAGE | BufferUsages::VERTEX
+        );
+    }
+    pub fn add_data(&mut self, entity: Entity, corn_field: &CornField){
+        let new_data = CornFieldRenderData::new(
+            corn_field.center, 
+            corn_field.half_extents, 
+            corn_field.resolution, 
+            corn_field.height_range
+        );
+        if let Some(old_data) = self.data.insert(entity, new_data){
+            self.buffer.add_ranges(&old_data.ranges);
+            self.buffer.add_id(old_data.id.unwrap());
+        }
+    }
+    pub fn record_stale_data(&mut self, real_entities: &Vec<Entity>){
+        self.data.iter_mut()
+            .filter(|(k, _)| !real_entities.contains(*k))
+            .for_each(|(_, v)| 
+        {
+            v.state = CornFieldDataState::Stale;
+        });
+    }
+    pub fn remove_stale_data_and_update_state(&mut self){
+        self.data.retain(|_, data| {
+            if data.state == CornFieldDataState::Stale{
+                if let Some(id) = data.id{
+                    self.buffer.add_id(id);
+                }
+                self.buffer.add_ranges(&data.ranges);
+                return false;
+            }else if data.state == CornFieldDataState::Loading{
+                data.state = CornFieldDataState::Loaded;
+            }
+            return true;
+        });
+    }
+    pub fn init_new_data(&mut self) {
+        self.data.iter_mut().filter(|(_, v)| v.state == CornFieldDataState::Unloaded)
+            .for_each(|(_, data)| 
+        {
+            data.id = self.buffer.get_id();
+            if data.id.is_none() {return;}
+            data.ranges = self.buffer.get_ranges(data.get_instance_count());
+            data.state = CornFieldDataState::Loading;
+            self.settings.run_init_pass = true;
+        });
+    }
+    pub fn create_settings(&mut self) -> (ComputeSettingsVector, ComputeRangeVector, usize, usize){
+        let mut settings_vec = ComputeSettingsVector { 
+            array: [ComputeSettings::default(); 32] 
+        };
+        let mut ranges: Vec<ComputeRange> = vec![];
+        let mut total_corn: usize = 0;
+        self.data.iter().filter(|(_, v)| v.state == CornFieldDataState::Loading)
+            .for_each(|(_, v)| 
+        {
+            settings_vec.array[v.id.unwrap() as usize] = ComputeSettings::from(v);
+            total_corn += v.ranges.count();
+            ranges.extend(v.ranges.convert_to_compute_vec(v.id.unwrap()));
+        });
+        let mut range_vec = ComputeRangeVector { 
+            array: [ComputeRange::default(); 32] 
+        };
+        for range in ranges.iter().enumerate(){
+            range_vec.array[range.0] = *range.1;
+        }
+        return (settings_vec, range_vec, ranges.len(), total_corn);
+    }
+    pub fn create_bind_group(&mut self, render_device: &RenderDevice, layout: &BindGroupLayout){
+        let mut bind_group_entries = [
+            BindGroupEntry{
+                binding: 0,
+                resource: self.buffer.buffer.as_ref().unwrap().as_entire_binding()
+            },
+            BindGroupEntry{
+                binding: 1,
+                resource: self.settings.range_buffer.binding().unwrap()
+            },
+            BindGroupEntry{
+                binding: 2,
+                resource: self.settings.settings_buffer.binding().unwrap()
+            }
+        ];
+        if self.buffer.needs_to_expand {
+            bind_group_entries[0] = BindGroupEntry{binding: 0, resource: self.buffer.temp_buffer.as_ref().unwrap().as_entire_binding()}
+        }
+        self.settings.bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
+            label: Some("Corn Init Buffer Bind Group"), 
+            layout, 
+            entries: &bind_group_entries
+        }));
+    }
+    pub fn run_init(&self, render_context: &mut RenderContext, world: &World){
+        if !self.settings.run_init_pass {return;}
+        //get pipelines
+        let pipeline_cache = world.resource::<PipelineCache>();
+        let pipeline = world.resource::<InitCornBuffersPipeline>();
+        //find our compute pipeline
+        let compute_pipeline = pipeline_cache.get_compute_pipeline(pipeline.id);
+        if compute_pipeline.is_none() {return;}
+        let compute_pipeline = compute_pipeline.unwrap();
+        //create compute pass
+        let mut compute_pass = render_context.command_encoder()
+            .begin_compute_pass(&ComputePassDescriptor {label: Some("Initialize Corn Data Pass") });
+        compute_pass.set_pipeline(&compute_pipeline);
+        //Set shader inputs
+        compute_pass.set_bind_group(0, self.settings.bind_group.as_ref().unwrap(), &[]);
+        compute_pass.set_push_constants(0, bytemuck::cast_slice(&[self.settings.range_count as u32, 0, 0, 0]));
+        compute_pass.dispatch_workgroups((self.settings.corn_count as f32 / 256.0).ceil() as u32, 1, 1);
     }
 }
 
-/// Stores the renderapp data for a single corn field.
-/// This includes corn field settings present on a corn field component,
-/// the buffers used to store the data, and its current state
-/// in the loading process
+#[derive(Default)]
+pub struct DynamicInstanceBuffer{
+    buffer: Option<Buffer>,
+    ranges: Vec<Range<u32>>,
+    ids: Vec<u32>,
+    temp_buffer: Option<Buffer>,
+    size: usize,
+    old_size: Option<usize>,
+    needs_to_expand: bool,
+    cpu_readback_buffer: Option<Buffer>,
+    ready_to_read: bool
+}
+impl DynamicInstanceBuffer{
+    pub fn init(&mut self, render_device: &RenderDevice, name: &str, count: u64, stride_length: usize, usages: BufferUsages){
+        self.buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
+            label: Some(name), 
+            size: count * stride_length as u64, 
+            usage: usages | BufferUsages::COPY_DST | BufferUsages::COPY_SRC, 
+            mapped_at_creation: false
+        }));
+        self.ids = (0..32).collect();
+        self.ranges = vec![(0..count as u32)];
+        self.size = count as usize;
+    }
+    pub fn add_ranges(&mut self, ranges: &Vec<Range<u32>>){
+        self.ranges.combine(ranges);
+    }
+    pub fn add_id(&mut self, id: u32){
+        self.ids.push(id);
+    }
+    pub fn finish_previous_frame_expansion(&mut self) {
+        if self.needs_to_expand{
+            self.buffer.as_mut().unwrap().destroy();
+            self.buffer = self.temp_buffer.take();
+            self.needs_to_expand = false;
+            self.old_size = None;
+        }
+    }
+    pub fn is_initialized(&self) -> bool {return self.buffer.is_some();}
+    pub fn get_id(&mut self) -> Option<u32>{return self.ids.pop();}
+    pub fn get_ranges(&mut self, count: u32) -> Vec<Range<u32>>{
+        if self.ranges.count() < count as usize{
+            self.needs_to_expand = true;
+            self.old_size.get_or_insert(self.size);
+            let start = self.size;
+            self.size += count as usize - self.ranges.count();
+            self.size += self.size/2;
+            self.ranges.insert_or_extend(start as u32..self.size as u32);
+        }
+        self.ranges.get_ranges(count)
+    }
+    pub fn init_expansion(&mut self, render_device: &RenderDevice){
+        self.temp_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
+            label: Some("Master Corn Buffer"), 
+            size: self.size as u64*size_of::<PerCornData>() as u64, 
+            usage: BufferUsages::VERTEX | BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST, 
+            mapped_at_creation: false
+        }));
+    }
+    pub fn run_expansion(&self, render_context: &mut RenderContext){
+        if !self.needs_to_expand || self.temp_buffer.is_none(){return;}
+        render_context.command_encoder().copy_buffer_to_buffer(
+            self.buffer.as_ref().unwrap(), 
+            0, 
+            self.temp_buffer.as_ref().unwrap(), 
+            0, 
+            self.old_size.unwrap() as u64 * size_of::<PerCornData>() as u64
+        );
+    }
+    pub fn init_cpu_readback_buffer(&mut self, render_device: &RenderDevice, stride_length: usize){
+        if self.buffer.is_none() {return;}
+        self.cpu_readback_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
+            label: Some("CPU Readback Buffer"), 
+            size: self.size as u64 * stride_length as u64, 
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
+            mapped_at_creation: false
+        }));
+        self.ready_to_read = false;
+    }
+    pub fn process_cpu_readback_buffer(&mut self){
+        if !self.ready_to_read {return;}
+        if self.cpu_readback_buffer.is_none() {return;}
+        let raw = self.cpu_readback_buffer.as_ref().unwrap()
+            .slice(..).get_mapped_range()
+            .iter().map(|v| *v).collect::<Vec<u8>>();
+        let data = bytemuck::cast_slice::<u8, PerCornData>(raw.as_slice()).to_vec();
+        for corn in data{
+            println!("{:?}", corn);
+        }
+        self.cpu_readback_buffer.as_mut().unwrap().destroy();
+        self.cpu_readback_buffer = None;
+    }
+    pub fn run_readback(&self, render_context: &mut RenderContext){
+        if self.ready_to_read {return;}
+        if self.cpu_readback_buffer.is_none(){return;}
+        if self.needs_to_expand && self.temp_buffer.is_some(){
+            render_context.command_encoder().copy_buffer_to_buffer(
+                self.temp_buffer.as_ref().unwrap(), 
+                0, 
+                self.cpu_readback_buffer.as_ref().unwrap(), 
+                0, 
+                self.size as u64 * size_of::<PerCornData>() as u64
+            );
+        }else if self.buffer.is_some(){
+            render_context.command_encoder().copy_buffer_to_buffer(
+                self.buffer.as_ref().unwrap(), 
+                0, 
+                self.cpu_readback_buffer.as_ref().unwrap(), 
+                0, 
+                self.size as u64 * size_of::<PerCornData>() as u64
+            );
+        }
+    }
+    pub fn map_cpu_readback_buffer(&mut self){
+        if self.cpu_readback_buffer.is_none(){return;}
+        self.cpu_readback_buffer.as_ref().unwrap().slice(..).map_async(MapMode::Read, |_|{});
+        self.ready_to_read = true;
+    }
+}
+
 pub struct CornFieldRenderData{
     state: CornFieldDataState,
     center: Vec3,
     half_extents: Vec2,
     resolution: (usize, usize),
     height_range: Vec2,
-    data: Option<Vec<PerCornData>>,
-    instance_buffer: Option<Buffer>,
-    instance_buffer_bind_group: Option<BindGroup>,
-    cpu_readback_buffer: Option<Buffer>
+    id: Option<u32>,
+    ranges: Vec<Range<u32>>
 }
 impl CornFieldRenderData{
-    pub fn get_byte_count(&self) -> u64{
-        return (self.resolution.0*self.resolution.1*size_of::<PerCornData>()) as u64;
+    pub fn new(center: Vec3, half_extents: Vec2, resolution: (usize, usize), height_range: Vec2) -> Self{
+        Self { 
+            state: CornFieldDataState::Unloaded, 
+            center, 
+            half_extents, 
+            resolution, 
+            height_range, 
+            id: None, 
+            ranges: vec![] 
+        }
+    }
+    pub fn get_byte_count(&self) -> u32{
+        return (self.resolution.0*self.resolution.1*size_of::<PerCornData>()) as u32;
+    }
+    pub fn get_instance_count(&self) -> u32{
+        return (self.resolution.0*self.resolution.1) as u32;
     }
 }
 
@@ -93,6 +321,9 @@ impl CornFieldRenderData{
 pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(CornFieldInitPlugin);
+        app
+            .add_plugins(CornFieldInitPlugin)
+        .sub_app_mut(RenderApp)
+            .init_resource::<RenderedCornFields>();
     }
 }
