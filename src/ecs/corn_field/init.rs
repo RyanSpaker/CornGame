@@ -1,4 +1,4 @@
-use std::{ops::Range, cmp::Ordering};
+use std::{ops::Range, cmp::Ordering, mem::size_of};
 use bevy::{
     prelude::*,
     render::{
@@ -9,7 +9,7 @@ use bevy::{
     }, math::bool
 };
 use bytemuck::{Pod, Zeroable};
-use super::{CornFieldRenderData, CornField, RenderedCornFields};
+use super::{CornFieldRenderData, CornField, RenderedCornFields, PerCornData};
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType, Default)]
 #[repr(C)]
@@ -19,6 +19,9 @@ pub struct ComputeRange {
     id: u32,
     offset: u32
 }
+#[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType, Default)]
+#[repr(C)]
+pub struct ComputeRangeVector{ pub array: [ComputeRange; 32] }
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType, Default)]
 #[repr(C)]
@@ -30,7 +33,7 @@ pub struct ComputeSettings {
 }
 impl From::<&CornFieldRenderData> for ComputeSettings{
     fn from(value: &CornFieldRenderData) -> Self {
-        Self { 
+        let mut output = Self { 
             origin: value.center - value.half_extents.extend(0.0),
             height_width_min: Vec2::new(value.height_range.y-value.height_range.x, value.height_range.x),
             step: Vec2::new(
@@ -38,7 +41,12 @@ impl From::<&CornFieldRenderData> for ComputeSettings{
                 value.half_extents.y*2.0/(value.resolution.1 as f32 - 1.0)
             ),
             res_width: value.resolution.0 as u32
+         };
+         if !output.step.is_finite() || output.step.is_nan() {
+            output.step = Vec2::ZERO;
+            output.origin = value.center;
          }
+         return output;
     }
 }
 
@@ -163,13 +171,15 @@ impl BufferRanges for Vec<Range<u32>>{
     }
 }
 
+//#[derive(Default)]
 pub struct CornInitShaderData{
     pub settings_buffer: UniformBuffer<ComputeSettingsVector>,
-    pub range_buffer: DynamicStorageBuffer<ComputeRange>,
+    pub range_buffer: UniformBuffer<ComputeRangeVector>,
     pub bind_group: Option<BindGroup>,
     pub run_init_pass: bool,
     pub range_count: usize,
-    pub corn_count: usize
+    pub corn_count: usize,
+    pub read_back: bool
 }
 impl CornInitShaderData{
     fn reset(&mut self) {
@@ -180,27 +190,28 @@ impl CornInitShaderData{
         render_device: &RenderDevice, 
         render_queue: &RenderQueue, 
         settings: &ComputeSettingsVector, 
-        ranges: &Vec<ComputeRange>, 
+        ranges: &ComputeRangeVector, 
+        range_count: usize,
         total_corn: usize
     ){
         self.settings_buffer.set(*settings);
-        self.settings_buffer.write_buffer(&render_device, &render_queue);
-        self.range_count = ranges.len();
-        self.range_buffer.clear();
-        for range in ranges{self.range_buffer.push(*range);}
+        self.settings_buffer.write_buffer(render_device, render_queue);
+        self.range_count = range_count;
+        self.range_buffer.set(*ranges);
         self.range_buffer.write_buffer(render_device, render_queue);
         self.corn_count = total_corn;
     }
 }
 impl Default for CornInitShaderData{
     fn default() -> Self {
-        Self { 
-            settings_buffer: UniformBuffer::<ComputeSettingsVector>::default(), 
-            range_buffer: DynamicStorageBuffer::<ComputeRange>::default(), 
-            bind_group: None, 
-            run_init_pass: false, 
-            range_count: 0, 
-            corn_count: 0 
+        Self{
+            settings_buffer: UniformBuffer::<ComputeSettingsVector>::default(),
+            range_buffer: UniformBuffer::<ComputeRangeVector>::default(),
+            bind_group: None,
+            run_init_pass: false,
+            range_count: 0,
+            corn_count: 0,
+            read_back: false
         }
     }
 }
@@ -223,6 +234,11 @@ pub fn prepare_rendered_corn_data(
     pipeline: Res<InitCornBuffersPipeline>
 ){
     let corn = corn_fields.as_mut();
+    let previous_frame_init: bool = corn.settings.run_init_pass;
+    //If we read back data to the cpu, print it out
+    if corn.settings.read_back{
+        corn.buffer.process_cpu_readback_buffer();
+    }
     //make sure any work done in the previous frame is finished and our state is reset
     corn.settings.reset();
     //Swaps the temporary and master buffer that were switched last frame if we expanded the master buffer
@@ -233,20 +249,26 @@ pub fn prepare_rendered_corn_data(
     corn.init_buffer(&render_device);
     //Initialize new data with ranges and an id
     corn.init_new_data();
+    //if need be, expand the master buffer
+    corn.buffer.init_expansion(&render_device);
     //Create Corn Init settings to be used in the compute pass
     if corn.settings.run_init_pass {
-        let (settings_vec, ranges, total_corn) = corn.create_settings();
+        let (settings_vec, ranges, range_count, total_corn) = corn.create_settings();
         corn.settings.write_buffers(
             &render_device, 
             &render_queue, 
             &settings_vec, 
             &ranges, 
+            range_count,
             total_corn
         );
         corn.create_bind_group(&render_device, &pipeline.buffer_bind_group);
+        if corn.settings.read_back{
+            corn.buffer.init_cpu_readback_buffer(&render_device, size_of::<PerCornData>());
+        }
+    }else if previous_frame_init{
+        corn.buffer.map_cpu_readback_buffer();
     }
-    //if need be, expand the master buffer
-    corn.buffer.init_expansion(&render_device);
 }
 
 #[derive(Resource)]
@@ -273,7 +295,7 @@ impl FromWorld for InitCornBuffersPipeline {
                         binding: 1,
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::Buffer { 
-                            ty: BufferBindingType::Storage { read_only: true }, 
+                            ty: BufferBindingType::Uniform, 
                             has_dynamic_offset: false, 
                             min_binding_size: None },
                         count: None,
@@ -320,7 +342,12 @@ impl Node for InitCornBuffersNode{
         let corn_res = corn_res.unwrap();
         //expand the buffer
         corn_res.buffer.run_expansion(render_context);
+        //run init pass
         corn_res.run_init(render_context, world);
+        //copy data back to the cpu
+        if corn_res.settings.read_back{
+            corn_res.buffer.run_readback(render_context);
+        }
         return Ok(());
     }
 }

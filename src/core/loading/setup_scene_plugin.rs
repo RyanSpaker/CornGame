@@ -61,10 +61,8 @@ fn setup_scene(
         transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     }, FlyCam));
-
-    //Spawn Corn
+    //Spawn Corn Field
     commands.spawn((
-        meshes.add(Mesh::from(shape::Cube { size: 0.5 })),
         SpatialBundle::INHERITED_IDENTITY,
         CornField::new(
             Vec3::ZERO, 
@@ -74,7 +72,6 @@ fn setup_scene(
         ),
         NoFrustumCulling
     ));
-
     //Spawn Rest of Scene
     //box
     commands.spawn(PbrBundle{
