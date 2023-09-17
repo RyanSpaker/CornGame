@@ -1,161 +1,260 @@
-use std::ops::Deref;
+use std::{ops::Range, cmp::Ordering};
 use bevy::{
     prelude::*,
     render::{
         render_resource::*,
-        renderer::{RenderDevice, RenderContext},
-        Render, RenderApp, RenderSet, Extract, render_graph::{Node, RenderGraphContext, RenderGraph}, MainWorld,
-    }
+        renderer::{RenderDevice, RenderContext, RenderQueue},
+        Render, RenderApp, RenderSet, Extract, 
+        render_graph::{Node, RenderGraphContext, RenderGraph}
+    }, math::bool
 };
 use bytemuck::{Pod, Zeroable};
-use super::{RenderedCornFields, CornFieldRenderData, CornField, CornInstanceData};
+use super::{CornFieldRenderData, CornField, RenderedCornFields};
 
-/// Enum used to track progress of corn field data
+#[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType, Default)]
+#[repr(C)]
+pub struct ComputeRange {
+    start: u32,
+    length: u32,
+    id: u32,
+    offset: u32
+}
+
+#[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType, Default)]
+#[repr(C)]
+pub struct ComputeSettings {
+    origin: Vec3,
+    height_width_min: Vec2,
+    step: Vec2,
+    res_width: u32
+}
+impl From::<&CornFieldRenderData> for ComputeSettings{
+    fn from(value: &CornFieldRenderData) -> Self {
+        Self { 
+            origin: value.center - value.half_extents.extend(0.0),
+            height_width_min: Vec2::new(value.height_range.y-value.height_range.x, value.height_range.x),
+            step: Vec2::new(
+                value.half_extents.x*2.0/(value.resolution.0 as f32 - 1.0), 
+                value.half_extents.y*2.0/(value.resolution.1 as f32 - 1.0)
+            ),
+            res_width: value.resolution.0 as u32
+         }
+    }
+}
+
+#[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType, Default)]
+#[repr(C)]
+pub struct ComputeSettingsVector{ pub array: [ComputeSettings; 32] }
+
 #[derive(PartialEq, Eq)]
 pub enum CornFieldDataState{
     /// The field has just been created and needs to be initialized by the gpu
     Unloaded, 
     /// Data is currently being processed by the gpu
-    Loading, 
-    /// Data has been created, and needs to be copied back to the cpu
-    Reading,
+    Loading,
     /// Data is ready to be used for rendering
     Loaded,
     /// Data exists, but the corresponding corn field has been removed.
-    /// Data is marked for deletion during prepare_rendered_corn_data()
+    /// Data is queued for deletion during prepare
     Stale
 }
-/// System to copy instance data from the renderapp to a CornInstanceData component in the main app
-pub fn copy_corn_data_to_main_world(
-    mut world: ResMut<MainWorld>,
-    render_fields: ResMut<RenderedCornFields>
-){
-    if !render_fields.read_back_data{return;}
-    for (entity, data) in render_fields.fields.iter(){
-        if let Some(corn_data) = &data.data{
-            if let Some(_field) = world.get::<CornField>(*entity){
-                world.get_entity_mut(*entity).unwrap().insert(CornInstanceData{data: corn_data.clone()});
-            }
+
+pub trait BufferRange{
+    fn consecutive(&self, other: &Self) -> bool;
+    fn combine(&mut self, other: &Self) -> &mut Self;
+    fn combine_if_consecutive(&mut self, other: &Self) -> &mut Self;
+}
+impl BufferRange for Range<u32>{
+    fn consecutive(&self, other: &Self) -> bool {
+        self.end == other.start || self.start == other.end
+    }
+    fn combine(&mut self, other: &Self) -> &mut Self{
+        self.start = self.start.min(other.start);
+        self.end = self.end.max(other.end);
+        return self;
+    }
+    fn combine_if_consecutive(&mut self, other: &Self) -> &mut Self{
+        if self.consecutive(other) {
+            return self.combine(other);
         }
+        return self;
     }
 }
-/// System to copy over any new or changed corn field data to the renderapp
-pub fn extract_corn_fields(
-    fields: Extract<Query<(Entity, Ref<CornField>)>>,
-    mut render_fields: ResMut<RenderedCornFields>
-){
-    let mut real_entities: Vec<Entity> = vec![];
-    for (entity, field) in fields.iter(){
-        if field.is_changed(){
-            let mut new_data = CornFieldRenderData { 
-                state: CornFieldDataState::Unloaded,
-                center: field.center,
-                half_extents: field.half_extents,
-                resolution: field.resolution,
-                height_range: field.height_range,
-                data: None,
-                instance_buffer: None,
-                instance_buffer_bind_group: None,
-                cpu_readback_buffer: None
+
+pub trait BufferRanges{
+    fn combine(&mut self, other: &Self) -> &mut Self;
+    fn get_remaining_spaces(&self) -> u32;
+    fn get_ranges(&mut self, space: u32) -> Vec<Range<u32>>;
+    fn insert_or_extend(&mut self, item: Range<u32>);
+    fn convert_to_compute_vec(&self, id: u32) -> Vec<ComputeRange>;
+    fn count(&self) -> usize;
+}
+impl BufferRanges for Vec<Range<u32>>{
+    fn combine(&mut self, other: &Self) -> &mut Self {
+        let mut endpoints = self.iter().flat_map(|r| [(r.start, 1), (r.end, -1)].into_iter()).chain(
+            other.iter().flat_map(|r| [(r.start, 1), (r.end, -1)].into_iter())
+        ).collect::<Vec<(u32, i32)>>();
+        endpoints.sort_by(|a, b| {
+            let ord = a.0.cmp(&b.0);
+            if ord == Ordering::Equal {
+                return b.1.cmp(&a.1);
+            }
+            return ord;
+        });
+        let ranges = endpoints
+            .into_iter()
+            .scan(0, |acc, val| {
+                *acc += val.1;
+                if *acc == 0{
+                    return Some(val.0)
+                }
+                if *acc == 1 && val.1 == 1{
+                    return Some(val.0)
+                }
+                return None;
+            })
+            .collect::<Vec<u32>>()
+            .chunks_exact(2)
+            .map(|chunk| Range::<u32>{start: chunk[0], end: chunk[1]})
+            .collect::<Vec<Range<u32>>>();
+        *self = ranges;
+        return self;
+    }
+    fn get_remaining_spaces(&self) -> u32 {
+        self.iter().fold(0, |acc, val| acc+val.end-val.start)
+    }
+    fn get_ranges(&mut self, space: u32) -> Vec<Range<u32>>{
+        let mut remaining_instances = space;
+        let mut ranges: Vec<Range<u32>> = vec![];
+        while remaining_instances > 0{
+            let next_block = self[0].end - self[0].start;
+            if next_block <= remaining_instances{
+                remaining_instances -= next_block;
+                ranges.push(self.remove(0));
+            }else{
+                ranges.push(Range::<u32>{start: self[0].start, end: self[0].start + remaining_instances});
+                self[0].start += remaining_instances;
+                remaining_instances = 0;
+            }
+        }
+        return ranges;
+    }
+    fn insert_or_extend(&mut self, item: Range<u32>){
+        for range in self.iter_mut(){
+            if range.end == item.start{range.end = item.end; return;}
+            else if range.start == item.end {range.start = item.start; return;}
+        }
+        self.push(item);
+    }
+    fn convert_to_compute_vec(&self, id: u32) -> Vec<ComputeRange> {
+        self.iter().scan(0, |acc, val| {
+            let range = ComputeRange{
+                start: val.start,
+                length: val.end - val.start,
+                id,
+                offset: *acc
             };
-            if let Some(data) = render_fields.fields.get_mut(&entity) {
-                new_data.instance_buffer = data.instance_buffer.take();
-            }
-            render_fields.fields.insert(entity, new_data);
-        }
-        real_entities.push(entity);
+            *acc += range.length;
+            Some(range)
+        }).collect()
     }
-    let keys: Vec<Entity> = render_fields.fields.keys().map(|a| a.clone()).collect();
-    for key in keys.iter(){
-        if !real_entities.contains(key){
-            render_fields.fields.get_mut(key).unwrap().state = CornFieldDataState::Stale;
+    fn count(&self) -> usize {
+        self.iter().map(|range| range.end - range.start).sum::<u32>() as usize
+    }
+}
+
+pub struct CornInitShaderData{
+    pub settings_buffer: UniformBuffer<ComputeSettingsVector>,
+    pub range_buffer: DynamicStorageBuffer<ComputeRange>,
+    pub bind_group: Option<BindGroup>,
+    pub run_init_pass: bool,
+    pub range_count: usize,
+    pub corn_count: usize
+}
+impl CornInitShaderData{
+    fn reset(&mut self) {
+        self.run_init_pass = false;
+    }
+    fn write_buffers(
+        &mut self, 
+        render_device: &RenderDevice, 
+        render_queue: &RenderQueue, 
+        settings: &ComputeSettingsVector, 
+        ranges: &Vec<ComputeRange>, 
+        total_corn: usize
+    ){
+        self.settings_buffer.set(*settings);
+        self.settings_buffer.write_buffer(&render_device, &render_queue);
+        self.range_count = ranges.len();
+        self.range_buffer.clear();
+        for range in ranges{self.range_buffer.push(*range);}
+        self.range_buffer.write_buffer(render_device, render_queue);
+        self.corn_count = total_corn;
+    }
+}
+impl Default for CornInitShaderData{
+    fn default() -> Self {
+        Self { 
+            settings_buffer: UniformBuffer::<ComputeSettingsVector>::default(), 
+            range_buffer: DynamicStorageBuffer::<ComputeRange>::default(), 
+            bind_group: None, 
+            run_init_pass: false, 
+            range_count: 0, 
+            corn_count: 0 
         }
     }
 }
-/// System to manage the render app corn fields and make sure buffers that are needed are created.
-/// Also disposes of stale data
+
+pub fn extract_corn_fields(
+    corn_fields: Extract<Query<(Entity, Ref<CornField>)>>,
+    mut corn_res: ResMut<RenderedCornFields>
+){
+    corn_fields.iter().filter(|(_, f)| f.is_changed()).for_each(|(e, f)| {
+        corn_res.add_data(e, f.as_ref());
+    });
+    let entities: Vec<Entity> = corn_fields.iter().map(|(e, _)| e).collect();
+    corn_res.record_stale_data(&entities);
+}
+
 pub fn prepare_rendered_corn_data(
     mut corn_fields: ResMut<RenderedCornFields>,
     render_device: Res<RenderDevice>,
-    pipeline: Res<ManageCornBuffersPipeline>
+    render_queue: Res<RenderQueue>,
+    pipeline: Res<InitCornBuffersPipeline>
 ){
-    let read: bool = corn_fields.read_back_data;
-    corn_fields.fields.retain(|entity, data| {
-        match data.state{
-            CornFieldDataState::Stale => {
-                if let Some(buffer) = data.instance_buffer.as_mut(){
-                    buffer.destroy();
-                }
-                false
-            }
-            CornFieldDataState::Unloaded => {
-                data.state = CornFieldDataState::Loading;
-                if data.instance_buffer.as_ref().is_some_and(|b| b.size() != data.get_byte_count()){
-                    data.instance_buffer.as_mut().unwrap().destroy();
-                    data.instance_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
-                        label: Some(&*("Corn Field Buffer: ".to_owned() + &*(*entity).index().to_string())), 
-                        size: data.get_byte_count(), 
-                        usage: BufferUsages::VERTEX | BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
-                        mapped_at_creation: false
-                    }));
-                } else if data.instance_buffer.is_none(){
-                    data.instance_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
-                        label: Some(&*("Corn Field Buffer: ".to_owned() + &*(*entity).index().to_string())), 
-                        size: data.get_byte_count(), 
-                        usage: BufferUsages::VERTEX | BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
-                        mapped_at_creation: false
-                    }));
-                }
-                data.cpu_readback_buffer = Some(render_device.create_buffer(&BufferDescriptor { 
-                    label: Some(&*("Corn Field ReadBack Buffer: ".to_owned() + &*(*entity).index().to_string())),
-                    size: data.get_byte_count(), 
-                    usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
-                    mapped_at_creation: false 
-                }));
-                let bind_group = render_device.create_bind_group(&BindGroupDescriptor {
-                    label: Some("Instance Data Buffer Bind Group"),
-                    layout: &pipeline.buffer_bind_group,
-                    entries: &[BindGroupEntry {
-                        binding: 0,
-                        resource: BindingResource::Buffer(BufferBinding { 
-                            buffer: data.instance_buffer.as_ref().unwrap(), 
-                            offset: 0, 
-                            size: None 
-                        }),
-                    }],
-                });
-                data.instance_buffer_bind_group = Some(bind_group);
-                return true;
-            }
-            CornFieldDataState::Loading => {
-                if read {
-                    data.state = CornFieldDataState::Reading;
-                }else{
-                    data.state = CornFieldDataState::Loaded;
-                }
-                return true;
-            }
-            CornFieldDataState::Reading => {
-                data.state = CornFieldDataState::Loaded;
-                if let Some(buffer) = data.cpu_readback_buffer.as_mut(){
-                    data.data = Some(Vec::from(bytemuck::cast_slice(buffer.slice(..).get_mapped_range().deref())));
-                    println!("{:?}", data.data.clone().unwrap());
-                    buffer.destroy();
-                    data.cpu_readback_buffer = None;
-                }
-                return true;
-            }
-            _ => true
-        }
-    });
+    let corn = corn_fields.as_mut();
+    //make sure any work done in the previous frame is finished and our state is reset
+    corn.settings.reset();
+    //Swaps the temporary and master buffer that were switched last frame if we expanded the master buffer
+    corn.buffer.finish_previous_frame_expansion();
+    //Free up space from stale data
+    corn.remove_stale_data_and_update_state();
+    //Create master buffer if need be
+    corn.init_buffer(&render_device);
+    //Initialize new data with ranges and an id
+    corn.init_new_data();
+    //Create Corn Init settings to be used in the compute pass
+    if corn.settings.run_init_pass {
+        let (settings_vec, ranges, total_corn) = corn.create_settings();
+        corn.settings.write_buffers(
+            &render_device, 
+            &render_queue, 
+            &settings_vec, 
+            &ranges, 
+            total_corn
+        );
+        corn.create_bind_group(&render_device, &pipeline.buffer_bind_group);
+    }
+    //if need be, expand the master buffer
+    corn.buffer.init_expansion(&render_device);
 }
-/// Pipeline for the initialization of corn instance data by use of a compute shader
+
 #[derive(Resource)]
-pub struct ManageCornBuffersPipeline{
-    id: CachedComputePipelineId,
+pub struct InitCornBuffersPipeline{
+    pub id: CachedComputePipelineId,
     buffer_bind_group: BindGroupLayout
 }
-impl FromWorld for ManageCornBuffersPipeline {
+impl FromWorld for InitCornBuffersPipeline {
     fn from_world(world: &mut World) -> Self {
         let buffer_bind_group = world.resource::<RenderDevice>().create_bind_group_layout(
             &BindGroupLayoutDescriptor {
@@ -166,6 +265,24 @@ impl FromWorld for ManageCornBuffersPipeline {
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::Buffer { 
                             ty: BufferBindingType::Storage { read_only: false }, 
+                            has_dynamic_offset: false, 
+                            min_binding_size: None },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer { 
+                            ty: BufferBindingType::Storage { read_only: true }, 
+                            has_dynamic_offset: false, 
+                            min_binding_size: None },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: ShaderStages::COMPUTE,
+                        ty: BindingType::Buffer { 
+                            ty: BufferBindingType::Uniform, 
                             has_dynamic_offset: false, 
                             min_binding_size: None },
                         count: None,
@@ -188,40 +305,9 @@ impl FromWorld for ManageCornBuffersPipeline {
         Self{id: pipeline, buffer_bind_group}
     }
 }
-/// Struct of per corn field shader settings
-#[derive(Clone, Copy, Pod, Zeroable, Debug)]
-#[repr(C)]
-pub struct FieldSettings{
-    origin: Vec3,
-    height: Vec2,
-    step: Vec2,
-    res_width: u32,
-}
-impl FieldSettings{
-    fn as_vec(&self) -> Vec<u8>{
-        let vector = vec![
-            self.origin.x, self.origin.y, self.origin.z, self.height.x, self.height.y, self.step.x, self.step.y
-        ];
-        let mut bytes: Vec<u8> = bytemuck::cast_slice::<f32, [u8; 4]>(vector.as_slice())
-            .into_iter().flat_map(|v| v.into_iter()).map(|v| *v).collect::<Vec<u8>>();
-        let end_bytes: Vec<u8> = bytemuck::cast::<u32, [u8; 4]>(self.res_width).to_vec();
-        bytes.extend(end_bytes);
-        return bytes;
-    }
-}
-impl From::<&CornFieldRenderData> for FieldSettings{
-    fn from(value: &CornFieldRenderData) -> Self {
-        Self{
-            origin: (value.center - value.half_extents.extend(0.0)),
-            height: value.height_range,
-            step: Vec2::new(value.half_extents.x*2.0/(value.resolution.0 as f32 - 1.0), value.half_extents.y*2.0/(value.resolution.1 as f32 - 1.0)),
-            res_width: value.resolution.0 as u32
-        }
-    }
-}
-/// Node of rendergraph to run compute tasks to calculate corn positions
-pub struct ManageCornBuffersNode{}
-impl Node for ManageCornBuffersNode{
+
+pub struct InitCornBuffersNode{}
+impl Node for InitCornBuffersNode{
     fn run(
         &self,
         _graph: &mut RenderGraphContext,
@@ -229,78 +315,30 @@ impl Node for ManageCornBuffersNode{
         world: &World,
     ) -> Result<(), bevy::render::render_graph::NodeRunError> {
         //get corn fields resource
-        let fields = world.get_resource::<RenderedCornFields>();
-        if fields.is_none() {return Ok(());}
-        let fields = fields.unwrap();
-        //get pipelines
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let pipeline = world.resource::<ManageCornBuffersPipeline>();
-        //find our compute pipeline
-        let compute_pipeline = pipeline_cache.get_compute_pipeline(pipeline.id);
-        if compute_pipeline.is_none() {return Ok(());}
-        let compute_pipeline = compute_pipeline.unwrap();
-        //create compute pass
-        let mut compute_pass = render_context.command_encoder()
-            .begin_compute_pass(&ComputePassDescriptor {label: Some("Initialize Corn Buffers") });
-        compute_pass.set_pipeline(&compute_pipeline);
-        //run buffer init code on all unloaded buffers
-        fields.fields.iter()
-            .filter(|(_, v)| v.state==CornFieldDataState::Loading)
-            .for_each(|(_, data)| 
-        {
-            compute_pass.set_bind_group(0, data.instance_buffer_bind_group.as_ref().unwrap(), &[]);
-            compute_pass.set_push_constants(0, 
-                FieldSettings::from(data).as_vec().as_slice());
-            compute_pass.dispatch_workgroups(
-                (data.resolution.0 as f32 / 16.0).ceil() as u32, 
-                (data.resolution.1 as f32 / 16.0).ceil() as u32, 
-                1
-            );
-        });
-        //drop mutable access to command encoder so that we can use it to copy buffers
-        drop(compute_pass);
-        //escape early if we aren't reading back the buffer data
-        if !fields.read_back_data {return Ok(());}
-        //go through each buffer and copy it to a cpu accessible buffer
-        fields.fields.iter()
-            .filter(|(_, v)| v.state==CornFieldDataState::Loading)
-            .for_each(|(_, data)| 
-        {
-            render_context.command_encoder().copy_buffer_to_buffer(
-                data.instance_buffer.as_ref().unwrap(), 
-                0, 
-                data.cpu_readback_buffer.as_ref().unwrap(), 
-                0, 
-                data.get_byte_count()
-            );
-        });
-        //Go through each copied buffer and queue up an sync readback call
-        fields.fields.iter()
-            .filter(|(_, v)| v.state==CornFieldDataState::Reading)
-            .for_each(|(_, data)| 
-        {
-            data.cpu_readback_buffer.as_ref().unwrap().slice(..).map_async(MapMode::Read, |_| {});
-        });
-        //Done
+        let corn_res = world.get_resource::<RenderedCornFields>();
+        if corn_res.is_none() {return Ok(());}
+        let corn_res = corn_res.unwrap();
+        //expand the buffer
+        corn_res.buffer.run_expansion(render_context);
+        corn_res.run_init(render_context, world);
         return Ok(());
     }
 }
-/// Plugin that adds all of the corn field component functionality to the game
+
 pub struct CornFieldInitPlugin;
 impl Plugin for CornFieldInitPlugin {
     fn build(&self, app: &mut App) {
         app.sub_app_mut(RenderApp)
-            .init_resource::<RenderedCornFields>()
-            .add_systems(ExtractSchedule, (extract_corn_fields, copy_corn_data_to_main_world))
+            .add_systems(ExtractSchedule, extract_corn_fields)
             .add_systems(
                 Render,
                 prepare_rendered_corn_data.in_set(RenderSet::Prepare)
             )
         .world.get_resource_mut::<RenderGraph>().unwrap()
-            .add_node("Corn Buffer Init", ManageCornBuffersNode{});
+            .add_node("Corn Buffer Init", InitCornBuffersNode{});
     }
 
     fn finish(&self, app: &mut App) {
-        app.sub_app_mut(RenderApp).init_resource::<ManageCornBuffersPipeline>();
+        app.sub_app_mut(RenderApp).init_resource::<InitCornBuffersPipeline>();
     }
 }
