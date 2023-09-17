@@ -20,7 +20,7 @@ struct CornSettings {
 @group(0) @binding(0)
 var<storage,read_write> instance_data: array<PerCornData>;
 @group(0) @binding(1)
-var<storage, read> ranges: array<Range>;
+var<uniform> ranges: array<Range, 32>;
 @group(0) @binding(2)
 var<uniform> settings: array<CornSettings, 32>;
 var<push_constant> range_count: vec4<u32>;
@@ -46,19 +46,21 @@ fn init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) 
   var location: u32 = 0u;
   for (var i = 0u; i < range_count.x; i++){
     let new_location = location+ranges[i].length;
-    index += vec2<u32>(i, location)*u32(location>=gid.x)*u32(gid.x<new_location);
+    index += select(vec2<u32>(0u , 0u), vec2<u32>(i, location), (location<=gid.x && gid.x<new_location));
     location = new_location;
   }
-  let range = ranges[index.x];
-  let buffer_index: u32 = gid.x - index.y + range.start;
-  let instance_index: u32 = buffer_index - range.start + range.offset;
-  let instance_settings = settings[range.id];
-  let pos: vec2<f32> = vec2<f32>(f32(instance_index%instance_settings.res_width), f32(instance_index/instance_settings.res_width));
-  var out: PerCornData;
-  out.offset = instance_settings.origin + vec3<f32>(pos*instance_settings.step, 0.0);
-  out.scale = randomFloat(gid.x) * instance_settings.height_width_min.x + instance_settings.height_width_min.y;
-  let theta = randomFloat(gid.x+256u*id_count.x)*6.2832;
-  out.rotation = vec2<f32>(sin(theta), cos(theta));
-  out.uuid = 1u<<range.id;
-  instance_data[buffer_index] = out;
+  if gid.x < location{
+    let range = ranges[index.x];
+    let buffer_index: u32 = gid.x - index.y + range.start;
+    let instance_index: u32 = buffer_index - range.start + range.offset;
+    let instance_settings = settings[range.id];
+    let pos: vec2<f32> = vec2<f32>(f32(instance_index%instance_settings.res_width), f32(instance_index/instance_settings.res_width));
+    var out: PerCornData;
+    out.offset = instance_settings.origin + vec3<f32>(pos*instance_settings.step, 0.0);
+    out.scale = randomFloat(gid.x) * instance_settings.height_width_min.x + instance_settings.height_width_min.y;
+    let theta = randomFloat(gid.x+256u*id_count.x)*6.2832;
+    out.rotation = vec2<f32>(sin(theta), cos(theta));
+    out.uuid = 1u<<range.id;
+    instance_data[buffer_index] = out;
+  }
 }

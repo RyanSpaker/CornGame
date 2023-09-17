@@ -6,7 +6,7 @@ use bevy::{
     render::{
         render_resource::*,
         renderer::{RenderDevice, RenderContext}, 
-        extract_component::ExtractComponent,
+        extract_component::ExtractComponent, RenderApp,
     }, utils::hashbrown::HashMap, math::bool
 };
 use bytemuck::{Pod, Zeroable};
@@ -53,7 +53,7 @@ impl RenderedCornFields{
         self.buffer.init(
             render_device, 
             "Corn Instance Buffer", 
-            1000000, 
+            40, 
             size_of::<PerCornData>(), 
             BufferUsages::STORAGE | BufferUsages::VERTEX
         );
@@ -103,7 +103,7 @@ impl RenderedCornFields{
             self.settings.run_init_pass = true;
         });
     }
-    pub fn create_settings(&mut self) -> (ComputeSettingsVector, Vec<ComputeRange>, usize){
+    pub fn create_settings(&mut self) -> (ComputeSettingsVector, ComputeRangeVector, usize, usize){
         let mut settings_vec = ComputeSettingsVector { 
             array: [ComputeSettings::default(); 32] 
         };
@@ -116,7 +116,13 @@ impl RenderedCornFields{
             total_corn += v.ranges.count();
             ranges.extend(v.ranges.convert_to_compute_vec(v.id.unwrap()));
         });
-        return (settings_vec, ranges, total_corn);
+        let mut range_vec = ComputeRangeVector { 
+            array: [ComputeRange::default(); 32] 
+        };
+        for range in ranges.iter().enumerate(){
+            range_vec.array[range.0] = *range.1;
+        }
+        return (settings_vec, range_vec, ranges.len(), total_corn);
     }
     pub fn create_bind_group(&mut self, render_device: &RenderDevice, layout: &BindGroupLayout){
         let mut bind_group_entries = [
@@ -162,6 +168,7 @@ impl RenderedCornFields{
     }
 }
 
+#[derive(Default)]
 pub struct DynamicInstanceBuffer{
     buffer: Option<Buffer>,
     ranges: Vec<Range<u32>>,
@@ -169,12 +176,9 @@ pub struct DynamicInstanceBuffer{
     temp_buffer: Option<Buffer>,
     size: usize,
     old_size: Option<usize>,
-    needs_to_expand: bool
-}
-impl Default for DynamicInstanceBuffer{
-    fn default() -> Self {
-        Self{buffer: None, ranges: vec![], ids: vec![], temp_buffer: None, size: 0, old_size: None, needs_to_expand: false}
-    }
+    needs_to_expand: bool,
+    cpu_readback_buffer: Option<Buffer>,
+    ready_to_read: bool
 }
 impl DynamicInstanceBuffer{
     pub fn init(&mut self, render_device: &RenderDevice, name: &str, count: u64, stride_length: usize, usages: BufferUsages){
@@ -233,6 +237,55 @@ impl DynamicInstanceBuffer{
             self.old_size.unwrap() as u64 * size_of::<PerCornData>() as u64
         );
     }
+    pub fn init_cpu_readback_buffer(&mut self, render_device: &RenderDevice, stride_length: usize){
+        if self.buffer.is_none() {return;}
+        self.cpu_readback_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
+            label: Some("CPU Readback Buffer"), 
+            size: self.size as u64 * stride_length as u64, 
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
+            mapped_at_creation: false
+        }));
+        self.ready_to_read = false;
+    }
+    pub fn process_cpu_readback_buffer(&mut self){
+        if !self.ready_to_read {return;}
+        if self.cpu_readback_buffer.is_none() {return;}
+        let raw = self.cpu_readback_buffer.as_ref().unwrap()
+            .slice(..).get_mapped_range()
+            .iter().map(|v| *v).collect::<Vec<u8>>();
+        let data = bytemuck::cast_slice::<u8, PerCornData>(raw.as_slice()).to_vec();
+        for corn in data{
+            println!("{:?}", corn);
+        }
+        self.cpu_readback_buffer.as_mut().unwrap().destroy();
+        self.cpu_readback_buffer = None;
+    }
+    pub fn run_readback(&self, render_context: &mut RenderContext){
+        if self.ready_to_read {return;}
+        if self.cpu_readback_buffer.is_none(){return;}
+        if self.needs_to_expand && self.temp_buffer.is_some(){
+            render_context.command_encoder().copy_buffer_to_buffer(
+                self.temp_buffer.as_ref().unwrap(), 
+                0, 
+                self.cpu_readback_buffer.as_ref().unwrap(), 
+                0, 
+                self.size as u64 * size_of::<PerCornData>() as u64
+            );
+        }else if self.buffer.is_some(){
+            render_context.command_encoder().copy_buffer_to_buffer(
+                self.buffer.as_ref().unwrap(), 
+                0, 
+                self.cpu_readback_buffer.as_ref().unwrap(), 
+                0, 
+                self.size as u64 * size_of::<PerCornData>() as u64
+            );
+        }
+    }
+    pub fn map_cpu_readback_buffer(&mut self){
+        if self.cpu_readback_buffer.is_none(){return;}
+        self.cpu_readback_buffer.as_ref().unwrap().slice(..).map_async(MapMode::Read, |_|{});
+        self.ready_to_read = true;
+    }
 }
 
 pub struct CornFieldRenderData{
@@ -270,6 +323,7 @@ impl Plugin for CornFieldComponentPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_plugins(CornFieldInitPlugin)
+        .sub_app_mut(RenderApp)
             .init_resource::<RenderedCornFields>();
     }
 }
