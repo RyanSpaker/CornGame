@@ -5,6 +5,8 @@ Corn Maze game written in rust with the bevy engine
 - [x] basic application structure
 - [x] dynamic creation of corn field instance data on the gpu
 - [x] dynamically merge all corn instance data buffers into one master buffer
+- [ ] systems to shrink, and defragment the instance buffer
+- [ ] flag stale data as disabled to not render them: can be worked into the init compute shader for performance
 - [ ] Frustum culling, and LOD grouping
 - [ ] Actually render the corn
 - [ ] Custom shadow mapping
