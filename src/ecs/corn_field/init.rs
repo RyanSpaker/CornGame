@@ -96,6 +96,8 @@ pub trait BufferRanges{
     fn insert_or_extend(&mut self, item: Range<u32>);
     fn convert_to_compute_vec(&self, id: u32) -> Vec<ComputeRange>;
     fn count(&self) -> usize;
+    fn cut_out(&mut self, other: &Self);
+    fn cut_out_range(&mut self, other: &Range<u32>);
 }
 impl BufferRanges for Vec<Range<u32>>{
     fn combine(&mut self, other: &Self) -> &mut Self {
@@ -109,19 +111,18 @@ impl BufferRanges for Vec<Range<u32>>{
             }
             return ord;
         });
-        let ranges = endpoints
-            .into_iter()
-            .scan(0, |acc, val| {
-                *acc += val.1;
-                if *acc == 0{
-                    return Some(val.0)
-                }
-                if *acc == 1 && val.1 == 1{
-                    return Some(val.0)
-                }
-                return None;
-            })
-            .collect::<Vec<u32>>()
+        let mut acc: i32 = 0;
+        let mut scan: Vec<u32> = vec![];
+        for val in endpoints{
+            acc += val.1;
+            if acc == 0{
+                scan.push(val.0);
+            }
+            if acc == 1 && val.1 == 1{
+                scan.push(val.0)
+            }
+        }
+        let ranges = scan
             .chunks_exact(2)
             .map(|chunk| Range::<u32>{start: chunk[0], end: chunk[1]})
             .collect::<Vec<Range<u32>>>();
@@ -168,6 +169,25 @@ impl BufferRanges for Vec<Range<u32>>{
     }
     fn count(&self) -> usize {
         self.iter().map(|range| range.end - range.start).sum::<u32>() as usize
+    }
+    fn cut_out_range(&mut self, other: &Range<u32>){
+        *self = self.iter().map(|range| {
+            if other.start <= range.start && other.end >= range.end{
+                return vec![];
+            }else if other.start < range.start && other.end > range.start{
+                return vec![other.end..range.end];
+            }else if other.start < range.end && other.end > range.end{
+                return vec![range.start..other.start];
+            }else if  other.start > range.start && other.end < range.end{
+                return vec![range.start..other.start, other.end..range.end];
+            }
+            return vec![range.clone()];
+        }).flat_map(|v| v.into_iter()).collect();
+    }
+    fn cut_out(&mut self, other: &Self) {
+        for range in other{
+            self.cut_out_range(range);
+        }
     }
 }
 
@@ -253,6 +273,7 @@ pub fn prepare_rendered_corn_data(
     corn.buffer.init_expansion(&render_device);
     //Create Corn Init settings to be used in the compute pass
     if corn.settings.run_init_pass {
+        corn.update_stale_ranges();
         let (settings_vec, ranges, range_count, total_corn) = corn.create_settings();
         corn.settings.write_buffers(
             &render_device, 

@@ -55,36 +55,14 @@ fn spawn_corn(mut commands: Commands, frames: Res<FrameCount>, mut despawn_corn:
             NoFrustumCulling
         )).id());
     }else if frames.0 == 200{
+        commands.entity(despawn_corn.0.unwrap()).despawn();
+    }else if frames.0 == 300{
         commands.spawn((
             SpatialBundle::INHERITED_IDENTITY,
             CornField::new(
                 Vec3::ZERO, 
                 Vec2::ONE*3.0, 
                 (2, 2),
-                Vec2::new(0.8, 1.2)
-            ),
-            NoFrustumCulling
-        ));
-    }else if frames.0 == 300{
-        commands.entity(despawn_corn.0.unwrap()).despawn();
-    }else if frames.0 == 400{
-        commands.spawn((
-            SpatialBundle::INHERITED_IDENTITY,
-            CornField::new(
-                Vec3::ZERO, 
-                Vec2::ONE*3.0, 
-                (6, 6),
-                Vec2::new(0.8, 1.2)
-            ),
-            NoFrustumCulling
-        ));
-    }else if frames.0 == 500{
-        commands.spawn((
-            SpatialBundle::INHERITED_IDENTITY,
-            CornField::new(
-                Vec3::ZERO, 
-                Vec2::ONE*3.0, 
-                (1, 1),
                 Vec2::new(0.8, 1.2)
             ),
             NoFrustumCulling
