@@ -53,7 +53,7 @@ impl RenderedCornFields{
         self.buffer.init(
             render_device, 
             "Corn Instance Buffer", 
-            40, 
+            10, 
             size_of::<PerCornData>(), 
             BufferUsages::STORAGE | BufferUsages::VERTEX
         );
@@ -103,6 +103,13 @@ impl RenderedCornFields{
             self.settings.run_init_pass = true;
         });
     }
+    pub fn update_stale_ranges(&mut self) {
+        self.data.iter().filter(|(_, v)| v.state == CornFieldDataState::Loading)
+            .for_each(|(_, v)| 
+        {
+            self.buffer.stale_ranges.cut_out(&v.ranges);
+        });
+    }
     pub fn create_settings(&mut self) -> (ComputeSettingsVector, ComputeRangeVector, usize, usize){
         let mut settings_vec = ComputeSettingsVector { 
             array: [ComputeSettings::default(); 32] 
@@ -116,6 +123,8 @@ impl RenderedCornFields{
             total_corn += v.ranges.count();
             ranges.extend(v.ranges.convert_to_compute_vec(v.id.unwrap()));
         });
+        //creates ranges with id 32, which automatically flags data as stale in the compute shader
+        ranges.extend(self.buffer.stale_ranges.convert_to_compute_vec(32));
         let mut range_vec = ComputeRangeVector { 
             array: [ComputeRange::default(); 32] 
         };
@@ -172,6 +181,7 @@ impl RenderedCornFields{
 pub struct DynamicInstanceBuffer{
     buffer: Option<Buffer>,
     ranges: Vec<Range<u32>>,
+    stale_ranges: Vec<Range<u32>>,
     ids: Vec<u32>,
     temp_buffer: Option<Buffer>,
     size: usize,
@@ -193,6 +203,7 @@ impl DynamicInstanceBuffer{
         self.size = count as usize;
     }
     pub fn add_ranges(&mut self, ranges: &Vec<Range<u32>>){
+        self.stale_ranges.combine(ranges);
         self.ranges.combine(ranges);
     }
     pub fn add_id(&mut self, id: u32){
@@ -257,6 +268,7 @@ impl DynamicInstanceBuffer{
         for corn in data{
             println!("{:?}", corn);
         }
+        println!("");
         self.cpu_readback_buffer.as_mut().unwrap().destroy();
         self.cpu_readback_buffer = None;
     }

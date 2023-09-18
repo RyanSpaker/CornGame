@@ -3,13 +3,13 @@ struct PerCornData {
   scale: f32,
   rotation: vec2<f32>,
   uuid: u32,
-  empty: u32
+  enabled: u32
 }
 struct Range {
   start: u32,
   length: u32,
   id: u32,
-  offset: u32
+  offset: u32,
 }
 struct CornSettings {
   origin: vec3<f32>,
@@ -61,6 +61,7 @@ fn init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) 
     let theta = randomFloat(gid.x+256u*id_count.x)*6.2832;
     out.rotation = vec2<f32>(sin(theta), cos(theta));
     out.uuid = 1u<<range.id;
+    out.enabled = u32(range.id<32u);
     instance_data[buffer_index] = out;
   }
 }
