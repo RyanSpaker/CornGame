@@ -22,40 +22,6 @@ use bevy::{
 use bytemuck::{Pod, Zeroable};
 use rand::{Rng, distributions::Standard};
 
-
-
-//Stores the instance data and the lod level of the corn: todo: lod level auto calculates and instance data lives on gpu
-#[derive(Component, ExtractComponent, Clone, Debug)]
-pub struct CornField{
-    instance_data: Vec<PerCornData>,
-    lod_level: usize
-}
-impl CornField{
-    //creates instance data from width and density values
-    pub fn new(center: Vec3, half_extents: Vec2, x_count: usize, y_count: usize, height_minmax: Vec2) -> Self{
-        Self{
-        instance_data: 
-            (0..x_count).into_iter().flat_map(|x| {
-                (0..y_count).into_iter().map(move |y| (x, y))
-            }).zip(
-                rand::thread_rng().sample_iter::<f32, Standard>(Standard).zip(
-                rand::thread_rng().sample_iter::<f32, Standard>(Standard))
-            ).map(|((x, y), (r1, r2))| {
-                let horizontal_offset = ((
-                    2.0*Vec2::new(x as f32, y as f32) / 
-                    Vec2::new(x_count as f32 - 1.0, y_count as f32 - 1.0)
-                    ) - Vec2::ONE
-                    ) * half_extents;
-                let offset = center + Vec3::new(horizontal_offset.x, 0.0, horizontal_offset.y);
-                let scale = r1*(height_minmax.y-height_minmax.x) + height_minmax.x;
-                let rotation = r2*TAU;
-                return PerCornData{ offset, scale, rotation }
-            }).collect::<Vec<PerCornData>>(),
-        lod_level: 0
-        }
-    }
-}
-
 //Plugin to enable the rendering of corn_fields as instanced meshes
 pub struct CornFieldMaterialPlugin;
 impl Plugin for CornFieldMaterialPlugin {
@@ -81,15 +47,6 @@ impl Plugin for CornFieldMaterialPlugin {
         app.sub_app_mut(RenderApp).init_resource::<CornFieldPipeline>();
         app.sub_app_mut(RenderApp).init_resource::<CornShadowPipeline>();
     }
-}
-
-//Struct of per corn data sent to the shader
-#[derive(Clone, Copy, Pod, Zeroable, Debug)]
-#[repr(C)]
-pub struct PerCornData{
-    offset: Vec3,
-    scale: f32,
-    rotation: f32
 }
 
 //Function to queue up custom draw sequences for each corn field we have
