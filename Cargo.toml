@@ -12,7 +12,8 @@ rand = "0.8.5"
 bytemuck = "1.14.0"
 bevy_mod_debugdump = "0.8.0"
 futures-lite = "1.13.0"
-wgpu = "0.17.0"
+wgpu = "0.16.0"
+bitflags = "2.4.0"
 
 [profile.dev]
 opt-level = 1

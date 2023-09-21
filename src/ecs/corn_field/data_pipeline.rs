@@ -1,8 +1,807 @@
-use std::{ops::Range, collections::VecDeque, mem::size_of};
+use std::{ops::Range, collections::VecDeque, mem::size_of, sync::{Arc, Mutex}};
 use bevy::{prelude::*, render::{RenderApp, Extract, Render, RenderSet, renderer::{RenderDevice, RenderContext}, render_resource::{Buffer, BufferDescriptor, BufferUsages, MapMode, BufferInitDescriptor, CachedComputePipelineId, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, ShaderStages, BindingType, BufferBindingType, PipelineCache, ComputePipelineDescriptor, BindGroupEntry, BindingResource, BindGroup, BindGroupDescriptor, ComputePassDescriptor}, render_graph::{RenderGraphContext, Node, RenderGraph}}, utils::hashbrown::{HashMap, HashSet}};
 use bytemuck::{Zeroable, Pod};
+use wgpu::Maintain;
 use super::{CornField, CornInstanceBuffer, PerCornData};
-
+use bitflags::*;
+/*==================
+    Extract Phase:
+  ==================*/
+/// ## Always runs during the extract schedule
+/// ### 2 Jobs: 
+/// - Copying new data to the RenderAppCornFields resource
+/// - Flagging deleted data as stale
+pub fn extract_corn_fields(
+    corn_fields: Extract<Query<(Entity, Ref<CornField>)>>,
+    mut corn_res: ResMut<RenderAppCornFields>
+){
+    corn_fields.iter().filter(|(_, f)| f.is_changed()).for_each(|(e, f)| {
+        corn_res.add_corn_field(&e, f.as_ref());
+    });
+    let entities: Vec<Entity> = corn_fields.iter().map(|(e, _)| e).collect();
+    corn_res.flag_stale_data(&entities);
+}
+/*==================
+    Prepare Phase:
+  ==================*/
+/// ## Initializes Corn Instance Buffer
+/// 
+/// Runs during the prepare phase is the instance buffer is not yet initialized.
+/// 
+/// Only initializes it if there is corn fields wanting to be rendered.
+pub fn initialize_instance_buffer(
+    mut instance_buffer: ResMut<CornInstanceBuffer>,
+    mut corn_fields: ResMut<RenderAppCornFields>,
+    render_device: Res<RenderDevice>,
+    mut next_state: ResMut<NextState<InstanceBufferState>>
+){
+    if corn_fields.corn_fields.is_empty(){return;}
+    if instance_buffer.initialize_data(&render_device, corn_fields.get_buffer_init_size()){
+        corn_fields.corn_buffer_manager.init(
+            instance_buffer.get_instance_count(), 
+            instance_buffer.get_instance_buffer().unwrap());
+        next_state.set(InstanceBufferState::Initialized);
+    }
+}
+/// ## Prepares corn data pipeline for Render Phase
+/// 
+/// Runs in the prepare phase
+/// 
+/// ### Tasks:
+/// - assign new corn fields id's if any are available
+/// - Queue up buffer expansion if necessary
+/// - prepare new corn data for initialization
+/// - Queue up defragmentation and shrinking operations if necessary
+/// - Queue up CPU readback if enabled
+/// - Create compute pipeline structures such as constant buffers and bind groups
+pub fn prepare_corn_data(
+    mut corn_fields: ResMut<RenderAppCornFields>,
+    render_device: Res<RenderDevice>,
+    pipeline: Res<CornDataPipeline>
+){
+    // add stale data ranges and id's back into the system
+    corn_fields.retire_stale_data();
+    // if no corn exists, exit early as any operations would panic
+    if corn_fields.corn_fields.is_empty(){return;}
+    // assign new corn field's an id between 0-31
+    corn_fields.assign_new_data_ids();
+    // if our loading corn fields need more space than is avaiable, queue up buffer expansion
+    if let Some(overflow) = 
+        corn_fields.get_loading_corn_count().checked_sub(
+        corn_fields.corn_buffer_manager.get_available_space()+1
+    ){
+        corn_fields.queue_expansion(overflow+1, render_device.as_ref());
+    }
+    // assign ranges of the buffer to our loading corn fields
+    corn_fields.assign_new_data_ranges();
+    if corn_fields.get_loading_corn_count() > 0 || corn_fields.corn_buffer_manager.stale_ranges.total() > 0{
+        corn_fields.queue_init(render_device.as_ref(), pipeline.as_ref());
+    }
+    //check for fragmentation or sparseness, and then queue up the respective fixes
+    if corn_fields.corn_buffer_manager.is_sparse(){
+        corn_fields.queue_buffer_shrink(render_device.as_ref(), pipeline.as_ref());
+    }else if corn_fields.buffer_is_fragmented(){
+        corn_fields.queue_buffer_defragmentation(render_device.as_ref(), pipeline.as_ref());
+    }
+    // queue up cpu readback if enabled
+    if corn_fields.readback_enabled{
+        corn_fields.queue_cpu_readback(render_device.as_ref());
+    }
+}
+/*================
+    Render Phase
+  ================*/
+/// ### Added to the rendergraph as an asynchronous step
+/// - run function is called by the render phase at some point
+pub struct CornDataPipelineNode{}
+impl Node for CornDataPipelineNode{
+    fn run(
+        &self,
+        _graph: &mut RenderGraphContext,
+        render_context: &mut RenderContext,
+        world: &World,
+    ) -> Result<(), bevy::render::render_graph::NodeRunError> {
+        //get corn fields resource
+        let corn_res = world.get_resource::<RenderAppCornFields>();
+        if corn_res.is_none() {return Ok(());}
+        let corn_res = corn_res.unwrap();
+        //expand the buffer
+        corn_res.corn_buffer_manager.run_compute_pass(render_context, world);
+        return Ok(());
+    }
+}
+/*=================
+    Cleanup Phase
+  =================*/
+/// ## Cleans up operations from the frame
+/// ### Tasks:
+/// - If the resource is empty, reset it and set the next state to uninitialized
+/// - Expand: swap new instance buffer with instance buffer resource
+/// - Init: turn stale ranges into real ones
+/// - Init: turn loading corn into loaded corn
+/// - Defrag: turn defrag ranges into official ranges
+/// - Defrag: swap defrag and instance buffer
+/// - Readback: Read cpu buffer and then destroy it
+/// - reset planned actions
+/// - reset compute structures
+pub fn cleanup_corn_data(
+    mut corn_fields: ResMut<RenderAppCornFields>,
+    mut next_state: ResMut<NextState<InstanceBufferState>>,
+    mut instance_buffer: ResMut<CornInstanceBuffer>,
+    render_device: Res<RenderDevice>
+){
+    if corn_fields.corn_fields.is_empty(){
+        corn_fields.destroy();
+        instance_buffer.destroy();
+        next_state.set(InstanceBufferState::Uninitialized);
+        return;
+    }
+    if corn_fields.corn_buffer_manager.planned_actions.contains(BufferActions::EXPAND){
+        corn_fields.corn_buffer_manager.finish_expansion(instance_buffer.as_mut(), &render_device);
+    }
+    if corn_fields.corn_buffer_manager.planned_actions.contains(BufferActions::INITIALIZE){
+        corn_fields.corn_buffer_manager.convert_stale_ranges();
+        corn_fields.finish_loading_corn();
+    }
+    if corn_fields.corn_buffer_manager.planned_actions.contains(BufferActions::DEFRAGMENT){
+        corn_fields.corn_buffer_manager.finish_defragment(instance_buffer.as_mut(), &render_device);
+        corn_fields.finish_defragment();
+    }
+    if corn_fields.corn_buffer_manager.planned_actions.contains(BufferActions::READBACK){
+        corn_fields.corn_buffer_manager.finish_cpu_readback(&render_device);
+    }
+    corn_fields.corn_buffer_manager.per_frame_reset();
+}
+/*======================
+    Main Functionality
+  ======================*/
+/// Keeps track of corn fields in the render app
+#[derive(Resource)]
+pub struct RenderAppCornFields{
+    /// Hashmap of entity => corresponding render app cornfield
+    corn_fields: HashMap<Entity, CornFieldData>,
+    /// Corn fields that were pushed out of the hashmap but haven't been deleted yet
+    displaced_stale_data: VecDeque<CornFieldData>,
+    /// Struct responsible for managing the instance buffer
+    corn_buffer_manager: DynamicBufferManager,
+    /// Whether or not to read back the instance buffer data after each change
+    readback_enabled: bool
+}
+impl Default for RenderAppCornFields{
+    fn default() -> Self {
+        Self{
+            corn_fields: HashMap::new(),
+            displaced_stale_data: VecDeque::new(),
+            corn_buffer_manager: DynamicBufferManager::new(),
+            readback_enabled: false
+        }
+    }
+}
+impl RenderAppCornFields{
+//==========================================================================================
+    /// ### Adds a corn field from the main world into the resource
+    /// - if an corn field already exists in the resource, it is placed into a temporary storage and queued for deletion
+    pub fn add_corn_field(&mut self, entity: &Entity, field: &CornField){
+        let new_data = CornFieldData::new(
+            field.center, 
+            field.half_extents, 
+            field.resolution, 
+            field.height_range
+        );
+        if let Some(old_data) = self.corn_fields.insert(entity.clone(), new_data){
+            self.displaced_stale_data.push_back(old_data);
+        }
+    }
+    /// ### Flags stale data based on a set of real entities
+    pub fn flag_stale_data(&mut self, real_entities: &Vec<Entity>){
+        let entities: HashSet<Entity> = HashSet::from_iter(real_entities.to_owned().into_iter());
+        self.corn_fields.iter_mut().for_each(|(key, val)| {
+            if !entities.contains(key){val.state = CornFieldDataState::Stale;}
+        });
+    }
+//==========================================================================================
+    /// ### Returns the size to initialize the instance buffer at
+    /// - uses the total amount of corn in the resource as its return value
+    pub fn get_buffer_init_size(&self) -> u64{
+        self.corn_fields.values().map(|data| data.get_instance_count()).sum()
+    }
+//==========================================================================================
+    /// ### Deletes stale data and adds the id and ranges back into the system
+    pub fn retire_stale_data(&mut self){
+        self.corn_fields.retain(|_, val| {
+            if val.state!=CornFieldDataState::Stale{return true;}
+            if val.buffer_settings.is_none(){return false;}
+            self.corn_buffer_manager.add_id(val.buffer_settings.as_ref().unwrap().0);
+            self.corn_buffer_manager.add_stale_range(&val.buffer_settings.as_ref().unwrap().1);
+            return false;
+        });
+    }
+    /// ### Returns the total instances of corn that are currently loading
+    /// - Loaded and Stale data is not included
+    /// - If the corn field couldn't get an id, it is also not included
+    pub fn get_loading_corn_count(&self) -> u32{
+        self.corn_fields.iter().filter_map(|data| {
+            if data.1.state != CornFieldDataState::Loading {return None;}
+            return Some(data.1.get_instance_count() as u32);
+        }).sum()
+    }
+    /// ### Assigns an id to new corn fields in the system
+    /// - If there are no id's left, they remain as uninitialized
+    /// - Updates the state of corn fields that recieved an id to Loading
+    pub fn assign_new_data_ids(&mut self){
+        for (_, data) in self.corn_fields.iter_mut(){
+            if data.state != CornFieldDataState::Uninitialized {continue;}
+            if let Some(id) = self.corn_buffer_manager.get_id(){
+                data.buffer_settings = Some((id, vec![]));
+                data.state = CornFieldDataState::Loading;
+            }else{
+                break;
+            }
+        }
+    }
+    /// ### Assigns a list of ranges to new data
+    /// - ranges are taken first from the stale ranges
+    /// - each range corresponds to a range in either the expanded or normal buffer
+    pub fn assign_new_data_ranges(&mut self){
+        self.corn_fields.iter_mut().filter(|(_, v)| v.state==CornFieldDataState::Loading)
+            .for_each(|(_, data)| 
+        {
+            data.buffer_settings.as_mut().unwrap().1 = self.corn_buffer_manager.get_ranges(data.get_instance_count() as u32);
+        });
+    }
+    /// ### Returns whether or not the buffer is fragmented too much
+    /// #### TODO: Get a metric for fragmentation and a limit here
+    pub fn buffer_is_fragmented(&self) -> bool{return false;}
+//==========================================================================================
+    /// ### Queues a Buffer Expansion process during the render phase
+    /// - Expands the buffer to (current size + count)*1.5
+    /// - replaces the real instance buffer with an expanded one, so that we can expand and initialize on the same frame
+    pub fn queue_expansion(&mut self, count: u32, render_device: &RenderDevice){
+        self.corn_buffer_manager.queue_expansion(count, render_device);
+    }
+    /// ### Queues a data initialization and stale data flagging operation
+    /// - Creates the constant buffers used in the init compute pass
+    /// - creates the bind group for the ini compute pass
+    pub fn queue_init(&mut self, render_device: &RenderDevice, pipeline: &CornDataPipeline){
+        let new_data: Vec<(u32, Vec<Range<u32>>, CornFieldSettings)> = self.corn_fields
+            .iter()
+            .filter_map(|(_, v)| {
+                if v.state!=CornFieldDataState::Loading {return None;}
+                if let Some((id, ranges)) = v.buffer_settings.as_ref(){
+                    return Some((id.to_owned(), ranges.to_owned(), v.settings));
+                }
+                return None;
+            }).collect();
+        self.corn_buffer_manager.create_init_structures(new_data, render_device, pipeline);
+    }
+    /// ### Queues up a defrag then shrink operation
+    /// - creates a shrunken buffer to store the defragmented data in
+    /// - assigns each corn field a new range to use in the defraged buffer
+    /// - creates the buffers and bind group for use in the defrag compute shader
+    pub fn queue_buffer_shrink(&mut self, render_device: &RenderDevice, pipeline: &CornDataPipeline){
+        self.corn_buffer_manager.queue_buffer_shrink(render_device);
+        self.assign_defragmented_ranges();
+        self.create_defrag_structures(render_device, pipeline);
+    }
+    /// ### Queues up just a defrag operation
+    /// - creates a defragmented buffer to store the defragmented data in
+    /// - assigns each corn field a new range to use in teh buffer
+    /// - creates the buffers and bind group for use in teh defrag compute shader
+    pub fn queue_buffer_defragmentation(&mut self, render_device: &RenderDevice, pipeline: &CornDataPipeline){
+        self.corn_buffer_manager.queue_defragmentation(render_device);
+        self.assign_defragmented_ranges();
+        self.create_defrag_structures(render_device, pipeline);
+    }
+    /// ### Queues up a cpu readback operation
+    /// - creates and maps a buffer used to copy the end result of a data pipeline pass back to the cpu
+    pub fn queue_cpu_readback(&mut self, render_device: &RenderDevice){
+        if !self.corn_buffer_manager.update_pending() {return;}
+        self.corn_buffer_manager.queue_cpu_readback(render_device);
+    }
+//==========================================================================================
+    /// ### Creates the structures used in the defragment compute pass
+    pub fn create_defrag_structures(&mut self, render_device: &RenderDevice, pipeline: &CornDataPipeline){
+        let id_range_offset: Vec<(u32, Vec<Range<u32>>, u32)> = self.corn_fields
+            .iter().filter_map(|(_, v)| {
+                if v.state!=CornFieldDataState::Loading && v.state != CornFieldDataState::Loaded {return None;}
+                if let Some((id, ranges)) = v.buffer_settings.as_ref(){
+                    if let Some(new_range) = v.defragmented_range.as_ref(){
+                        return Some((id.to_owned(), ranges.to_owned(), new_range.start));
+                    }
+                }
+                return None;
+            }).collect();
+        self.corn_buffer_manager.create_defrag_structures(id_range_offset, render_device, pipeline);
+    }
+    /// ### Gives a range to each loaded or loading corn field from the defragmented buffers open spaces
+    pub fn assign_defragmented_ranges(&mut self){
+        self.corn_fields.iter_mut()
+            .filter(|(_, v)| v.state == CornFieldDataState::Loaded || v.state == CornFieldDataState::Loading)
+            .for_each(|(_, data)| 
+        {
+            data.defragmented_range = Some(self.corn_buffer_manager.get_defragmented_range(data.get_instance_count() as u32));
+        });
+    }
+//==========================================================================================
+    /// ### Updates all loading corn to be loaded
+    pub fn finish_loading_corn(&mut self){
+        self.corn_fields.iter_mut()
+            .filter(|(_, v)|v.state==CornFieldDataState::Loading)
+            .for_each(|(_, v)| 
+        {
+            v.state = CornFieldDataState::Loaded;
+        });
+    }
+    /// ### Finishes defragmentation
+    /// sets corn fields ranges to their defragmented versions
+    pub fn finish_defragment(&mut self){
+        self.corn_fields.iter_mut()
+            .filter(|(_, v)| v.state == CornFieldDataState::Loaded)
+            .for_each(|(_, data)| 
+        {
+            if let Some(ranges) = data.defragmented_range.as_ref(){
+                data.buffer_settings.as_mut().unwrap().1 = vec![ranges.to_owned()];
+                data.defragmented_range = None;
+            }
+        });
+    }
+    /// ### Erases all data from the struct
+    pub fn destroy(&mut self){
+        self.corn_fields = HashMap::new();
+        self.displaced_stale_data = VecDeque::new();
+        self.corn_buffer_manager.destroy();
+        self.corn_buffer_manager = DynamicBufferManager::new();
+    }
+//==========================================================================================
+}
+/// Buffer Management Struct
+#[derive(Default)]
+pub struct DynamicBufferManager{
+    /// Usually points to the same buffer as corn instance buffer resource, unless it needs to change size
+    instance_buffer: Option<Buffer>,
+    /// Holds the pointer to the corn instance buffer resource during buffer expansions
+    original_instance_buffer: Option<Buffer>,
+    /// Contains all available, unused id's, 0-31 initially
+    ids: Vec<u32>,
+    /// list of all unused ranges in the instance buffer
+    ranges: Vec<Range<u32>>,
+    /// list of ranges that contain stale data
+    stale_ranges: Vec<Range<u32>>,
+    /// Represents the state of the actively planned actions
+    planned_actions: BufferActions,
+    /// current working size of the buffer: expanding: size of expanded buffer, shrinking: size of shrunken buffer
+    active_size: u32,
+    /// buffer where we place defragmented data
+    defragmented_buffer: Option<Buffer>,
+    /// list of ranges of the defragmented buffer.
+    /// ranges are assigned to all data when we queue defragmentation
+    /// realistically, this will only ever have 1 item since portions are only ever taken out, not readded in
+    defragmented_ranges: Option<Vec<Range<u32>>>,
+    /// the buffer we copy instance data to when we read back to the cpu
+    readback_buffer: Option<Buffer>,
+    /// holds compute shader structures necessary for dispatch such as bind groups and constant buffers
+    compute_structures: ComputeStructures
+}
+impl DynamicBufferManager{
+//==========================================================================================
+    /// ### Returns a new empty struct
+    pub fn new() -> Self{
+        Self { 
+            instance_buffer: None, 
+            original_instance_buffer: None,
+            ids: vec![], 
+            ranges: vec![], 
+            stale_ranges: vec![], 
+            planned_actions: BufferActions::NONE,
+            active_size: 0, 
+            defragmented_buffer: None,
+            defragmented_ranges: None,
+            readback_buffer: None, 
+            compute_structures: ComputeStructures { 
+                ranges_buffer: None, 
+                settings_buffer: None, 
+                defrag_ranges_buffer: None, 
+                defrag_offset_buffer: None, 
+                init_bind_group: None, 
+                defrag_bind_group: None,
+                total_init_corn: 0, 
+                total_defrag_corn: 0 
+            } 
+        }
+    }
+    /// ### Initializes the struct with a given instance buffer and size
+    pub fn init(&mut self, instance_count: u32, instance_buffer: &Buffer){
+        self.ids = (0..32).collect();
+        self.ranges = vec![(0..instance_count)];
+        self.active_size = instance_count;
+        self.instance_buffer = Some(instance_buffer.to_owned());
+    }
+    /// ### Resets per frame metadata such as planned actions and compute structures
+    pub fn per_frame_reset(&mut self){
+        self.planned_actions = BufferActions::NONE;
+        self.compute_structures.destroy();
+    }
+    /// ### Erases all data from the struct
+    pub fn destroy(&mut self){
+        if let Some(buffer) = self.instance_buffer.as_ref(){buffer.destroy(); self.instance_buffer = None;}
+        if let Some(buffer) = self.original_instance_buffer.as_ref(){buffer.destroy(); self.original_instance_buffer = None;}
+        if let Some(buffer) = self.defragmented_buffer.as_ref(){buffer.destroy(); self.defragmented_buffer = None;}
+        if let Some(buffer) = self.readback_buffer.as_ref(){buffer.destroy(); self.readback_buffer = None;}
+        self.compute_structures.destroy();
+        self.compute_structures = ComputeStructures{
+            ranges_buffer: None,
+            settings_buffer: None,
+            defrag_ranges_buffer: None,
+            defrag_offset_buffer: None,
+            init_bind_group: None,
+            defrag_bind_group: None,
+            total_defrag_corn:0,
+            total_init_corn:0
+        };
+    }
+//==========================================================================================
+    /// ### Adds an id to the list of available ids
+    pub fn add_id(&mut self, id: u32){
+        self.ids.push(id);
+    }
+    /// ### Adds a range to the list of stale ranges
+    pub fn add_stale_range(&mut self, stale_ranges: &Vec<Range<u32>>){
+        self.stale_ranges.combine(stale_ranges);
+    }
+    /// ### Converts the stale ranges into regular ones
+    pub fn convert_stale_ranges(&mut self){
+        self.ranges.combine(&self.stale_ranges);
+        self.stale_ranges = vec![];
+    }
+    /// ### Returns the total available space in the instance buffer
+    /// - returns stale_ranges.total()+available_ranges.total()
+    pub fn get_available_space(&self) -> u32{
+        return self.ranges.total() + self.stale_ranges.total();
+    }
+    /// ### Removes and returns an available id if one exists
+    pub fn get_id(&mut self) -> Option<u32>{
+        self.ids.pop()
+    }
+    /// ### Removes and returns a list of ranges totaling count in length
+    pub fn get_ranges(&mut self, count: u32) -> Vec<Range<u32>>{
+        let (remaining, mut ranges) = self.stale_ranges.take(count);
+        ranges.combine(&self.ranges.take(remaining).1);
+        return ranges;
+    }
+    /// ### Returns whether or not the instance buffer is sparse
+    /// - returns used space < total_space/3
+    pub fn is_sparse(&self) -> bool{
+        if self.planned_actions.contains(BufferActions::EXPAND) {return false;}
+        self.ranges.total() + self.stale_ranges.total() > 2*self.active_size/3
+    }
+    /// ### Returns whether or not there is an operation pending
+    /// - doesnt include cpu readback operations
+    pub fn update_pending(&self) -> bool{
+        self.planned_actions.intersects(BufferActions::ANY_CHANGE)
+    }
+    /// ### Removes and returns a range from the defragmented ranges
+    pub fn get_defragmented_range(&mut self, count: u32) -> Range<u32>{
+        // Assumes that we will only get one
+        self.defragmented_ranges.as_mut().unwrap().take(count).1[0].to_owned()
+    }
+//==========================================================================================
+    /// ### Queues up a buffer expansion
+    /// - increases the buffer size to 1.5*(count+current_size)
+    pub fn queue_expansion(&mut self, count: u32, render_device: &RenderDevice){
+        self.planned_actions |= BufferActions::EXPAND;
+        let original_size: u32 = self.active_size;
+        self.active_size += count;
+        self.active_size += self.active_size/2;
+        self.original_instance_buffer = self.instance_buffer.clone();
+        self.instance_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
+            label: Some("Corn Instance Buffer"), 
+            size: self.active_size as u64 * size_of::<PerCornData>() as u64, 
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC, 
+            mapped_at_creation: false
+        }));
+        self.ranges.combine(&vec![original_size..self.active_size]);
+    }
+    /// ###  Queues up a buffer defragmentation
+    /// - creates a new set of ranges corresponding to the defragmented buffer
+    /// - creates the defragmentation structures
+    pub fn queue_defragmentation(&mut self, render_device: &RenderDevice){
+        self.planned_actions |= BufferActions::DEFRAGMENT;
+        self.defragmented_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
+            label: Some("Corn Instance Buffer"), 
+            size: self.active_size as u64 * size_of::<PerCornData>() as u64, 
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC, 
+            mapped_at_creation: false
+        }));
+        self.defragmented_ranges = Some(vec![0..self.active_size]);
+    }
+    /// ### Queues up a buffer shrink operation
+    /// - shrinks the active size, then queues a defragmentation operation
+    pub fn queue_buffer_shrink(&mut self, render_device: &RenderDevice){
+        self.planned_actions |= BufferActions::SHRINK;
+        self.active_size = self.active_size - self.stale_ranges.total() - self.ranges.total();
+        self.active_size += self.active_size / 2;
+        self.queue_defragmentation(render_device);
+    }
+    /// ### Queues up a CPU readback operation
+    pub fn queue_cpu_readback(&mut self, render_device: &RenderDevice){
+        self.planned_actions |= BufferActions::READBACK;
+        self.readback_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
+            label: Some("Corn Instance Readback Buffer"), 
+            size: self.active_size as u64 * size_of::<PerCornData>() as u64, 
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
+            mapped_at_creation: false
+        }));
+    }
+//==========================================================================================
+    /// ### Creates the buffers and bind groups used in the init compute pass
+    pub fn create_init_structures(
+        &mut self, 
+        new_data: Vec<(u32, Vec<Range<u32>>, CornFieldSettings)>, 
+        render_device: &RenderDevice, 
+        pipeline: &CornDataPipeline
+    ){
+        self.planned_actions |= BufferActions::INITIALIZE;
+        self.compute_structures.create_init_structures(
+            new_data,
+            self.stale_ranges.to_owned(),
+            self.instance_buffer.as_ref().unwrap(),
+            render_device,
+            pipeline
+        );
+    }
+    /// ### Creates the buffers and bind groups used in the defrag compute pass
+    pub fn create_defrag_structures(
+        &mut self,
+        id_range_offset: Vec<(u32, Vec<Range<u32>>, u32)>,
+        render_device: &RenderDevice,
+        pipeline: &CornDataPipeline
+    ){
+        self.compute_structures.create_defrag_structures(
+            id_range_offset, 
+            self.instance_buffer.as_ref().unwrap(), 
+            self.defragmented_buffer.as_ref().unwrap(), 
+            render_device, 
+            pipeline
+        );
+    }
+//==========================================================================================
+    /// ### Runs the compute pass
+    /// - Expand
+    /// - Init/Flag Stale
+    /// - Defrag
+    /// - Shrink
+    /// - Readback
+    pub fn run_compute_pass(&self, render_context: &mut RenderContext, world: &World){
+        let pipeline_cache = world.resource::<PipelineCache>();
+        let pipeline = world.resource::<CornDataPipeline>();
+        if self.planned_actions.contains(BufferActions::EXPAND){
+            render_context.command_encoder().copy_buffer_to_buffer(
+                self.original_instance_buffer.as_ref().unwrap(), 
+                0, 
+                self.instance_buffer.as_ref().unwrap(), 
+                0, 
+                self.original_instance_buffer.as_ref().unwrap().size() as u64
+            );
+        }
+        if self.planned_actions.contains(BufferActions::INITIALIZE){
+            if let Some(compute_pipeline) = pipeline_cache.get_compute_pipeline(pipeline.init_id){
+                let mut compute_pass = render_context.command_encoder()
+                .begin_compute_pass(&ComputePassDescriptor {label: Some("Initialize Corn Data Pass") });
+                compute_pass.set_pipeline(&compute_pipeline);
+                compute_pass.set_bind_group(0, self.compute_structures.init_bind_group.as_ref().unwrap(), &[]);
+                compute_pass.dispatch_workgroups((self.compute_structures.total_init_corn as f32 / 256.0).ceil() as u32, 1, 1);
+            }
+        }
+        if self.planned_actions.contains(BufferActions::DEFRAGMENT){
+            if let Some(compute_pipeline) = pipeline_cache.get_compute_pipeline(pipeline.defrag_id){
+                let mut compute_pass = render_context.command_encoder()
+                .begin_compute_pass(&ComputePassDescriptor {label: Some("Defrag Corn Data Pass") });
+                compute_pass.set_pipeline(&compute_pipeline);
+                compute_pass.set_bind_group(0, self.compute_structures.defrag_bind_group.as_ref().unwrap(), &[]);
+                compute_pass.dispatch_workgroups((self.compute_structures.total_defrag_corn as f32 / 256.0).ceil() as u32, 1, 1);
+            }
+        }
+        if self.planned_actions.contains(BufferActions::READBACK){
+            render_context.command_encoder().copy_buffer_to_buffer(
+                self.defragmented_buffer.as_ref().unwrap_or(self.instance_buffer.as_ref().unwrap()), 
+                0, 
+                self.readback_buffer.as_ref().unwrap(), 
+                0, 
+                self.readback_buffer.as_ref().unwrap().size() as u64
+            );
+        }
+    }
+//==========================================================================================
+    /// ### Finishes the expansion operation, swapping the new buffer with the official one
+    pub fn finish_expansion(&mut self, instance_buffer: &mut CornInstanceBuffer, render_device: &RenderDevice){
+        let new_index_buffer = render_device.create_buffer(&BufferDescriptor{ 
+            label: Some("Corn Index Buffer"), 
+            size: self.active_size as u64 * 4u64, 
+            usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
+            mapped_at_creation: false
+        });
+        instance_buffer.swap_data_buffers(
+            self.instance_buffer.as_ref().unwrap(), 
+            &new_index_buffer, 
+            self.active_size);
+        self.original_instance_buffer = None;
+    }
+    /// ### Finishes the defragment operation
+    /// - swaps the defragmented buffer with the official one
+    /// - sets the ranges as our defragmented ranges
+    pub fn finish_defragment(&mut self, instance_buffer: &mut CornInstanceBuffer, render_device: &RenderDevice){
+        let new_index_buffer = render_device.create_buffer(&BufferDescriptor{ 
+            label: Some("Corn Index Buffer"), 
+            size: self.active_size as u64 * 4u64, 
+            usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
+            mapped_at_creation: false
+        });
+        instance_buffer.swap_data_buffers(
+            self.defragmented_buffer.as_ref().unwrap(), 
+            &new_index_buffer, 
+            self.active_size
+        );
+        self.instance_buffer = self.defragmented_buffer.clone();
+        self.defragmented_buffer = None;
+        self.ranges = self.defragmented_ranges.as_ref().unwrap().to_owned();
+        self.defragmented_ranges = None;
+    }
+    /// ### Finishes CPU Readback and prints results to console
+    pub fn finish_cpu_readback(&mut self, render_device: &RenderDevice){
+        let slice = self.readback_buffer.as_ref().unwrap().slice(..);
+        let flag: Arc<Mutex<Box<bool>>> = Arc::new(Mutex::new(Box::new(false)));
+        let flag_captured = flag.clone();
+        slice.map_async(MapMode::Read, move |v|{
+            let mut a = flag_captured.lock().unwrap();
+            **a = v.is_ok().to_owned();
+            drop(a);
+            drop(v);
+        });
+        render_device.poll(Maintain::Wait);
+        let a = flag.lock().unwrap();
+        if **a {
+            let raw = self.readback_buffer.as_ref().unwrap()
+                .slice(..).get_mapped_range()
+                .iter().map(|v| *v).collect::<Vec<u8>>();
+            let data = bytemuck::cast_slice::<u8, PerCornData>(raw.as_slice()).to_vec();
+            for corn in data{
+                println!("{:?}", corn);
+            }
+            println!("");
+        }
+        self.readback_buffer.as_mut().unwrap().destroy();
+        self.readback_buffer = None;
+    }
+//==========================================================================================
+}
+#[derive(Default)]
+/// Stores per frame compute shader values
+pub struct ComputeStructures{
+    /// used in init, list of new and stale data ranges
+    ranges_buffer: Option<Buffer>,
+    /// used in init, list of per corn field settings
+    settings_buffer: Option<Buffer>,
+    /// used in defrag, list of all data ranges
+    defrag_ranges_buffer: Option<Buffer>,
+    /// used in defrag, list of per corn field offsets in defragmented buffer
+    defrag_offset_buffer: Option<Buffer>,
+    /// bind group for the init pass
+    init_bind_group: Option<BindGroup>,
+    /// bind group for the defrag pass
+    defrag_bind_group: Option<BindGroup>,
+    /// total amount of new and stale data
+    total_init_corn: u32,
+    /// total amount of data to copy in defrag stage
+    total_defrag_corn: u32
+}
+impl ComputeStructures{
+    pub fn create_init_structures(
+        &mut self, 
+        new_data: Vec<(u32, Vec<Range<u32>>, CornFieldSettings)>, 
+        stale_data: Vec<Range<u32>>,
+        instance_buffer: &Buffer,
+        render_device: &RenderDevice,
+        pipeline: &CornDataPipeline
+    ){
+        let mut ranges: Vec<ComputeRange> = vec![];
+        let mut settings: Vec<ComputeSettings> = vec![ComputeSettings::default(); 32];
+        for (id, new_ranges, new_settings) in new_data{
+            ranges.extend(new_ranges.into_compute_ranges(id));
+            settings[id as usize] = new_settings.into();
+        }
+        ranges.extend(stale_data.into_compute_ranges(32));
+        self.total_init_corn = ranges.iter().map(|r| r.length).sum();
+        self.ranges_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
+            label: Some("Corn Ranges Buffer"), 
+            usage: BufferUsages::STORAGE,
+            contents: bytemuck::cast_slice(&ranges[..])
+        }));
+        self.settings_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
+            label: Some("Corn Settings Buffer"), 
+            usage: BufferUsages::UNIFORM,
+            contents: bytemuck::cast_slice(&settings[..])
+        }));
+        let init_bind_group = [
+            BindGroupEntry{
+                binding: 0,
+                resource: BindingResource::Buffer(instance_buffer.as_entire_buffer_binding())
+            },
+            BindGroupEntry{
+                binding: 1,
+                resource: BindingResource::Buffer(self.settings_buffer.as_ref().unwrap().as_entire_buffer_binding())
+            },
+            BindGroupEntry{
+                binding: 2,
+                resource: BindingResource::Buffer(self.ranges_buffer.as_ref().unwrap().as_entire_buffer_binding())
+            }            
+        ];
+        self.init_bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
+            label: Some("Corn Init Buffer Bind Group"), 
+            layout: &pipeline.init_bind_group, 
+            entries: &init_bind_group
+        }));
+    }
+    pub fn create_defrag_structures(
+        &mut self,
+        id_range_offset: Vec<(u32, Vec<Range<u32>>, u32)>,
+        instance_buffer: &Buffer,
+        defrag_buffer: &Buffer,
+        render_device: &RenderDevice,
+        pipeline: &CornDataPipeline
+    ){
+        let mut ranges: Vec<ComputeRange> = vec![];
+        let mut sum: u32 = 0;
+        let mut defrag_offsets: [u32; 128] = [0; 128];
+        for (id, old_range, offset) in id_range_offset{
+            sum += old_range.total();
+            ranges.extend(old_range.into_compute_ranges(id));
+            defrag_offsets[id as usize*4] = offset;
+        }
+        self.total_defrag_corn = sum;
+        self.defrag_ranges_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
+            label: Some("Corn Defrag Ranges Buffer"), 
+            usage: BufferUsages::STORAGE,
+            contents: bytemuck::cast_slice(&ranges[..])
+        }));
+        self.defrag_offset_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
+            label: Some("Corn Defrag Offsets Buffer"), 
+            usage: BufferUsages::UNIFORM,
+            contents: bytemuck::cast_slice(&defrag_offsets)
+        }));
+        let defrag_bind_group = [
+            BindGroupEntry{
+                binding: 0,
+                resource: BindingResource::Buffer(self.defrag_ranges_buffer.as_ref().unwrap().as_entire_buffer_binding())
+            },
+            BindGroupEntry{
+                binding: 1,
+                resource: BindingResource::Buffer(self.defrag_offset_buffer.as_ref().unwrap().as_entire_buffer_binding())
+            },
+            BindGroupEntry{
+                binding: 2,
+                resource: BindingResource::Buffer(defrag_buffer.as_entire_buffer_binding())
+            },
+            BindGroupEntry{
+                binding: 3,
+                resource: BindingResource::Buffer(instance_buffer.as_entire_buffer_binding())
+            }
+        ];
+        self.defrag_bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
+            label: Some("Corn Defrag Bind Group"), 
+            layout: &pipeline.defrag_bind_group, 
+            entries: &defrag_bind_group
+        }));
+    }
+    pub fn destroy(&mut self){
+        if let Some(buffer) = self.ranges_buffer.as_ref(){buffer.destroy();}
+        if let Some(buffer) = self.settings_buffer.as_ref(){buffer.destroy();}
+        if let Some(buffer) = self.defrag_offset_buffer.as_ref(){buffer.destroy();}
+        if let Some(buffer) = self.defrag_ranges_buffer.as_ref(){buffer.destroy();}
+    }
+}
+/*========================
+    Random Functionality
+  ========================*/
 pub trait Ranges<T>{
     fn combine(&mut self, other: &Self);
     fn total(&self) -> T;
@@ -57,7 +856,6 @@ impl Ranges<u32> for Vec<Range<u32>>{
         }).collect()
     }
 }
-
 /// Represents the state of the corn instance buffer resource
 #[derive(Default, Debug, PartialEq, Eq, Hash, Clone, States)]
 pub enum InstanceBufferState{
@@ -66,7 +864,6 @@ pub enum InstanceBufferState{
     Initialized,
     Destroy
 }
-
 /// Represents the state of the corn field in the render app
 #[derive(Default, Debug, PartialEq, Eq, Hash, Clone)]
 pub enum CornFieldDataState{
@@ -76,16 +873,6 @@ pub enum CornFieldDataState{
     Loaded,
     Stale
 }
-
-/// Represents the state of the readback buffer in the render app
-#[derive(Default, Debug, PartialEq, Eq, Hash, Clone)]
-pub enum ReadbackBufferState{
-    #[default]
-    Disabled,
-    Copying,
-    Mapping
-}
-
 /// Respresents a Range for use in a compute shader
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
 #[repr(C)]
@@ -97,7 +884,6 @@ pub struct ComputeRange {
     /// instance offset for corresponding corn field
     offset: u32
 }
-
 /// Respresents corn field settings for use in a compute shader
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
 #[repr(C)]
@@ -118,34 +904,15 @@ impl From::<CornFieldSettings> for ComputeSettings{
             ),
             res_width: value.resolution.0 as u32
          };
-         if !output.step.is_finite() || output.step.is_nan() {
-            output.step = Vec2::ZERO;
-            output.origin = value.center;
+         if !output.step.x.is_finite() || output.step.x.is_nan(){
+            output.origin.x = value.center.x;
+            output.step.x = 0.0;
+         }
+         if !output.step.y.is_finite() || output.step.y.is_nan(){
+            output.origin.y = value.center.y;
+            output.step.y = 0.0;
          }
          return output;
-    }
-}
-
-// keeps track of corn fields in the render app
-#[derive(Resource)]
-pub struct RenderAppCornFields{
-    /// hashmap of entity to corresponding render app cornfield
-    corn_fields: HashMap<Entity, CornFieldData>,
-    /// corn fields that were push out of the hashmap but havent been deleted yet
-    displaced_stale_data: VecDeque<CornFieldData>,
-    /// a struct responsible for managing the instance buffer
-    corn_buffer_manager: DynamicBufferManager,
-    /// wether or not to read back the instance buffer data after each change
-    readback_enabled: bool
-}
-impl Default for RenderAppCornFields{
-    fn default() -> Self {
-        Self{
-            corn_fields: HashMap::new(),
-            displaced_stale_data: VecDeque::new(),
-            corn_buffer_manager: DynamicBufferManager::new(),
-            readback_enabled: false
-        }
     }
 }
 /// Per corn field render app data
@@ -158,14 +925,6 @@ pub struct CornFieldData{
     /// (id, range list)
     buffer_settings: Option<(u32, Vec<Range<u32>>)>,
     defragmented_range: Option<Range<u32>>
-}
-/// per corn field configuration settings
-#[derive(Clone, Copy, Debug)]
-pub struct CornFieldSettings{
-    center: Vec3,
-    half_extents: Vec2,
-    resolution: (u32, u32),
-    height_range: Vec2,
 }
 impl CornFieldData{
     pub fn new(center: Vec3, half_extents: Vec2, resolution: (u32, u32), height_range: Vec2) -> Self{
@@ -180,697 +939,27 @@ impl CornFieldData{
         (self.settings.resolution.0*self.settings.resolution.1) as u64
     }
 }
-impl RenderAppCornFields{
-    /// adds a corn field from the main world to the struct
-    pub fn add_data(&mut self, entity: &Entity, field: &CornField){
-        let new_data = CornFieldData::new(
-            field.center, 
-            field.half_extents, 
-            field.resolution, 
-            field.height_range
-        );
-        if let Some(old_data) = self.corn_fields.insert(entity.clone(), new_data){
-            self.displaced_stale_data.push_back(old_data);
-        }
-    }
-    /// given a list of main world entities, find corn fields that no longer exist, and mark them as stale
-    pub fn mark_stale_data(&mut self, real_entities: &Vec<Entity>){
-        let entities: HashSet<Entity> = HashSet::from_iter(real_entities.to_owned().into_iter());
-        self.corn_fields.iter_mut().for_each(|(key, val)| {
-            if !entities.contains(key){val.state = CornFieldDataState::Stale;}
-        });
-    }
-    /// returns an initialization size for the instance buffer based on the total amount of corn currently in the renderapp
-    pub fn get_buffer_init_size(&self) -> u64{
-        self.corn_fields.values().map(|data| data.get_instance_count()).sum()
-    }
-    /// initializes the instance buffer manager
-    pub fn init_buffer_manager(&mut self, instance_count: u32, instance_buffer: &Buffer) {
-        self.corn_buffer_manager.init(instance_count, instance_buffer);
-    }
-    /// deletes stale data and adds is id and ranges back into the system
-    /// Also updates loading corn fields to loaded ones
-    /// returns whether or not there still exists some corn
-    pub fn retire_stale_data(&mut self) -> bool{
-        self.corn_fields.retain(|_, val| {
-            if val.state == CornFieldDataState::Loading{
-                val.state = CornFieldDataState::Loaded;
-                return true;
-            }
-            if val.state!=CornFieldDataState::Stale{return true;}
-            if val.buffer_settings.is_none(){return false;}
-            self.corn_buffer_manager.add_id(val.buffer_settings.as_ref().unwrap().0);
-            self.corn_buffer_manager.add_stale_range(&val.buffer_settings.as_ref().unwrap().1);
-            return false;
-        });
-        return !self.corn_fields.is_empty();
-    }
-    /// returns the total amount of space left in the instance buffer
-    pub fn get_available_space(&self) -> u32 {
-        return self.corn_buffer_manager.get_available_space();
-    }
-    /// gets the total number of new pieces of corn
-    pub fn get_new_instances(&self) -> u32{
-        self.corn_fields.iter().filter_map(|data| {
-            if data.1.state != CornFieldDataState::Loading {return None;}
-            return Some(data.1.get_instance_count() as u32);
-        }).sum()
-    }
-    /// returns new instances - available space, if it is positive, tells us if we need to expand the buffer and by how much
-    pub fn get_buffer_deficit(&self) -> Option<u32>{
-        let open = self.get_available_space();
-        let necessary = self.get_new_instances();
-        if open >= necessary {return None;}
-        return Some(necessary - open);
-    }
-    /// queues up a buffer expansion in the buffer manager
-    pub fn queue_buffer_expansion(&mut self, deficit: u32, render_device: &RenderDevice){
-        self.corn_buffer_manager.expand_by_at_least(deficit, render_device);
-    }
-    /// finishes the expansion logic, swapping the active buffer with the expanded one
-    pub fn finish_expansion(&mut self, instance_buffer: &mut CornInstanceBuffer){
-        self.corn_buffer_manager.finish_expansion(instance_buffer);
-    }
-    /// assigns new data an id from the buffer manager
-    pub fn assign_new_data_ids(&mut self){
-        for (_, data) in self.corn_fields.iter_mut(){
-            if data.state != CornFieldDataState::Uninitialized {continue;}
-            if let Some(id) = self.corn_buffer_manager.get_id(){
-                data.buffer_settings = Some((id, vec![]));
-                data.state = CornFieldDataState::Loading;
-                self.corn_buffer_manager.needs_to_initialize = true;
-            }else{
-                break;
-            }
-        }
-    }
-    /// assigns new data a list of buffer ranges from the buffer manager
-    pub fn assign_new_data_ranges(&mut self){
-        self.corn_fields.iter_mut().filter(|(_, v)| v.state==CornFieldDataState::Loading)
-            .for_each(|(_, data)| 
-        {
-            data.buffer_settings.as_mut().unwrap().1 = self.corn_buffer_manager.get_ranges(data.get_instance_count() as u32);
-        });
-    }
-    /// returns whether or not the buffer is mostly empty: 66%
-    pub fn buffer_is_sparse(&self) -> bool{
-        self.corn_buffer_manager.is_sparse()
-    }
-    /// returns whether or not the buffer is fragmented too much
-    /// Todo: get a metric for fragmentation and a limit here
-    pub fn buffer_is_fragmented(&self) -> bool{return false;}
-    /// queues up a buffer shrink in the buffer manager, also queues up defragmentation as well
-    pub fn queue_buffer_shrink(&mut self, render_device: &RenderDevice){
-        self.corn_buffer_manager.queue_defragmentation(render_device);
-        self.corn_buffer_manager.queue_buffer_shrink(render_device);
-        self.assign_defragmented_ranges();
-    }
-    /// queues up a buffer defragmentation in the buffer manager
-    pub fn queue_buffer_defragmentation(&mut self, render_device: &RenderDevice){
-        self.corn_buffer_manager.queue_defragmentation(render_device);
-        self.assign_defragmented_ranges();
-    }
-    /// assigns each loaded piece of corn a new range in the defragmented buffer
-    pub fn assign_defragmented_ranges(&mut self){
-        self.corn_fields.iter_mut()
-            .filter(|(_, v)| v.state == CornFieldDataState::Loaded || v.state == CornFieldDataState::Loading)
-            .for_each(|(_, data)| 
-        {
-            data.defragmented_range = Some(self.corn_buffer_manager.get_defragmented_range(data.get_instance_count() as u32));
-        });
-    }
-    /// finishes up defrag and shrink commands, swapping their buffers with the active one
-    /// Swaps corn data ranges from olds ones to defrag'd ones
-    pub fn finish_defrag_and_shrink(&mut self, instance_buffer: &mut CornInstanceBuffer){
-        self.corn_fields.iter_mut()
-            .filter(|(_, v)| v.state == CornFieldDataState::Loaded || v.state==CornFieldDataState::Loading)
-            .for_each(|(_, data)| 
-        {
-            if let Some(ranges) = data.defragmented_range.as_ref(){
-                data.buffer_settings.as_mut().unwrap().1 = vec![ranges.to_owned()];
-                data.defragmented_range = None;
-            }
-        });
-        self.corn_buffer_manager.finish_defrag_and_shrink(instance_buffer);
-    }
-    /// returns whether or not there is any changes to be made
-    pub fn update_pending(&self) -> bool{
-        if self.corn_buffer_manager.update_pending() {return true;}
-        return false;
-    }
-    /// queues up a cpu readback operation on the buffer manager
-    pub fn queue_cpu_readback(&mut self, render_device: &RenderDevice){
-        if !self.readback_enabled {return;}
-        if !self.update_pending() && self.corn_buffer_manager.cpu_readback_state == ReadbackBufferState::Disabled {return;}
-        self.corn_buffer_manager.queue_cpu_readback(render_device);
-    }
-    /// finishes cpu readback, printing results to console
-    pub fn finish_cpu_readback(&mut self){self.corn_buffer_manager.finish_cpu_readback();}
-    /// creates compute structures that are needed
-    pub fn create_structures(&mut self, render_device: &RenderDevice){
-        let new_data: Vec<(u32, Vec<Range<u32>>, CornFieldSettings)> = self.corn_fields
-            .iter()
-            .filter_map(|(_, v)| {
-                if v.state!=CornFieldDataState::Loading {return None;}
-                if let Some((id, ranges)) = v.buffer_settings.as_ref(){
-                    return Some((id.to_owned(), ranges.to_owned(), v.settings));
-                }
-                return None;
-            }).collect();
-        self.corn_buffer_manager.create_structures(new_data, render_device);
-        let old_ranges: Vec<(u32, Vec<Range<u32>>)> = self.corn_fields
-            .iter().filter_map(|(_, v)| {
-                if v.state!=CornFieldDataState::Loading && v.state != CornFieldDataState::Loaded {return None;}
-                if let Some((id, ranges)) = v.buffer_settings.as_ref(){
-                    return Some((id.to_owned(), ranges.to_owned()));
-                }
-                return None;
-            }).collect();
-        let offsets: Vec<(u32, u32)> = self.corn_fields
-        .iter().filter_map(|(_, v)| {
-            if v.state!=CornFieldDataState::Loading && v.state != CornFieldDataState::Loaded {return None;}
-            if let Some((id, _)) = v.buffer_settings.as_ref(){
-                if let Some(ranges2) = v.defragmented_range.as_ref(){
-                    return Some((id.to_owned(), ranges2.start));
-                }
-            }
-            return None;
-        }).collect();
-        self.corn_buffer_manager.create_defrag_structures(old_ranges, offsets, render_device);
-    }
-    /// Runs the compute pass
-    pub fn run_compute_pass(&self, render_context: &mut RenderContext, world: &World){
-        self.corn_buffer_manager.run_compute_pass(render_context, world);
-    }
-    /// completely resets the struct
-    pub fn destroy(&mut self){
-        self.corn_fields = HashMap::new();
-        self.displaced_stale_data = VecDeque::new();
-        self.corn_buffer_manager.destroy();
-        self.corn_buffer_manager = DynamicBufferManager::new();
+/// per corn field configuration settings
+#[derive(Clone, Copy, Debug)]
+pub struct CornFieldSettings{
+    center: Vec3,
+    half_extents: Vec2,
+    resolution: (u32, u32),
+    height_range: Vec2,
+}
+bitflags! {
+    /// Flags used to represent the planned actions of the corn data pipeline in the current frame
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct BufferActions: u8{
+        const NONE = 0u8;
+        const EXPAND = 1u8<<0;
+        const INITIALIZE = 1u8<<1;
+        const DEFRAGMENT = 1u8<<2;
+        const SHRINK = (1u8<<3) | Self::DEFRAGMENT.bits();
+        const READBACK = 1u8<<4;
+        const ANY_CHANGE = Self::EXPAND.bits() | Self::INITIALIZE.bits() | Self::SHRINK.bits();
     }
 }
-/// Buffer Management Struct
-#[derive(Default)]
-pub struct DynamicBufferManager{
-    /// Usually points to the same buffer as corn instance buffer, unless it needs to change size
-    initialization_buffer: Option<Buffer>,
-    /// Contains all available, unused id's, 0-31 initially
-    ids: Vec<u32>,
-    /// list of all unused ranges in the instance buffer
-    ranges: Vec<Range<u32>>,
-    /// list of ranges that contain stale data
-    stale_ranges: Vec<Range<u32>>,
-    /// whether or not there is new data to initialize
-    needs_to_initialize: bool,
-    /// expanded index buffer, used when we expand the instance buffer
-    expanded_index_buffer: Option<Buffer>,
-    /// when we expand the instance buffer we keep the original here for when we need to copy its data to the larger buffer
-    original_buffer: Option<Buffer>,
-    /// whether or not we need to expand the buffer
-    needs_to_expand: bool,
-    /// current working size of the buffer: expanding: size of expanded buffer, shrinking: size of shrunken buffer
-    active_size: u32,
-    /// whether or not we need to shrink the buffer 
-    /// If we shrink we also need to defragment
-    needs_to_shrink: bool,
-    /// whether or not we need to defragment the buffer
-    needs_to_defragment: bool,
-    /// buffer where we place defragmented data
-    defragmented_buffer: Option<Buffer>,
-    /// shrunken buffer where we place data
-    shrunken_buffer: Option<Buffer>,
-    /// shrunken index buffer for use when we finally swap our shrunken buffers and active ones
-    shrunken_index_buffer: Option<Buffer>,
-    /// list of ranges of the defragmented buffer.
-    /// ranges are assigned to all data when we queue defragmentation
-    /// realistically, this will only ever have 1 item since portions are only ever taken out, not readded in
-    defragmented_ranges: Option<Vec<Range<u32>>>,
-    /// state of the readback buffer. readback takes 3 frames (copy, map, read) so we need this to track that
-    cpu_readback_state: ReadbackBufferState,
-    /// the buffer we copy instance data to when we read back to the cpu
-    readback_buffer: Option<Buffer>,
-    /// holds compute shader structures necessary for dispatch such as bind groups and constant buffers
-    compute_structures: ComputeStructures
-}
-impl DynamicBufferManager{
-    ///returns empty new struct
-    pub fn new() -> Self{
-        Self { 
-            initialization_buffer: None, 
-            ids: vec![], 
-            ranges: vec![], 
-            stale_ranges: vec![], 
-            needs_to_initialize: false, 
-            expanded_index_buffer: None, 
-            original_buffer: None, 
-            needs_to_expand: false, 
-            active_size: 0, 
-            needs_to_shrink: false, 
-            needs_to_defragment: false, 
-            defragmented_buffer: None, 
-            shrunken_buffer: None, 
-            shrunken_index_buffer: None, 
-            defragmented_ranges: None, 
-            cpu_readback_state: ReadbackBufferState::Disabled, 
-            readback_buffer: None, 
-            compute_structures: ComputeStructures { 
-                ranges_buffer: None, 
-                settings_buffer: None, 
-                defrag_ranges_buffer: None, 
-                defrag_offset_buffer: None, 
-                init_bind_group: None, 
-                defrag_bind_group: None,
-                total_init_corn: 0, 
-                total_defrag_corn: 0 
-            } 
-        }
-    }
-    /// initializes the buffer manager
-    pub fn init(&mut self, instance_count: u32, instance_buffer: &Buffer){
-        self.ids = (0..32).collect();
-        self.ranges = vec![(0..instance_count)];
-        self.active_size = instance_count;
-        self.needs_to_expand = false;
-        self.initialization_buffer = Some(instance_buffer.to_owned());
-        self.expanded_index_buffer = None;
-    }
-    /// adds an id to the available ids
-    pub fn add_id(&mut self, id: u32){
-        self.ids.push(id);
-    }
-    /// adds a list of ranges to the list of stale ranges
-    pub fn add_stale_range(&mut self, stale_ranges: &Vec<Range<u32>>){
-        self.stale_ranges.combine(stale_ranges);
-    }
-    /// converts stale ranges to regular ones
-    pub fn convert_stale_ranges(&mut self){
-        self.ranges.combine(&self.stale_ranges);
-        self.stale_ranges = vec![];
-    }
-    /// returns the total available space one the instace buffer
-    pub fn get_available_space(&self) -> u32{
-        return self.ranges.total() + self.stale_ranges.total();
-    }
-    /// queues up buffer expansion by count size
-    /// expansions expand the buffer by 1.5 times the necessary size
-    pub fn expand_by_at_least(&mut self, count: u32, render_device: &RenderDevice){
-        self.needs_to_expand = true;
-        let original_size: u32 = self.active_size;
-        self.active_size += count;
-        self.active_size += self.active_size/2;
-        self.original_buffer = self.initialization_buffer.clone();
-        self.initialization_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
-            label: Some("Corn Instance Buffer"), 
-            size: self.active_size as u64 * size_of::<PerCornData>() as u64, 
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC, 
-            mapped_at_creation: false
-        }));
-        self.expanded_index_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
-            label: Some("Corn Instance Index Buffer"), 
-            size: self.active_size as u64 * 4, 
-            usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
-            mapped_at_creation: false
-        }));
-        self.ranges.combine(&vec![original_size..self.active_size]);
-    }
-    /// finishes expansions commands by swapping expanded buffer with active one
-    pub fn finish_expansion(&mut self, instance_buffer: &mut CornInstanceBuffer){
-        if !self.needs_to_expand {return;}
-        instance_buffer.swap_data_buffers(
-            self.initialization_buffer.as_ref().unwrap(), 
-            self.expanded_index_buffer.as_ref().unwrap(), 
-            self.active_size);
-        self.needs_to_expand = false;
-        self.expanded_index_buffer = None;
-        self.original_buffer = None;
-    }
-    /// gets an id from the available id's if there is one
-    pub fn get_id(&mut self) -> Option<u32>{
-        self.ids.pop()
-    }
-    /// gets a list of ranges totaling count from the available ranges
-    pub fn get_ranges(&mut self, count: u32) -> Vec<Range<u32>>{
-        let (remaining, mut ranges) = self.stale_ranges.take(count);
-        ranges.combine(&self.ranges.take(remaining).1);
-        return ranges;
-    }
-    /// returns whether or not the buffer is sparse
-    pub fn is_sparse(&self) -> bool{
-        if self.needs_to_expand {return false;}
-        //buffer is sparse if less than 1/3 of the buffer stores values
-        self.ranges.total() + self.stale_ranges.total() > 2*self.active_size/3
-    }
-    /// queues up a defragmentation operation
-    pub fn queue_defragmentation(&mut self, render_device: &RenderDevice){
-        self.needs_to_defragment = true;
-        self.defragmented_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
-            label: Some("Corn Instance Buffer"), 
-            size: self.active_size as u64 * size_of::<PerCornData>() as u64, 
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC, 
-            mapped_at_creation: false
-        }));
-        self.defragmented_ranges = Some(vec![0..self.active_size]);
-    }
-    /// queues up a buffer shrink operation
-    pub fn queue_buffer_shrink(&mut self, render_device: &RenderDevice){
-        self.needs_to_shrink = true;
-        self.active_size = self.active_size - self.stale_ranges.total() - self.ranges.total();
-        self.active_size += self.active_size / 2;
-        self.shrunken_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
-            label: Some("Corn Instance Buffer"), 
-            size: self.active_size as u64 * size_of::<PerCornData>() as u64, 
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC, 
-            mapped_at_creation: false
-        }));
-        self.shrunken_index_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
-            label: Some("Corn Instance Index Buffer"), 
-            size: self.active_size as u64 * 4, 
-            usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
-            mapped_at_creation: false
-        }));
-        self.defragmented_ranges = Some(vec![0..self.active_size]);
-    }
-    /// returns a range of values totaling count from the new defragmented buffer
-    pub fn get_defragmented_range(&mut self, count: u32) -> Range<u32>{
-        // Assumes that we will only get one
-        self.defragmented_ranges.as_mut().unwrap().take(count).1[0].to_owned()
-    }
-    /// finishes defrag and shrink operations
-    /// if we shrunk, shrunken buffer gets swapped with the active one
-    /// other wise if we defraged anyway we swap defrag buffer
-    pub fn finish_defrag_and_shrink(&mut self, instance_buffer: &mut CornInstanceBuffer){
-        if self.needs_to_shrink{
-            instance_buffer.swap_data_buffers(
-                self.shrunken_buffer.as_ref().unwrap(), 
-                self.shrunken_index_buffer.as_ref().unwrap(), 
-                self.active_size
-            );
-            self.needs_to_shrink = false;
-            self.needs_to_defragment = false;
-            self.initialization_buffer = self.shrunken_buffer.clone();
-            self.shrunken_buffer = None;
-            self.defragmented_buffer.as_mut().unwrap().destroy();
-            self.defragmented_buffer = None;
-            self.shrunken_index_buffer = None;
-            self.ranges = self.defragmented_ranges.as_ref().unwrap().to_owned();
-            self.defragmented_ranges = None;
-        }else if self.needs_to_defragment{
-            instance_buffer.swap_only_data_buffer(
-                self.defragmented_buffer.as_ref().unwrap()
-            );
-            self.initialization_buffer = self.defragmented_buffer.clone();
-            self.needs_to_shrink = false;
-            self.needs_to_defragment = false;
-            self.shrunken_buffer = None;
-            self.defragmented_buffer = None;
-            self.shrunken_index_buffer = None;
-            self.ranges = self.defragmented_ranges.as_ref().unwrap().to_owned();
-            self.defragmented_ranges = None;
-        }
-    }
-    /// queues up a cpu readback operation
-    pub fn queue_cpu_readback(&mut self, render_device: &RenderDevice){
-        if self.cpu_readback_state != ReadbackBufferState::Disabled{return;}
-        self.cpu_readback_state = ReadbackBufferState::Copying;
-        self.readback_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
-            label: Some("Corn Instance Readback Buffer"), 
-            size: self.active_size as u64 * size_of::<PerCornData>() as u64, 
-            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
-            mapped_at_creation: false
-        }));
-    }
-    /// returns whether or not there are any updates to the buffer pending
-    pub fn update_pending(&self) -> bool{
-        self.needs_to_defragment || self.needs_to_expand || self.needs_to_initialize
-    }
-    /// finishes cpu readback
-    pub fn finish_cpu_readback(&mut self){
-        if self.cpu_readback_state == ReadbackBufferState::Disabled{return;}
-        if self.cpu_readback_state == ReadbackBufferState::Copying{
-            self.cpu_readback_state = ReadbackBufferState::Mapping;
-            self.readback_buffer.as_ref().unwrap().slice(..).map_async(MapMode::Read, |_|{});
-            return;
-        }
-        let raw = self.readback_buffer.as_ref().unwrap()
-            .slice(..).get_mapped_range()
-            .iter().map(|v| *v).collect::<Vec<u8>>();
-        let data = bytemuck::cast_slice::<u8, PerCornData>(raw.as_slice()).to_vec();
-        for corn in data{
-            println!("{:?}", corn);
-        }
-        println!("");
-        self.readback_buffer.as_mut().unwrap().destroy();
-        self.readback_buffer = None;
-        self.cpu_readback_state = ReadbackBufferState::Disabled;
-    }
-    /// creates the constant buffers needed by the compute passes
-    pub fn create_structures(&mut self, new_data: Vec<(u32, Vec<Range<u32>>, CornFieldSettings)>, render_device: &RenderDevice){
-        self.compute_structures.create_structures(new_data, self.stale_ranges.clone(), render_device);
-    }
-    /// creates the buffers needed by the defrag pass
-    pub fn create_defrag_structures(&mut self, old_ranges: Vec<(u32, Vec<Range<u32>>)>, offsets: Vec<(u32, u32)>, render_device: &RenderDevice){
-        if !self.needs_to_defragment {return;}
-        self.compute_structures.create_defrag_structures(old_ranges, offsets, render_device);
-    }
-    /// creates the bind groups for both compute passes, init and defrag
-    pub fn create_bind_group(&mut self, render_device: &RenderDevice, data_pipeline: &CornDataPipeline){
-        if self.initialization_buffer.is_none() {return;}
-        if self.stale_ranges.len() > 0 || self.needs_to_initialize{
-            self.compute_structures.create_init_bind_group(
-                self.initialization_buffer.as_ref().unwrap(), 
-                render_device, data_pipeline);
-        }
-        if self.needs_to_defragment {
-            self.compute_structures.create_defrag_bind_group(
-                self.initialization_buffer.as_ref().unwrap(), 
-                self.defragmented_buffer.as_ref().unwrap(),
-                render_device, 
-                data_pipeline
-            );
-        }
-    }
-    /// runs the compute pass
-    pub fn run_compute_pass(&self, render_context: &mut RenderContext, world: &World){
-        if self.needs_to_expand{
-            render_context.command_encoder().copy_buffer_to_buffer(
-                self.original_buffer.as_ref().unwrap(), 
-                0, 
-                self.initialization_buffer.as_ref().unwrap(), 
-                0, 
-                self.original_buffer.as_ref().unwrap().size() as u64
-            );
-        }
-        //get pipelines
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let pipeline = world.resource::<CornDataPipeline>();
-        if self.needs_to_initialize{
-            //find our compute pipeline
-            if let Some(compute_pipeline) = pipeline_cache.get_compute_pipeline(pipeline.init_id){
-                //create compute pass
-                let mut compute_pass = render_context.command_encoder()
-                .begin_compute_pass(&ComputePassDescriptor {label: Some("Initialize Corn Data Pass") });
-                compute_pass.set_pipeline(&compute_pipeline);
-                //Set shader inputs
-                compute_pass.set_bind_group(0, self.compute_structures.init_bind_group.as_ref().unwrap(), &[]);
-                compute_pass.dispatch_workgroups((self.compute_structures.total_init_corn as f32 / 256.0).ceil() as u32, 1, 1);
-            }
-        }
-        if self.needs_to_defragment{
-            //find our compute pipeline
-            if let Some(compute_pipeline) = pipeline_cache.get_compute_pipeline(pipeline.defrag_id){
-                //create compute pass
-                let mut compute_pass = render_context.command_encoder()
-                .begin_compute_pass(&ComputePassDescriptor {label: Some("Defrag Corn Data Pass") });
-                compute_pass.set_pipeline(&compute_pipeline);
-                //Set shader inputs
-                compute_pass.set_bind_group(0, self.compute_structures.defrag_bind_group.as_ref().unwrap(), &[]);
-                compute_pass.dispatch_workgroups((self.compute_structures.total_defrag_corn as f32 / 256.0).ceil() as u32, 1, 1);
-            }
-        }
-        if self.needs_to_shrink{
-            render_context.command_encoder().copy_buffer_to_buffer(
-                self.defragmented_buffer.as_ref().unwrap(), 
-                0, 
-                self.shrunken_buffer.as_ref().unwrap(), 
-                0, 
-                self.shrunken_buffer.as_ref().unwrap().size() as u64
-            );
-        }
-        if self.cpu_readback_state == ReadbackBufferState::Copying{
-            if self.needs_to_shrink{
-                render_context.command_encoder().copy_buffer_to_buffer(
-                    self.shrunken_buffer.as_ref().unwrap(), 
-                    0, 
-                    self.readback_buffer.as_ref().unwrap(), 
-                    0, 
-                    self.readback_buffer.as_ref().unwrap().size() as u64
-                );
-            }else{
-                render_context.command_encoder().copy_buffer_to_buffer(
-                    self.initialization_buffer.as_ref().unwrap(), 
-                    0, 
-                    self.readback_buffer.as_ref().unwrap(), 
-                    0, 
-                    self.readback_buffer.as_ref().unwrap().size() as u64
-                );
-            }
-        }
-    }
-    /// destroys the buffers
-    pub fn destroy(&mut self){
-    if let Some(buffer) = self.expanded_index_buffer.as_ref(){buffer.destroy(); self.expanded_index_buffer = None;}
-    if let Some(buffer) = self.original_buffer.as_ref(){buffer.destroy(); self.original_buffer = None;}
-    if let Some(buffer) = self.defragmented_buffer.as_ref(){buffer.destroy(); self.defragmented_buffer = None;}
-    if let Some(buffer) = self.shrunken_buffer.as_ref(){buffer.destroy(); self.shrunken_buffer = None;}
-    if let Some(buffer) = self.shrunken_index_buffer.as_ref(){buffer.destroy(); self.shrunken_index_buffer = None;}
-    if let Some(buffer) = self.readback_buffer.as_ref(){buffer.destroy(); self.readback_buffer = None}
-    self.compute_structures.destroy();
-    }
-}
-#[derive(Default)]
-/// Stores per frame compute shader values
-pub struct ComputeStructures{
-    /// used in init, list of new and stale data ranges
-    ranges_buffer: Option<Buffer>,
-    /// used in init, list of per corn field settings
-    settings_buffer: Option<Buffer>,
-    /// used in defrag, list of all data ranges
-    defrag_ranges_buffer: Option<Buffer>,
-    /// used in defrag, list of per corn field offsets in defragmented buffer
-    defrag_offset_buffer: Option<Buffer>,
-    /// bind group for the init pass
-    init_bind_group: Option<BindGroup>,
-    /// bind group for the defrag pass
-    defrag_bind_group: Option<BindGroup>,
-    /// total amount of new and stale data
-    total_init_corn: u32,
-    /// total amount of data to copy in defrag stage
-    total_defrag_corn: u32
-}
-impl ComputeStructures{
-    pub fn create_structures(
-        &mut self, 
-        new_data: Vec<(u32, Vec<Range<u32>>, CornFieldSettings)>, 
-        stale_data: Vec<Range<u32>>,
-        render_device: &RenderDevice
-    ){
-        if let Some(buffer) = self.ranges_buffer.as_mut(){buffer.destroy(); self.ranges_buffer = None;}
-        if let Some(buffer) = self.settings_buffer.as_mut(){buffer.destroy(); self.settings_buffer = None;}
-        let mut ranges: Vec<ComputeRange> = vec![];
-        let mut settings: Vec<ComputeSettings> = vec![ComputeSettings::default(); 32];
-        for (id, new_ranges, new_settings) in new_data{
-            ranges.extend(new_ranges.into_compute_ranges(id));
-            settings[id as usize] = new_settings.into();
-        }
-        ranges.extend(stale_data.into_compute_ranges(32));
-        self.total_init_corn = ranges.iter().map(|r| r.length).sum();
-        self.ranges_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
-            label: Some("Corn Ranges Buffer"), 
-            usage: BufferUsages::STORAGE,
-            contents: bytemuck::cast_slice(&ranges[..])
-        }));
-        self.settings_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
-            label: Some("Corn Settings Buffer"), 
-            usage: BufferUsages::UNIFORM,
-            contents: bytemuck::cast_slice(&settings[..])
-        }));
-    }
-    pub fn create_defrag_structures(
-        &mut self, 
-        old_ranges: Vec<(u32, Vec<Range<u32>>)>,
-        offsets: Vec<(u32, u32)>,
-        render_device: &RenderDevice
-    ){
-        if let Some(buffer) = self.defrag_offset_buffer.as_mut(){buffer.destroy(); self.defrag_offset_buffer = None;}
-        if let Some(buffer) = self.defrag_ranges_buffer.as_mut(){buffer.destroy(); self.defrag_ranges_buffer = None;}
-        let mut ranges: Vec<ComputeRange> = vec![];
-        let mut sum: u32 = 0;
-        for (id, old_range) in old_ranges{
-            sum += old_range.total();
-            ranges.extend(old_range.into_compute_ranges(id));
-        }
-        self.total_defrag_corn = sum;
-        let mut defrag_offsets: [u32; 128] = [0; 128];
-        for (id, offset) in offsets{
-            defrag_offsets[id as usize*4] = offset;
-        }
-        self.defrag_ranges_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
-            label: Some("Corn Defrag Ranges Buffer"), 
-            usage: BufferUsages::STORAGE,
-            contents: bytemuck::cast_slice(&ranges[..])
-        }));
-        self.defrag_offset_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
-            label: Some("Corn Defrag Offsets Buffer"), 
-            usage: BufferUsages::UNIFORM,
-            contents: bytemuck::cast_slice(&defrag_offsets)
-        }));
-    }
-    pub fn create_init_bind_group(
-        &mut self, 
-        instance_buffer: &Buffer,
-        render_device: &RenderDevice, 
-        data_pipeline: &CornDataPipeline
-    ){
-        let init_bind_group = [
-            BindGroupEntry{
-                binding: 0,
-                resource: BindingResource::Buffer(instance_buffer.as_entire_buffer_binding())
-            },
-            BindGroupEntry{
-                binding: 1,
-                resource: BindingResource::Buffer(self.settings_buffer.as_ref().unwrap().as_entire_buffer_binding())
-            },
-            BindGroupEntry{
-                binding: 2,
-                resource: BindingResource::Buffer(self.ranges_buffer.as_ref().unwrap().as_entire_buffer_binding())
-            }            
-        ];
-        self.init_bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
-            label: Some("Corn Init Buffer Bind Group"), 
-            layout: &data_pipeline.init_bind_group, 
-            entries: &init_bind_group
-        }));
-    }
-    pub fn create_defrag_bind_group(
-        &mut self,
-        instance_buffer: &Buffer,
-        defrag_buffer: &Buffer,
-        render_device: &RenderDevice,
-        data_pipeline: &CornDataPipeline
-    ){
-        let defrag_bind_group = [
-            BindGroupEntry{
-                binding: 0,
-                resource: BindingResource::Buffer(self.defrag_ranges_buffer.as_ref().unwrap().as_entire_buffer_binding())
-            },
-            BindGroupEntry{
-                binding: 1,
-                resource: BindingResource::Buffer(self.defrag_offset_buffer.as_ref().unwrap().as_entire_buffer_binding())
-            },
-            BindGroupEntry{
-                binding: 2,
-                resource: BindingResource::Buffer(defrag_buffer.as_entire_buffer_binding())
-            },
-            BindGroupEntry{
-                binding: 3,
-                resource: BindingResource::Buffer(instance_buffer.as_entire_buffer_binding())
-            }
-        ];
-        self.defrag_bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
-            label: Some("Corn Defrag Bind Group"), 
-            layout: &data_pipeline.defrag_bind_group, 
-            entries: &defrag_bind_group
-        }));
-    }
-    pub fn destroy(&mut self){
-        if let Some(buffer) = self.ranges_buffer.as_ref() {buffer.destroy();}
-        if let Some(buffer) = self.settings_buffer.as_ref() {buffer.destroy();}
-        if let Some(buffer) = self.defrag_offset_buffer.as_ref() {buffer.destroy();}
-        if let Some(buffer) = self.defrag_ranges_buffer.as_ref() {buffer.destroy();}
-    }
-}
-
 /// Pipeline struct 
 #[derive(Resource)]
 pub struct CornDataPipeline{
@@ -984,111 +1073,9 @@ impl FromWorld for CornDataPipeline {
         Self{init_id: init_pipeline, defrag_id: defrag_pipeline, init_bind_group, defrag_bind_group}
     }
 }
-
-/// Always runs, copying corn fields from the main world to the render world
-pub fn extract_corn_fields(
-    corn_fields: Extract<Query<(Entity, Ref<CornField>)>>,
-    mut corn_res: ResMut<RenderAppCornFields>
-){
-    corn_fields.iter().filter(|(_, f)| f.is_changed()).for_each(|(e, f)| {
-        corn_res.add_data(&e, f.as_ref());
-    });
-    let entities: Vec<Entity> = corn_fields.iter().map(|(e, _)| e).collect();
-    corn_res.mark_stale_data(&entities);
-}
-/// Runs if the instance buffer is not initialized, and creates it when there is corn field data in the game
-pub fn initialize_instance_buffer(
-    mut instance_buffer: ResMut<CornInstanceBuffer>,
-    mut corn_fields: ResMut<RenderAppCornFields>,
-    render_device: Res<RenderDevice>,
-    mut next_state: ResMut<NextState<InstanceBufferState>>
-){
-    if corn_fields.corn_fields.is_empty(){return;}
-    if instance_buffer.initialize_data(&render_device, corn_fields.get_buffer_init_size()){
-        corn_fields.init_buffer_manager(instance_buffer.get_instance_count(), instance_buffer.get_instance_buffer().unwrap());
-        next_state.set(InstanceBufferState::Initialized);
-    }
-}
-/// Finish up Previous Frames work
-pub fn finish_previous_frame_work(
-    mut corn_fields: ResMut<RenderAppCornFields>,
-    mut instance_buffer: ResMut<CornInstanceBuffer>
-){
-    // convert stale ranges to regular ones, since current stale ranges were fixed last frame
-    // has to happen before finish shrink
-    corn_fields.corn_buffer_manager.convert_stale_ranges();
-    corn_fields.finish_expansion(instance_buffer.as_mut());
-    corn_fields.finish_defrag_and_shrink(instance_buffer.as_mut());
-    corn_fields.finish_cpu_readback();
-    corn_fields.corn_buffer_manager.needs_to_initialize = false;
-}
-/// Setup current frame new data and stale data, as well as buffer expansion, shrinking, and defregmentation
-/// Also sets up cpu readback if enabled
-pub fn manage_corn_data(
-    mut corn_fields: ResMut<RenderAppCornFields>,
-    render_device: Res<RenderDevice>,
-    mut next_state: ResMut<NextState<InstanceBufferState>>
-){
-    //Free up stale data ranges and ids, putting the ranges into a list for future flagging
-    // if no more data exists, reset everything and set instance buffer state to destroy
-     if !corn_fields.retire_stale_data() {
-        corn_fields.destroy();
-        next_state.set(InstanceBufferState::Destroy)
-     };
-    //Let new data grab an id from the buffer manager
-    //updates state to loading if it got an id
-    corn_fields.assign_new_data_ids();
-    //If need be, queue up a buffer expansion. doesnt include data that cant get an id
-    if let Some(deficit) = corn_fields.get_buffer_deficit(){
-        corn_fields.queue_buffer_expansion(deficit, &render_device);
-    }
-    //assign ranges to new data
-    corn_fields.assign_new_data_ranges();
-    //Queue up defragmentation and shrinkin if the buffer is too large
-    if corn_fields.buffer_is_sparse(){
-        corn_fields.queue_buffer_shrink(&render_device);
-    }else if corn_fields.buffer_is_fragmented(){
-        corn_fields.queue_buffer_defragmentation(&render_device);
-    }
-    //readback data from the gpu if needed
-    corn_fields.queue_cpu_readback(&render_device);
-}
-/// Sets up constant buffers for the initialization and defragementation shaders
-pub fn prepare_compute_structures(
-    mut corn_fields: ResMut<RenderAppCornFields>,
-    render_device: Res<RenderDevice>,
-    pipeline: Res<CornDataPipeline>,
-){
-    if !corn_fields.update_pending() {return;}
-    corn_fields.create_structures(&render_device);
-    corn_fields.corn_buffer_manager.create_bind_group(&render_device, &pipeline);
-}
-/// destroys the corn instance buffer and sets instance buffer state to uninitialized
-pub fn destroy_buffer(
-    mut instance_buffer: ResMut<CornInstanceBuffer>,
-    mut next_state: ResMut<NextState<InstanceBufferState>>
-){
-    instance_buffer.destroy();
-    next_state.set(InstanceBufferState::Uninitialized);
-}
-pub struct CornDataPipelineNode{}
-impl Node for CornDataPipelineNode{
-    fn run(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext,
-        world: &World,
-    ) -> Result<(), bevy::render::render_graph::NodeRunError> {
-        //get corn fields resource
-        let corn_res = world.get_resource::<RenderAppCornFields>();
-        if corn_res.is_none() {return Ok(());}
-        let corn_res = corn_res.unwrap();
-        //expand the buffer
-        corn_res.run_compute_pass(render_context, world);
-        return Ok(());
-    }
-}
-
+/*==========
+    Plugin
+  ==========*/
 /// Main plugin for the corn data pipeline
 pub struct CornFieldDataPipelinePlugin;
 impl Plugin for CornFieldDataPipelinePlugin {
@@ -1099,15 +1086,9 @@ impl Plugin for CornFieldDataPipelinePlugin {
             .add_systems(ExtractSchedule, extract_corn_fields)
             .add_systems(Render, (
                 initialize_instance_buffer.in_set(RenderSet::Prepare).run_if(in_state(InstanceBufferState::Uninitialized)),
-                (
-                    finish_previous_frame_work,
-                    manage_corn_data.after(finish_previous_frame_work),
-                    prepare_compute_structures.after(manage_corn_data)
-                ).in_set(RenderSet::Prepare).run_if(in_state(InstanceBufferState::Initialized)),
-                (
-                    destroy_buffer.run_if(in_state(InstanceBufferState::Destroy)),
-                    apply_state_transition::<InstanceBufferState>.after(destroy_buffer)
-                ).in_set(RenderSet::Cleanup)
+                prepare_corn_data.in_set(RenderSet::Prepare).run_if(in_state(InstanceBufferState::Initialized)),
+                cleanup_corn_data.in_set(RenderSet::Cleanup).run_if(in_state(InstanceBufferState::Initialized)),
+                apply_state_transition::<InstanceBufferState>.in_set(RenderSet::Cleanup).after(cleanup_corn_data)
             ))
         .world.get_resource_mut::<RenderGraph>().unwrap()
             .add_node("Corn Buffer Data Pipeline", CornDataPipelineNode{});

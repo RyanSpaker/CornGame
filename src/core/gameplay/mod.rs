@@ -44,6 +44,44 @@ fn exit_state_on_key<T: States + Copy>(
 pub struct CornDespawn(Vec<Entity>);
 
 fn spawn_corn(mut commands: Commands, frames: Res<FrameCount>, mut despawn_corn: ResMut<CornDespawn>){
+    /*
+    if frames.0 == 100u32{
+        despawn_corn.0.push(commands.spawn((
+            SpatialBundle::INHERITED_IDENTITY,
+            CornField::new(
+                Vec3::ZERO, 
+                Vec2::ONE, 
+                (3, 3),
+                Vec2::new(0.8, 1.2)
+            ),
+            NoFrustumCulling
+        )).id());
+    }else if frames.0 == 200u32{
+        commands.spawn((
+            SpatialBundle::INHERITED_IDENTITY,
+            CornField::new(
+                Vec3::ZERO, 
+                Vec2::ONE, 
+                (2, 2),
+                Vec2::new(0.8, 1.2)
+            ),
+            NoFrustumCulling
+        ));
+    }else if frames.0 == 300u32{
+        commands.entity(despawn_corn.0[0]).despawn();
+    }else if frames.0 == 400u32{
+        commands.spawn((
+            SpatialBundle::INHERITED_IDENTITY,
+            CornField::new(
+                Vec3::ZERO, 
+                Vec2::ONE, 
+                (3, 3),
+                Vec2::new(0.8, 1.2)
+            ),
+            NoFrustumCulling
+        ));
+    }*/
+    
     if frames.0%1u32 == 0u32{
         let mut rng = thread_rng();
         let rand: f32 = rng.gen_range(0.0..100.0);
