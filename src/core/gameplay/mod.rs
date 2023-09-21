@@ -1,4 +1,5 @@
 use bevy::{prelude::*, core::FrameCount, render::view::NoFrustumCulling};
+use rand::{thread_rng, Rng};
 use crate::{flycam::{cam_look_plugin::CamLookPlugin, cam_move_plugin::CamMovePlugin}, ecs::corn_field::CornField};
 
 #[derive(Resource, Default)]
@@ -40,32 +41,30 @@ fn exit_state_on_key<T: States + Copy>(
 }
 
 #[derive(Resource, Default)]
-pub struct CornDespawn(Option<Entity>);
+pub struct CornDespawn(Vec<Entity>);
 
 fn spawn_corn(mut commands: Commands, frames: Res<FrameCount>, mut despawn_corn: ResMut<CornDespawn>){
-    if frames.0 == 100{
-        despawn_corn.0 = Some(commands.spawn((
-            SpatialBundle::INHERITED_IDENTITY,
-            CornField::new(
-                Vec3::ZERO, 
-                Vec2::ONE*3.0, 
-                (3, 3),
-                Vec2::new(0.8, 1.2)
-            ),
-            NoFrustumCulling
-        )).id());
-    }else if frames.0 == 200{
-        commands.entity(despawn_corn.0.unwrap()).despawn();
-    }else if frames.0 == 300{
-        commands.spawn((
-            SpatialBundle::INHERITED_IDENTITY,
-            CornField::new(
-                Vec3::ZERO, 
-                Vec2::ONE*3.0, 
-                (2, 2),
-                Vec2::new(0.8, 1.2)
-            ),
-            NoFrustumCulling
-        ));
+    if frames.0%1u32 == 0u32{
+        let mut rng = thread_rng();
+        let rand: f32 = rng.gen_range(0.0..100.0);
+        if rand < 50.0 || despawn_corn.0.len()>31{
+            if despawn_corn.0.len() > 0{
+                let rand_corn = rng.gen_range(0..despawn_corn.0.len()) as usize;
+                commands.entity(despawn_corn.0[rand_corn]).despawn();
+                despawn_corn.0.remove(rand_corn);
+            }
+        }else{
+            let rand_count = rng.gen_range(1..50);
+            despawn_corn.0.push(commands.spawn((
+                SpatialBundle::INHERITED_IDENTITY,
+                CornField::new(
+                    Vec3::ZERO, 
+                    Vec2::ONE, 
+                    (rand_count, 1),
+                    Vec2::new(0.8, 1.2)
+                ),
+                NoFrustumCulling
+            )).id());
+        }
     }
 }
