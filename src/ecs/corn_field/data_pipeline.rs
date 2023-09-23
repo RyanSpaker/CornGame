@@ -614,32 +614,21 @@ impl DynamicBufferManager{
 //==========================================================================================
     /// ### Finishes the expansion operation, swapping the new buffer with the official one
     pub fn finish_expansion(&mut self, instance_buffer: &mut CornInstanceBuffer, render_device: &RenderDevice){
-        let new_index_buffer = render_device.create_buffer(&BufferDescriptor{ 
-            label: Some("Corn Index Buffer"), 
-            size: self.active_size as u64 * 4u64, 
-            usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
-            mapped_at_creation: false
-        });
         instance_buffer.swap_data_buffers(
-            self.instance_buffer.as_ref().unwrap(), 
-            &new_index_buffer, 
-            self.active_size);
+            self.instance_buffer.as_ref().unwrap(),
+            self.active_size,
+            render_device
+        );
         self.original_instance_buffer = None;
     }
     /// ### Finishes the defragment operation
     /// - swaps the defragmented buffer with the official one
     /// - sets the ranges as our defragmented ranges
     pub fn finish_defragment(&mut self, instance_buffer: &mut CornInstanceBuffer, render_device: &RenderDevice){
-        let new_index_buffer = render_device.create_buffer(&BufferDescriptor{ 
-            label: Some("Corn Index Buffer"), 
-            size: self.active_size as u64 * 4u64, 
-            usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
-            mapped_at_creation: false
-        });
         instance_buffer.swap_data_buffers(
-            self.defragmented_buffer.as_ref().unwrap(), 
-            &new_index_buffer, 
-            self.active_size
+            self.defragmented_buffer.as_ref().unwrap(),
+            self.active_size,
+            render_device
         );
         self.instance_buffer = self.defragmented_buffer.clone();
         self.defragmented_buffer = None;
@@ -1049,10 +1038,10 @@ impl FromWorld for CornDataPipeline {
         );
         let init_shader = world
             .resource::<AssetServer>()
-            .load("shaders/corn_data_init.wgsl");
+            .load("shaders/corn/init.wgsl");
         let defrag_shader = world
             .resource::<AssetServer>()
-            .load("shaders/corn_data_defrag.wgsl");
+            .load("shaders/corn/defrag.wgsl");
         let pipeline_cache = world.resource::<PipelineCache>();
         let init_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: Some("Initialize Corn Pipeline".into()),
