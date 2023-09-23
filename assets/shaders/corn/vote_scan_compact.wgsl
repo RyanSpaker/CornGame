@@ -1,22 +1,20 @@
-struct PerCornData {
-  offset: vec3<f32>,
-  scale: f32,
-  rotation: vec2<f32>,
-  uuid: u32,
-  enabled: u32
-}
+#import corn_game::corn PerCornData
+#import corn_game::lod LOD_COUNT, INDIRECT_COUNT
+
 @group(0) @binding(0)
 var<storage,read_write> instance_data: array<PerCornData>;
 @group(0) @binding(1)
 var<storage,read_write> vote_scan_buffer: array<vec2<u32>>;
-//# of level of details plus one for not rendered
-const LOD_COUNT: u32 = 6u;
 var<workgroup> temp_scan_buffer: array<array<u32, 256>, LOD_COUNT>;
 @group(0) @binding(2)
 var<storage, read_write> count_buffer: array<array<u32, LOD_COUNT>>;
 
 @compute @workgroup_size(128, 1, 1)
-fn vote_scan_1(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
+fn vote_scan(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
+  for(var j: u32 = 0u; j < LOD_COUNT; j++){
+    count_buffer[gid.x+wid.x][j] = 0u;
+    count_buffer2[gid.x+wid.x][j] = 0u;
+  }
   //Vote:
   let lod1: u32 = (instance_data[2u*gid.x].enabled + LOD_COUNT-(1u))%(LOD_COUNT);
   let lod2: u32 = (instance_data[2u*gid.x+1u].enabled + LOD_COUNT-(1u))%(LOD_COUNT);
@@ -66,7 +64,7 @@ fn vote_scan_1(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_inv
 var<storage, read_write> count_buffer2: array<array<u32, LOD_COUNT>>;
 
 @compute @workgroup_size(128, 1, 1)
-fn scan_2(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
+fn group_scan_1(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
   for(var j: u32 = 0u; j < LOD_COUNT; j++){
     temp_scan_buffer[j][2u*lid.x] = count_buffer[2u*gid.x][j];
     temp_scan_buffer[j][2u*lid.x+1u] = count_buffer[2u*gid.x+1u][j];
@@ -120,13 +118,12 @@ struct DrawIndexedIndirect {
   vertex_offset: i32,
   first_instance: u32
 }
-//LOD count * 5
-const INDIRECT_COUNT: u32 = 25u;
+
 @group(0) @binding(4)
 var<storage, read_write> indirect_buffer: array<u32, INDIRECT_COUNT>;
 
 @compute @workgroup_size(128, 1, 1)
-fn scan_3(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+fn group_scan_2(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
   for(var j: u32 = 0u; j < LOD_COUNT; j++){
     temp_scan_buffer[j][2u*lid.x] = count_buffer2[2u*gid.x][j];
     temp_scan_buffer[j][2u*lid.x+1u] = count_buffer2[2u*gid.x+1u][j];
@@ -175,7 +172,7 @@ fn scan_3(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocati
   }
 }
 
-@group(0) @binding(0)
+@group(0) @binding(5)
 var<storage,read_write> instance_index_buffer: array<u32>;
 
 @compute @workgroup_size(128, 1, 1)

@@ -7,11 +7,12 @@ use bevy::{
     render::{
         render_resource::*,
         renderer::RenderDevice, 
-        RenderApp, extract_component::ExtractComponent,
+        RenderApp, extract_component::ExtractComponent, RenderSet, Render,
     }
 };
 use bytemuck::{Pod, Zeroable};
-use self::data_pipeline::CornFieldDataPipelinePlugin;
+use crate::prelude::corn_model::{CornMeshes, CornLodCount};
+use self::{data_pipeline::CornFieldDataPipelinePlugin, scan_prepass::CornBufferPrepassPlugin};
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
 #[repr(C)]
@@ -69,20 +70,25 @@ impl CornInstanceBuffer{
         }
         return true;
     }
-    pub fn update_indirect(&mut self, render_device: &RenderDevice, lod_count: u32){
+    pub fn update_indirect(&mut self, render_device: &RenderDevice, lod_count: u32, meshes: &CornMeshes){
+        let mut data = vec![vec![0u32; 5]; lod_count as usize];
+        for i in 0..lod_count{
+            data[i as usize][0] = meshes.vertex_counts[i as usize].2 as u32;
+            data[i as usize][2] = meshes.vertex_counts[i as usize].0 as u32;
+        }
+        let data: Vec<u32> = data.into_iter().flat_map(|vec| vec.into_iter()).collect();
         if self.indirect_buffer.is_none() || self.lod_count != lod_count{
-            self.indirect_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
+            self.indirect_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
                 label: Some("Corn Indirect Buffer"), 
-                size: lod_count as u64 * 20, 
-                usage: BufferUsages::STORAGE | BufferUsages::INDIRECT, 
-                mapped_at_creation: false
+                usage: BufferUsages::STORAGE | BufferUsages::INDIRECT,
+                contents: bytemuck::cast_slice(data.as_slice())
             }));
             self.lod_count = lod_count
         }
     }
     pub fn get_instance_count(&self) -> u32 {return self.data_count;}
     pub fn get_instance_buffer(&self) -> Option<&Buffer> {return self.data_buffer.as_ref()}
-    pub fn swap_data_buffers(&mut self, new_data: &Buffer, new_index: &Buffer, new_size: u32){
+    pub fn swap_data_buffers(&mut self, new_data: &Buffer, new_size: u32, render_device: &RenderDevice){
         if let Some(buffer) = self.data_buffer.as_mut(){
             buffer.destroy();
         }
@@ -90,20 +96,33 @@ impl CornInstanceBuffer{
             buffer.destroy();
         }
         self.data_buffer = Some(new_data.to_owned());
-        self.index_buffer = Some(new_index.to_owned());
+        self.index_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
+            label: Some("Corn Instance Index Buffer"), 
+            size: new_size as u64 * 4, 
+            usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
+            mapped_at_creation: false
+        }));
         self.data_count = new_size;
-    }
-    pub fn swap_only_data_buffer(&mut self, new_data: &Buffer){
-        if let Some(buffer) = self.data_buffer.as_mut(){
-            buffer.destroy();
-        }
-        self.data_buffer = Some(new_data.to_owned());
     }
     pub fn destroy(&mut self){
         if let Some(buffer) = self.data_buffer.as_ref(){buffer.destroy(); self.data_buffer = None;}
         if let Some(buffer) = self.index_buffer.as_ref(){buffer.destroy(); self.index_buffer = None;}
         self.data_count = 0;
     }
+    pub fn ready_to_read(&self) -> bool{
+        return self.data_buffer.is_some() && self.index_buffer.is_some() && self.indirect_buffer.is_some();
+    }
+}
+
+/// Makes sure the instance buffer's indirect buffer has the correct size
+pub fn update_indirect_buffer(
+    mut instance_buffer: ResMut<CornInstanceBuffer>,
+    render_device: Res<RenderDevice>,
+    meshes: Res<CornMeshes>,
+    lod_count: Res<CornLodCount>
+){
+    if !meshes.loaded || instance_buffer.data_count == 0{return;}
+    instance_buffer.update_indirect(&render_device, lod_count.0, &meshes);
 }
 
 /// Plugin that adds all of the corn field component functionality to the game
@@ -111,8 +130,9 @@ pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins(CornFieldDataPipelinePlugin)
+            .add_plugins((CornFieldDataPipelinePlugin, CornBufferPrepassPlugin{}))
         .sub_app_mut(RenderApp)
-            .init_resource::<CornInstanceBuffer>();
+            .init_resource::<CornInstanceBuffer>()
+            .add_systems(Render, update_indirect_buffer.in_set(RenderSet::Cleanup));
     }
 }

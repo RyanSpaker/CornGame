@@ -36,6 +36,9 @@ impl Default for CornMeshes{
     }
 }
 
+#[derive(Resource, Copy, Clone, Debug, Default)]
+pub struct CornLodCount(pub u32);
+
 /*
     Loading Functionality:
 */
@@ -68,6 +71,7 @@ impl<T> Plugin for LoadCornPlugin<T> where T: States + Copy{
             .add_event::<CornGltfLoadedEvent>()
             .init_resource::<CornMeshes>()
             .init_resource::<CornGLTFHandle>()
+            .init_resource::<CornLodCount>()
             .add_systems(OnEnter(self.active_state), add_corn_load_task)
             .add_systems(Update, (
                 save_corn_models.run_if(corn_model_loaded.and_then(run_once())),
@@ -78,6 +82,7 @@ impl<T> Plugin for LoadCornPlugin<T> where T: States + Copy{
         //Setup renderapp cornmeshes resource
         app.get_sub_app_mut(RenderApp).expect("RenderApp Doesnt Exist?")
             .init_resource::<CornMeshes>()
+            .init_resource::<CornLodCount>()
             .add_systems(ExtractSchedule, clone_corn_resource);
     }
 }
@@ -109,6 +114,7 @@ fn corn_model_loaded(
 }
 fn save_corn_models(
     mut storage: ResMut<CornMeshes>,
+    mut lod_count: ResMut<CornLodCount>,
     corn_gltf_handle: Res<CornGLTFHandle>,
     gltf_assets: Res<Assets<Gltf>>,
     gltf_mesh_assets: Res<Assets<GltfMesh>>,
@@ -131,6 +137,7 @@ fn save_corn_models(
         }).collect();
         unsorted.sort_by(|a, b| a.0.cmp(&b.0));
         storage.lod_groups = unsorted.into_iter().map(|(_, b)| b).collect();
+        lod_count.0 = storage.lod_groups.len() as u32;
         storage.material_count = materials.len();
         ev_writer.send(CornGltfLoadedEvent{});
     }
@@ -210,8 +217,16 @@ fn handle_combine_corn_tasks(
     }
 }
 
-fn clone_corn_resource(mut render_corn: ResMut<CornMeshes>, main_corn: Extract<Res<CornMeshes>>){
-    if !main_corn.loaded{return;}
-    if render_corn.loaded && !main_corn.is_changed(){return;}
-    *render_corn = main_corn.clone();
+fn clone_corn_resource(
+    mut render_corn: ResMut<CornMeshes>, 
+    main_corn: Extract<Res<CornMeshes>>,
+    mut render_lods: ResMut<CornLodCount>,
+    main_lods: Extract<Res<CornLodCount>>
+){
+    if main_corn.loaded && (!render_corn.loaded || main_corn.is_changed()){
+        *render_corn = main_corn.clone();
+    }
+    if main_corn.loaded && (main_lods.is_changed() || render_lods.0==0){
+        render_lods.0 = main_lods.0;
+    }
 }

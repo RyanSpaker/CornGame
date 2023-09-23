@@ -56,6 +56,3 @@ pub fn exit_game(
     exit.send(AppExit{});
 }
 
-pub trait StatePlugin<T>: Plugin where T: States + Copy{
-
-}
