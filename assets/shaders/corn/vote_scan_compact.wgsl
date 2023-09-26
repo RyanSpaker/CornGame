@@ -1,5 +1,15 @@
 #import corn_game::corn PerCornData
-#import corn_game::lod LOD_COUNT, INDIRECT_COUNT
+
+#ifdef OVERRIDE_LOD_COUNT
+const LOD_COUNT = #{OVERRIDE_LOD_COUNT}u;
+#else
+const LOD_COUNT = 2u;
+#endif
+#ifdef OVERRIDE_INDIRECT_COUNT
+const INDIRECT_COUNT = #{OVERRIDE_INDIRECT_COUNT}u;
+#else
+const INDIRECT_COUNT = 5u;
+#endif
 
 @group(0) @binding(0)
 var<storage,read_write> instance_data: array<PerCornData>;
@@ -173,14 +183,18 @@ fn group_scan_2(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_in
 }
 
 @group(0) @binding(5)
-var<storage,read_write> instance_index_buffer: array<u32>;
+var<storage,read_write> instance_index_buffer: array<PerCornData>;
 
 @compute @workgroup_size(128, 1, 1)
 fn compact(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
-  var lod = vote_scan_buffer[2u*gid.x].x;
-  var offset = vote_scan_buffer[2u*gid.x].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
-  instance_index_buffer[offset] = gid.x*2u;
-  lod = vote_scan_buffer[2u*gid.x+1u].x;
-  offset = vote_scan_buffer[2u*gid.x+1u].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
-  instance_index_buffer[offset] = gid.x*2u+1u;
+  if 2u*gid.x < indirect_buffer[INDIRECT_COUNT - (1u)]{
+    let lod = vote_scan_buffer[2u*gid.x].x;
+    let offset = vote_scan_buffer[2u*gid.x].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
+    instance_index_buffer[offset] = instance_data[gid.x*2u];
+  }
+  if 2u*gid.x+1u < indirect_buffer[INDIRECT_COUNT - (1u)]{
+    let lod = vote_scan_buffer[2u*gid.x+1u].x;
+    let offset = vote_scan_buffer[2u*gid.x+1u].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
+    instance_index_buffer[offset] = instance_data[gid.x*2u+1u];
+  }
 }

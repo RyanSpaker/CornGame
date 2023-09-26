@@ -15,7 +15,9 @@ pub fn extract_corn_fields(
     corn_fields: Extract<Query<(Entity, Ref<CornField>)>>,
     mut corn_res: ResMut<RenderAppCornFields>
 ){
-    corn_fields.iter().filter(|(_, f)| f.is_changed()).for_each(|(e, f)| {
+    corn_fields.iter().filter(|(_, f)| f.is_changed())
+        .for_each(|(e, f)| 
+    {
         corn_res.add_corn_field(&e, f.as_ref());
     });
     let entities: Vec<Entity> = corn_fields.iter().map(|(e, _)| e).collect();
@@ -165,7 +167,7 @@ pub struct RenderAppCornFields{
     /// Struct responsible for managing the instance buffer
     corn_buffer_manager: DynamicBufferManager,
     /// Whether or not to read back the instance buffer data after each change
-    readback_enabled: bool
+    readback_enabled: bool,
 }
 impl Default for RenderAppCornFields{
     fn default() -> Self {

@@ -7,7 +7,7 @@ use bevy::{
         render_resource::{PrimitiveTopology, VertexFormat}, 
         mesh::{Indices, VertexAttributeValues, MeshVertexAttribute}
     }, 
-    tasks::{AsyncComputeTaskPool, Task}
+    tasks::{AsyncComputeTaskPool, Task}, utils::hashbrown::HashMap
 };
 use crate::core::loading::LoadingTaskCount;
 use futures_lite::future;
@@ -26,13 +26,23 @@ pub enum CornLoadState{
 pub struct CornMeshes{
     pub lod_groups: Vec<Vec<(Handle<Mesh>, usize)>>,
     pub material_count: usize,
+    pub material_names: HashMap<usize, String>,
+    pub materials: HashMap<String, Handle<StandardMaterial>>,
     pub global_mesh: Option<Handle<Mesh>>,
     pub vertex_counts: Vec<(usize, Vec<usize>, usize)>,//start vertex, mesh piece vertex counts, total vertices
     pub loaded: bool
 }
 impl Default for CornMeshes{
     fn default() -> Self {
-        Self{lod_groups: vec![], global_mesh: None, vertex_counts: vec![], loaded: false, material_count: 0}
+        Self{
+            lod_groups: vec![], 
+            global_mesh: None, 
+            vertex_counts: vec![], 
+            loaded: false, 
+            material_count: 0,
+            material_names: HashMap::new(),
+            materials: HashMap::new()
+        }
     }
 }
 
@@ -137,6 +147,14 @@ fn save_corn_models(
         }).collect();
         unsorted.sort_by(|a, b| a.0.cmp(&b.0));
         storage.lod_groups = unsorted.into_iter().map(|(_, b)| b).collect();
+        storage.material_names = HashMap::<usize, String>::from_iter(gltf.named_materials.iter().filter_map(|(s, m)| {
+            if let Some(index) = materials.iter().position(|val| *val==*m){
+                return Some((index, s.to_owned()));
+            }else{
+                return None;
+            }
+        }));
+        storage.materials = gltf.named_materials.clone();
         lod_count.0 = storage.lod_groups.len() as u32;
         storage.material_count = materials.len();
         ev_writer.send(CornGltfLoadedEvent{});
@@ -168,12 +186,11 @@ async fn corn_combine_task(meshes: Vec<Vec<(Mesh, usize)>>) -> (Mesh, Vec<(usize
     let mut materials: Vec<u32> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
     let mut indices_offset: u32 = 0;
-
     for lod in meshes.iter(){
         vertex_counts.push((indices.len(), vec![], 0));
         for (mesh, mat) in lod.iter(){
-            if let Some(Indices::U32(mesh_indices)) = mesh.indices(){
-                indices.extend(mesh_indices.iter().map(|index| *index+indices_offset));
+            if let Some(Indices::U16(mesh_indices)) = mesh.indices(){
+                indices.extend(mesh_indices.iter().map(|index| *index as u32+indices_offset));
                 if let Some(VertexAttributeValues::Float32x3(vertex_positions)) = 
                     mesh.attribute(Mesh::ATTRIBUTE_POSITION)
                 {
@@ -184,12 +201,12 @@ async fn corn_combine_task(meshes: Vec<Vec<(Mesh, usize)>>) -> (Mesh, Vec<(usize
                 vertex_counts.last_mut().map(|val| val.1.push(mesh_indices.len()));
             }
         }
-        vertex_counts.last_mut().map(|val| val.2 = indices.len()-val.0);
+        vertex_counts.last_mut().map(|val| {val.2 = indices.len()-val.0; val});
     }
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(
-        MeshVertexAttribute::new("Mesh_Index", 1, VertexFormat::Uint32), 
+        MeshVertexAttribute::new("Mesh_Index", 7, VertexFormat::Uint32), 
         materials
     );
     mesh.set_indices(Some(Indices::U32(indices)));

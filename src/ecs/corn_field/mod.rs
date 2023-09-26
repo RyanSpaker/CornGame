@@ -1,5 +1,6 @@
 pub mod data_pipeline;
 pub mod scan_prepass;
+pub mod render;
 
 use std::mem::size_of;
 use bevy::{
@@ -12,7 +13,7 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use crate::prelude::corn_model::{CornMeshes, CornLodCount};
-use self::{data_pipeline::CornFieldDataPipelinePlugin, scan_prepass::CornBufferPrepassPlugin};
+use self::{data_pipeline::CornFieldDataPipelinePlugin, scan_prepass::CornBufferPrepassPlugin, render::CornRenderPlugin};
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
 #[repr(C)]
@@ -43,7 +44,7 @@ impl CornField{
     }
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource, Default, Clone)]
 pub struct CornInstanceBuffer{
     data_buffer: Option<Buffer>,
     index_buffer: Option<Buffer>,
@@ -62,7 +63,7 @@ impl CornInstanceBuffer{
             }));
             self.index_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
                 label: Some("Corn Instance Index Buffer"), 
-                size: init_size * 4, 
+                size: init_size * size_of::<PerCornData>() as u64, 
                 usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
                 mapped_at_creation: false
             }));
@@ -98,7 +99,7 @@ impl CornInstanceBuffer{
         self.data_buffer = Some(new_data.to_owned());
         self.index_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Corn Instance Index Buffer"), 
-            size: new_size as u64 * 4, 
+            size: new_size as u64 * size_of::<PerCornData>() as u64, 
             usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
             mapped_at_creation: false
         }));
@@ -109,7 +110,7 @@ impl CornInstanceBuffer{
         if let Some(buffer) = self.index_buffer.as_ref(){buffer.destroy(); self.index_buffer = None;}
         self.data_count = 0;
     }
-    pub fn ready_to_read(&self) -> bool{
+    pub fn ready_to_render(&self) -> bool{
         return self.data_buffer.is_some() && self.index_buffer.is_some() && self.indirect_buffer.is_some();
     }
 }
@@ -130,7 +131,7 @@ pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins((CornFieldDataPipelinePlugin, CornBufferPrepassPlugin{}))
+            .add_plugins((CornFieldDataPipelinePlugin, CornBufferPrepassPlugin{}, CornRenderPlugin{}))
         .sub_app_mut(RenderApp)
             .init_resource::<CornInstanceBuffer>()
             .add_systems(Render, update_indirect_buffer.in_set(RenderSet::Cleanup));
