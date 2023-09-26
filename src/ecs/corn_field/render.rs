@@ -1,499 +1,405 @@
-use std::f32::consts::TAU;
-use crate::prelude::corn_model::CornMeshes;
+use std::marker::PhantomData;
+use std::hash::Hash;
 use bevy::{
-    core_pipeline::core_3d::Opaque3d,
-    ecs::system::{lifetimeless::*, SystemParamItem},
     pbr::*,
-    prelude::*,
     render::{
-        extract_component::{ExtractComponent, ExtractComponentPlugin},
-        mesh::{GpuBufferInfo, MeshVertexBufferLayout},
-        render_asset::RenderAssets,
-        render_phase::{
-            AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult,
-            RenderPhase, SetItemPipeline, TrackedRenderPass,
-        },
-        render_resource::*,
-        renderer::RenderDevice,
-        view::{ExtractedView, ViewUniform},
-        Render, RenderApp, RenderSet, globals::GlobalsUniform, Extract, render_graph::{RenderGraph, Node},
-    }, utils::hashbrown::HashMap
+        mesh::{MeshVertexBufferLayout, MeshVertexAttribute, GpuBufferInfo, GpuMesh},
+        render_resource::*, 
+        render_phase::{SetItemPipeline, RenderCommand, PhaseItem, TrackedRenderPass, 
+            RenderCommandResult, AddRenderCommand, DrawFunctions, RenderPhase}, 
+        render_asset::RenderAssets, RenderApp, view::ExtractedView, RenderSet, Render, Extract
+    }, 
+    asset::Handle, 
+    prelude::*, 
+    ecs::system::{lifetimeless::{SRes, Read}, SystemParamItem}, 
+    core_pipeline::{
+        core_3d::Opaque3d, 
+        experimental::taa::TemporalAntiAliasSettings, 
+        prepass::NormalPrepass, 
+        tonemapping::{DebandDither, Tonemapping}
+    }, math::Mat3A
 };
-use bytemuck::{Pod, Zeroable};
-use rand::{Rng, distributions::Standard};
+use crate::prelude::corn_model::CornMeshes;
+use super::CornInstanceBuffer;
 
-//Plugin to enable the rendering of corn_fields as instanced meshes
-pub struct CornFieldMaterialPlugin;
-impl Plugin for CornFieldMaterialPlugin {
-    fn build(&self, app: &mut App) {
-        app
-            .add_plugins(ExtractComponentPlugin::<CornField>::default())
-        .sub_app_mut(RenderApp)
-            .add_render_command::<Opaque3d, DrawCorn>()
-            .add_render_command::<Shadow, DrawCornShadow>()
-            .init_resource::<SpecializedMeshPipelines<CornFieldPipeline>>()
-            .init_resource::<SpecializedMeshPipelines<CornShadowPipeline>>()
-            .add_systems(
-                Render,
-                (
-                    corn_field_opaque_queue.in_set(RenderSet::Queue),
-                    corn_field_shadow_queue.in_set(RenderSet::Queue),
-                    prepare_corn_field_buffers.in_set(RenderSet::Prepare)
-                ),
-            );
-    }
-
-    fn finish(&self, app: &mut App) {
-        app.sub_app_mut(RenderApp).init_resource::<CornFieldPipeline>();
-        app.sub_app_mut(RenderApp).init_resource::<CornShadowPipeline>();
+bitflags::bitflags! {
+    #[repr(transparent)]
+    struct MeshFlags: u32 {
+        const SHADOW_RECEIVER            = (1 << 0);
+        // Indicates the sign of the determinant of the 3x3 model matrix. If the sign is positive,
+        // then the flag should be set, else it should not be set.
+        const SIGN_DETERMINANT_MODEL_3X3 = (1 << 31);
+        const NONE                       = 0;
+        const UNINITIALIZED              = 0xFFFF;
     }
 }
 
-//Function to queue up custom draw sequences for each corn field we have
-#[allow(clippy::too_many_arguments)]
-fn corn_field_opaque_queue(
-    opaque_draw_functions: Res<DrawFunctions<Opaque3d>>,
-    corn_fields: Query<(Entity, &CornField), With<CornFieldBuffer>>,
-    corn_meshes: Res<CornMeshes>,
-    meshes: Res<RenderAssets<Mesh>>,
-    mut views: Query<(&ExtractedView, &mut RenderPhase<Opaque3d>)>,
-    mut pipelines: ResMut<SpecializedMeshPipelines<CornFieldPipeline>>,
-    pipeline_cache: Res<PipelineCache>,
-    corn_pipeline: Res<CornFieldPipeline>,
-    msaa: Res<Msaa>
-) {
-    if !corn_meshes.loaded {return;}
-    //Get our custom draw sequence
-    let draw_function = opaque_draw_functions.read().id::<DrawCorn>();
-    //Rendering setttings from msaa settings
-    let msaa_key = MeshPipelineKey::from_msaa_samples(msaa.samples());
-    //go through each view, or camera, and add commands to the opaque phase
-    for (view, mut opaque_phase) in &mut views {
-        //rendering settings from camera
-        let view_key = msaa_key | MeshPipelineKey::from_hdr(view.hdr);
-        //go through each corn field and queue up draw commands
-        for (entity, field) in &corn_fields
-        {
-            // use the first mesh of our corn model as a refernce for setting up the pipeline.
-            let mesh = meshes.get(&corn_meshes.lod_groups[field.lod_level][0].0).unwrap();
-            //final rendering settings
-            let key =view_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology);
-            //Create the specialized pipeline
-            let pipeline = pipelines
-                .specialize(&pipeline_cache, &corn_pipeline, key, &mesh.layout)
-                .unwrap();
-            //Queue up the draw sequence
-            opaque_phase.add(Opaque3d { 
-                distance: 0.0, 
-                pipeline, 
-                entity, 
-                draw_function
-            });
-        }
-    }
-}
-//Function to queue up custom draw sequences for each corn field we have To Shadow
-#[allow(clippy::too_many_arguments)]
-fn corn_field_shadow_queue2(
-    opaque_draw_functions: Res<DrawFunctions<Opaque3d>>,
-    corn_fields: Query<(Entity, &CornField), With<CornFieldBuffer>>,
-    corn_meshes: Res<CornMeshes>,
-    meshes: Res<RenderAssets<Mesh>>,
-    mut views: Query<(&ExtractedView, &mut RenderPhase<Shadow>)>,
-    mut pipelines: ResMut<SpecializedMeshPipelines<CornFieldPipeline>>,
-    pipeline_cache: Res<PipelineCache>,
-    corn_pipeline: Res<CornFieldPipeline>,
-    msaa: Res<Msaa>
-) {
-    if !corn_meshes.loaded {return;}
-    //Get our custom draw sequence
-    let draw_function = opaque_draw_functions.read().id::<DrawCorn>();
-    //Rendering setttings from msaa settings
-    let msaa_key = MeshPipelineKey::from_msaa_samples(msaa.samples());
-    //go through each view, or camera, and add commands to the opaque phase
-    for (view, mut shadow_phase) in &mut views {
-        //rendering settings from camera
-        let view_key = msaa_key | MeshPipelineKey::from_hdr(view.hdr);
-        //go through each corn field and queue up draw commands
-        for (entity, field) in &corn_fields
-        {
-            // use the first mesh of our corn model as a refernce for setting up the pipeline.
-            let mesh = meshes.get(&corn_meshes.lod_groups[field.lod_level][0].0).unwrap();
-            //final rendering settings
-            let key =view_key | MeshPipelineKey::from_primitive_topology(mesh.primitive_topology);
-            //Create the specialized pipeline
-            let pipeline = pipelines
-                .specialize(&pipeline_cache, &corn_pipeline, key, &mesh.layout)
-                .unwrap();
-            //Queue up the draw sequence
-            shadow_phase.add(Shadow { 
-                distance: 0.0, 
-                pipeline, 
-                entity, 
-                draw_function
-            });
-        }
-    }
-}
-
-
-#[allow(clippy::too_many_arguments)]
-pub fn corn_field_shadow_queue(
-    shadow_draw_functions: Res<DrawFunctions<Shadow>>,
-    corn_fields: Query<(Entity, &CornField), With<CornFieldBuffer>>,
-    view_lights: Query<(Entity, &ViewLightEntities)>,
-    mut view_light_shadow_phases: Query<(&LightEntity, &mut RenderPhase<Shadow>)>,
-    corn_meshes: Res<CornMeshes>,
-    meshes: Res<RenderAssets<Mesh>>,
-    mut pipelines: ResMut<SpecializedMeshPipelines<CornShadowPipeline>>,
-    pipeline_cache: Res<PipelineCache>,
-    corn_pipeline: Res<CornShadowPipeline>
-){
-    for (entity, view_lights) in &view_lights {
-        let draw_shadow_mesh = shadow_draw_functions.read().id::<DrawCornShadow>();
-        for view_light_entity in view_lights.lights.iter().copied() {
-            let (light_entity, mut shadow_phase) =
-                view_light_shadow_phases.get_mut(view_light_entity).unwrap();
-            let is_directional_light = matches!(light_entity, LightEntity::Directional { .. });
-            //TODO: check to see if light has shadow mapping enabled before qeueing
-            for (entity, field) in corn_fields.iter() {
-                let mesh = meshes.get(&corn_meshes.lod_groups[field.lod_level][0].0).unwrap();
-                let mut mesh_key = 
-                    MeshPipelineKey::from_primitive_topology(mesh.primitive_topology)
-                    | MeshPipelineKey::DEPTH_PREPASS;
-                if is_directional_light {
-                    mesh_key |= MeshPipelineKey::DEPTH_CLAMP_ORTHO;
-                }
-
-                let pipeline_id = pipelines.specialize(
-                    &pipeline_cache,
-                    &corn_pipeline,
-                    mesh_key,
-                    &mesh.layout,
-                ).unwrap();
-
-                shadow_phase.add(Shadow {
-                    draw_function: draw_shadow_mesh,
-                    pipeline: pipeline_id,
-                    entity,
-                    distance: 0.0
-                });
-            }
-        }
-    }
-}
-
-
-
-//component attached to the render world corn fields that holds the byte buffer of data for the rendering
-#[derive(Component, Debug)]
-pub struct CornFieldBuffer {
-    buffer: Buffer,
-    length: usize,
-}
-
-//creates the byte buffer and attaches it to corn field entities
-fn prepare_corn_field_buffers(
-    mut commands: Commands,
-    query: Query<(Entity, &CornField)>,
-    render_device: Res<RenderDevice>,
-) {
-    for (entity, instance_data) in &query {
-        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("corn field data buffer"),
-            contents: bytemuck::cast_slice(instance_data.instance_data.as_slice()),
-            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-        });
-        commands.entity(entity).insert(CornFieldBuffer {
-            buffer,
-            length: instance_data.instance_data.len(),
-        });
-    }
-}
-
-// Custom Pipeline for corn instanced rendering, where we define stuff like shader constants and bind groups
-//Also where we specify the shader to use
 #[derive(Resource)]
-pub struct CornFieldPipeline {
-    shader: Handle<Shader>,
-    mesh_pipeline: MeshPipeline
+pub struct CornMaterialPipeline<M> where M: Material{
+    pub material_pipeline: MaterialPipeline<M>,
+    pub vertex_shader: Option<Handle<Shader>>,
+    pub fragment_shader: Option<Handle<Shader>>,
+    marker: PhantomData<M>,
 }
-impl FromWorld for CornFieldPipeline {
-    fn from_world(world: &mut World) -> Self {
-        let asset_server = world.resource::<AssetServer>();
-        let shader = asset_server.load("shaders/instancing.wgsl");
-        let mesh_pipeline = world.resource::<MeshPipeline>();
-        CornFieldPipeline {
-            shader,
-            mesh_pipeline: mesh_pipeline.clone()
+impl<M: Material> Clone for CornMaterialPipeline<M> {
+    fn clone(&self) -> Self {
+        Self {
+            material_pipeline: self.material_pipeline.clone(),
+            vertex_shader: self.vertex_shader.clone(),
+            fragment_shader: self.fragment_shader.clone(),
+            marker: PhantomData,
         }
     }
 }
-impl SpecializedMeshPipeline for CornFieldPipeline {
-    type Key = MeshPipelineKey;
+impl<M: Material> SpecializedMeshPipeline for CornMaterialPipeline<M>
+where
+    M::Data: PartialEq + Eq + Hash + Clone,
+{
+    type Key = (MaterialPipelineKey<M>, CornPipelineKey);
 
     fn specialize(
         &self,
         key: Self::Key,
         layout: &MeshVertexBufferLayout,
     ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
-        //get descriptor from mesh data
-        let mut descriptor = self.mesh_pipeline.specialize(key, layout)?;
-        // meshes typically live in bind group 2. because we are using bindgroup 1
-        // we need to add MESH_BINDGROUP_1 shader def so that the bindings are correctly
-        // linked in the shader
-        descriptor
-            .vertex
-            .shader_defs
-            .push("MESH_BINDGROUP_1".into());
-        //change our vertex attributes
-        descriptor.vertex.buffers = vec![
-            layout.get_layout(&[Mesh::ATTRIBUTE_POSITION.at_shader_location(0)]).unwrap(),
-            VertexBufferLayout {
-                array_stride: std::mem::size_of::<PerCornData>() as u64,
-                step_mode: VertexStepMode::Instance,
-                attributes: vec![
-                    VertexAttribute {
-                        format: VertexFormat::Float32x3,
-                        offset: 0,
-                        shader_location: 1,
-                    },
-                    VertexAttribute {
-                        format: VertexFormat::Float32x2,
-                        offset: VertexFormat::Float32x3.size(),
-                        shader_location: 2,
-                    },
-                ],
-            }
-        ];
-        //set our shader
-        descriptor.vertex.shader = self.shader.clone();
-        descriptor.fragment.as_mut().map(|f| {f.shader = self.shader.clone(); return f;});
-        Ok(descriptor)
-    }
-}
-//Custom pipeline for drawing corn shadows
-#[derive(Resource)]
-pub struct CornShadowPipeline {
-    pub view_layout_no_motion_vectors: BindGroupLayout,
-    pub mesh_layouts: MeshLayouts,
-    pub material_vertex_shader: Option<Handle<Shader>>,
-    pub material_fragment_shader: Option<Handle<Shader>>
-}
-impl FromWorld for CornShadowPipeline {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.resource::<RenderDevice>();
-        let asset_server = world.resource::<AssetServer>();
-
-        let view_layout_no_motion_vectors =
-            render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                entries: &[
-                    // View
-                    BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                        ty: BindingType::Buffer {
-                            ty: BufferBindingType::Uniform,
-                            has_dynamic_offset: true,
-                            min_binding_size: Some(ViewUniform::min_size()),
-                        },
-                        count: None,
-                    },
-                    // Globals
-                    BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: ShaderStages::VERTEX_FRAGMENT,
-                        ty: BindingType::Buffer {
-                            ty: BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: Some(GlobalsUniform::min_size()),
-                        },
-                        count: None,
-                    },
-                ],
-                label: Some("prepass_view_layout_no_motion_vectors"),
-            });
-
-        let mesh_pipeline = world.resource::<MeshPipeline>();
-
-        CornShadowPipeline {
-            view_layout_no_motion_vectors,
-            mesh_layouts: mesh_pipeline.mesh_layouts.clone(),
-            material_vertex_shader: Some(asset_server.load("shaders/instancing.wgsl")),
-            material_fragment_shader: Some(asset_server.load("shaders/instancing.wgsl")),
+        let mut descriptor = self.material_pipeline.specialize(key.0, layout)?;
+        if let Some(vertex_shader) = &self.vertex_shader {
+            descriptor.vertex.shader = vertex_shader.clone();
         }
-    }
-}
-impl SpecializedMeshPipeline for CornShadowPipeline{
-    type Key = MeshPipelineKey;
-
-    fn specialize(
-        &self,
-        key: Self::Key,
-        layout: &MeshVertexBufferLayout,
-    ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
-        let mut bind_group_layouts = vec![self.view_layout_no_motion_vectors.clone(), self.mesh_layouts.model_only.clone()];
-        let mut shader_defs = Vec::new();
-        let mut vertex_attributes = Vec::new();
-        shader_defs.push("DEPTH_PREPASS".into());
-        shader_defs.push("VERTEX_POSITIONS".into());
-        vertex_attributes.push(Mesh::ATTRIBUTE_POSITION.at_shader_location(0));
-
-        if key.contains(MeshPipelineKey::DEPTH_CLAMP_ORTHO) {
-            shader_defs.push("DEPTH_CLAMP_ORTHO".into());
-            shader_defs.push("PREPASS_FRAGMENT".into());
+        if let Some(fragment_shader) = &self.fragment_shader {
+            descriptor.fragment.as_mut().unwrap().shader = fragment_shader.clone();
         }
-
-        let vertex_buffer_layout = layout.get_layout(&vertex_attributes)?;
-
-        // The fragment shader is only used when the normal prepass or motion vectors prepass
-        // is enabled or the material uses alpha cutoff values and doesn't rely on the standard
-        // prepass shader or we are clamping the orthographic depth.
-        let fragment_required = key.contains(MeshPipelineKey::DEPTH_CLAMP_ORTHO)
-            && self.material_fragment_shader.is_some();
-
-        let fragment = fragment_required.then(|| {
-            // Use the fragment shader from the material
-            let frag_shader_handle = self.material_fragment_shader.clone().unwrap();
-
-            FragmentState {
-                shader: frag_shader_handle,
-                entry_point: "fragment".into(),
-                shader_defs: shader_defs.clone(),
-                targets: vec![],
-            }
-        });
-
-        // Use the vertex shader from the material if present
-        let vert_shader_handle = self.material_vertex_shader.clone().unwrap();
-
-        let mut push_constant_ranges = Vec::with_capacity(1);
-        if cfg!(all(feature = "webgl", target_arch = "wasm32")) {
-            push_constant_ranges.push(PushConstantRange {
-                stages: ShaderStages::VERTEX,
-                range: 0..4,
-            });
-        }
-
-        let mut descriptor = RenderPipelineDescriptor {
-            vertex: VertexState {
-                shader: vert_shader_handle,
-                entry_point: "vertex".into(),
-                shader_defs,
-                buffers: vec![vertex_buffer_layout],
-            },
-            fragment,
-            layout: bind_group_layouts,
-            primitive: PrimitiveState {
-                topology: key.primitive_topology(),
-                strip_index_format: None,
-                front_face: FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                polygon_mode: PolygonMode::Fill,
-                conservative: false,
-            },
-            depth_stencil: Some(DepthStencilState {
-                format: TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::GreaterEqual,
-                stencil: StencilState {
-                    front: StencilFaceState::IGNORE,
-                    back: StencilFaceState::IGNORE,
-                    read_mask: 0,
-                    write_mask: 0,
-                },
-                bias: DepthBiasState {
-                    constant: 0,
-                    slope_scale: 0.0,
-                    clamp: 0.0,
-                },
-            }),
-            multisample: MultisampleState {
-                count: key.msaa_samples(),
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            push_constant_ranges,
-            label: Some("prepass_pipeline".into()),
+        descriptor.vertex.shader_defs.push(ShaderDefVal::Bool("CORN_INSTANCED".to_string(), true));
+        
+        let extra_attr = layout.get_layout(&[
+            MeshVertexAttribute::new("Mesh_Index", 7, VertexFormat::Uint32).at_shader_location(7)
+        ])?;
+        let Some(buffer_layout) = descriptor.vertex.buffers.get_mut(0) else{
+            panic!("material_pipeline.specialize didnt assign any vertex buffer layouts");
         };
-        // meshes typically live in bind group 2. because we are using bindgroup 1
-        // we need to add MESH_BINDGROUP_1 shader def so that the bindings are correctly
-        // linked in the shader
-        descriptor
-            .vertex
-            .shader_defs
-            .push("MESH_BINDGROUP_1".into());
-        //change our vertex attributes
-        descriptor.vertex.buffers = vec![
-            layout.get_layout(&[Mesh::ATTRIBUTE_POSITION.at_shader_location(0)]).unwrap(),
-            VertexBufferLayout {
-                array_stride: std::mem::size_of::<PerCornData>() as u64,
-                step_mode: VertexStepMode::Instance,
-                attributes: vec![
-                    VertexAttribute {
-                        format: VertexFormat::Float32x3,
-                        offset: 0,
-                        shader_location: 1,
-                    },
-                    VertexAttribute {
-                        format: VertexFormat::Float32x2,
-                        offset: VertexFormat::Float32x3.size(),
-                        shader_location: 2,
-                    },
-                ],
-            }
-        ];
-        Ok(descriptor)
+        buffer_layout.attributes.push(extra_attr.attributes[0]);
+        descriptor.vertex.buffers.push(VertexBufferLayout { 
+            array_stride: 32, 
+            step_mode: VertexStepMode::Instance,
+            attributes: vec![
+                VertexAttribute{shader_location: 8, format: VertexFormat::Float32x4, offset: 0},
+                VertexAttribute{shader_location: 9, format: VertexFormat::Float32x2, offset: 16},
+                VertexAttribute{shader_location: 10, format: VertexFormat::Uint32x2, offset: 24},
+            ] 
+        });
+        return Ok(descriptor);
     }
 }
-//Custom function sequence for drawing instanced corn
-type DrawCorn = (
+impl<M: Material> FromWorld for CornMaterialPipeline<M>{
+    fn from_world(world: &mut bevy::prelude::World) -> Self {
+        let material_pipeline = MaterialPipeline::<M>::from_world(world);
+        let asset_server = world.resource::<AssetServer>();
+        let vertex_shader = Some(asset_server.load("shaders/corn/pbr_vertex.wgsl"));
+        let fragment_shader = Some(asset_server.load("shaders/corn/pbr_vertex.wgsl"));//material_pipeline.fragment_shader.clone();
+        CornMaterialPipeline{
+            material_pipeline,
+            vertex_shader,
+            fragment_shader,
+            marker: PhantomData,
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct CornPipelineKey{
+
+}
+
+#[derive(Component)]
+pub struct InstancedDrawingCommand<T> where T: Send + Sync{
+    pub render_data: T,
+    pub draw_command: for<'w> fn(&mut TrackedRenderPass<'w>, &'w RenderAssets<Mesh>, &'w T) -> RenderCommandResult,
+}
+pub struct CornRenderData{
+    instance_buffer: CornInstanceBuffer,
+    global_mesh: Handle<Mesh>,
+}
+pub fn draw_corn_instanced_opaque<'w>(
+    render_pass: &mut TrackedRenderPass<'w>, 
+    meshes: &'w RenderAssets<Mesh>, 
+    corn_data: &'w CornRenderData
+) -> RenderCommandResult{
+    if !corn_data.instance_buffer.ready_to_render() {return RenderCommandResult::Failure;}
+    let Some(global_mesh) = meshes.get(&corn_data.global_mesh) else{
+        return RenderCommandResult::Failure;
+    };
+    let Some(data_buffer) = corn_data.instance_buffer.index_buffer.as_ref() else{
+        return RenderCommandResult::Failure;
+    };
+    let Some(indirect_buffer) = corn_data.instance_buffer.indirect_buffer.as_ref() else {
+        return RenderCommandResult::Failure;
+    };
+    match &global_mesh.buffer_info{
+        GpuBufferInfo::Indexed { buffer, index_format, .. } =>{
+            render_pass.set_vertex_buffer(0, global_mesh.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, data_buffer.slice(..));
+            render_pass.set_index_buffer(buffer.slice(..), 0, *index_format);
+            render_pass.multi_draw_indexed_indirect(
+                &indirect_buffer, 
+                0, 
+                corn_data.instance_buffer.lod_count.clone()
+            );
+            return RenderCommandResult::Success;
+        }
+        GpuBufferInfo::NonIndexed => {return RenderCommandResult::Failure;}
+    };
+}
+
+
+type DrawMaterialInstanced<M, T> = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
-    SetMeshBindGroup<1>,
-    DrawCornInstanced,
+    SetMaterialBindGroup<M, 1>,
+    SetMeshBindGroup<2>,
+    DrawMeshInstanced<T>,
 );
-//Custom Shadow draw sequence
-type DrawCornShadow = (
-    SetItemPipeline,
-    SetPrepassViewBindGroup<0>,
-    SetMeshBindGroup<1>,
-    DrawCornInstanced
-);
+
 //Draw Function for instanced corn
-pub struct DrawCornInstanced;
-impl<P: PhaseItem> RenderCommand<P> for DrawCornInstanced {
-    type Param = (SRes<RenderAssets<Mesh>>, SRes<CornMeshes>);
+pub struct DrawMeshInstanced<T>(PhantomData<T>);
+impl<P: PhaseItem, T: 'static + Send + Sync> RenderCommand<P> for DrawMeshInstanced<T> {
+    type Param = SRes<RenderAssets<Mesh>>;
     type ViewWorldQuery = ();
-    type ItemWorldQuery = (Read<CornField>, Read<CornFieldBuffer>);
+    type ItemWorldQuery = Read<InstancedDrawingCommand<T>>;
 
     #[inline]
     fn render<'w>(
         _item: &P,
         _view: (),
-        (corn_field, corn_buffer): (&'w CornField, &'w CornFieldBuffer),
+        command: &'w InstancedDrawingCommand<T>,
         meshes: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        pass.set_vertex_buffer(1, corn_buffer.buffer.slice(..));
-        let mesh_assets = meshes.0.into_inner();
-        for gpu_mesh in meshes.1.into_inner().lod_groups[corn_field.lod_level].iter().filter_map(|m| mesh_assets.get(&m.0)){
-            pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
-            match &gpu_mesh.buffer_info {
-                GpuBufferInfo::Indexed {
-                    buffer,
-                    index_format,
-                    count,
-                } => {
-                    pass.set_index_buffer(buffer.slice(..), 0, *index_format);
-                    pass.draw_indexed(0..*count, 0, 0..corn_buffer.length as u32);
-                }
-                GpuBufferInfo::NonIndexed => {
-                    pass.draw(0..gpu_mesh.vertex_count, 0..corn_buffer.length as u32);
-                }
-            }
-        }
+        (command.draw_command)(pass, meshes.into_inner(), &command.render_data)
+    }
+}
+
+pub struct DebugDraw<const M: usize>;
+impl<P: PhaseItem, const M: usize> RenderCommand<P> for DebugDraw<M>{
+    type Param = ();
+    type ViewWorldQuery = ();
+    type ItemWorldQuery = ();
+
+    #[inline]
+    fn render<'w>(
+        _item: &P,
+        _view: (),
+        _entity: (),
+        _world: (),
+        _pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        println!("{}", M);
         RenderCommandResult::Success
+    }
+}
+
+fn spawn_field_entity(
+    main_corn: Extract<Res<CornMeshes>>,
+    instance_buffer: ResMut<CornInstanceBuffer>,
+    mut commands: Commands
+){
+    if !instance_buffer.ready_to_render() || main_corn.global_mesh.is_none(){return;}
+    let cur_data: CornRenderData = CornRenderData { 
+        instance_buffer: instance_buffer.clone(), 
+        global_mesh: main_corn.global_mesh.as_ref().unwrap().clone()};
+    let mut flags = MeshFlags::SHADOW_RECEIVER;
+    let transform = GlobalTransform::IDENTITY.compute_matrix();
+    if Mat3A::from_mat4(transform).determinant().is_sign_positive() {
+        flags |= MeshFlags::SIGN_DETERMINANT_MODEL_3X3;
+    }
+    commands.spawn((
+        InstancedDrawingCommand::<CornRenderData>{render_data: cur_data, draw_command: draw_corn_instanced_opaque},
+        main_corn.global_mesh.as_ref().unwrap().to_owned(),
+        MeshUniform {
+            flags: flags.bits(),
+            transform,
+            previous_transform: transform,
+            inverse_transpose_model: transform.inverse().transpose(),
+        },
+        main_corn.materials.get(&"CornLeaves".to_string()).unwrap().to_owned()
+    ));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn corn_field_queue(
+    instance_buffer: Res<CornInstanceBuffer>,
+    corn_mesh: Res<CornMeshes>,
+    opaque_draw_functions: Res<DrawFunctions<Opaque3d>>,
+    corn_fields: Query<Entity, With<InstancedDrawingCommand<CornRenderData>>>,
+    mut views: Query<(
+        &ExtractedView,
+        Option<&Tonemapping>,
+        Option<&DebandDither>,
+        Option<&EnvironmentMapLight>,
+        Option<&ScreenSpaceAmbientOcclusionSettings>,
+        Option<&NormalPrepass>,
+        Option<&TemporalAntiAliasSettings>,
+        &mut RenderPhase<Opaque3d>,
+    )>,
+    material_pipeline: Res<CornMaterialPipeline<StandardMaterial>>,
+    mut pipelines: ResMut<SpecializedMeshPipelines<CornMaterialPipeline<StandardMaterial>>>,
+    pipeline_cache: Res<PipelineCache>,
+    meshes: Res<RenderAssets<Mesh>>,
+    materials: Res<RenderMaterials<StandardMaterial>>,
+    msaa: Res<Msaa>,
+    images: Res<RenderAssets<Image>>,
+)
+{
+    //return if we are not ready to render corn
+    if !instance_buffer.ready_to_render(){return;}
+    if corn_fields.is_empty() {return;}
+    //get our draw functions
+    let opaque_draw = opaque_draw_functions.read().id::<DrawMaterialInstanced<StandardMaterial, CornRenderData>>();
+    //get our mesh and material
+    let (Some(mesh), Some(material)) = (
+        meshes.get(corn_mesh.global_mesh.as_ref().unwrap()),
+        materials.get(corn_mesh.materials.get(&"CornLeaves".to_string()).unwrap())
+    ) else{
+        return;
+    };
+    //Spawn an entity to hold rendering data:
+    let entity = corn_fields.single();
+    
+    for (
+        view,
+        tonemapping,
+        dither,
+        environment_map,
+        ssao,
+        normal_prepass,
+        taa_settings,
+        mut opaque_phase,
+    ) in &mut views
+    {
+        let material_key = get_material_key(
+            &*msaa, 
+            view, 
+            &normal_prepass, 
+            &taa_settings, 
+            &environment_map, 
+            &*images, 
+            &tonemapping, 
+            &dither, 
+            &ssao, 
+            mesh, 
+            material
+        );
+        let pipeline_id = pipelines.specialize(
+            &pipeline_cache,
+            &material_pipeline,
+            (material_key, CornPipelineKey{}),
+            &mesh.layout,
+        ).unwrap();
+        opaque_phase.add(Opaque3d {
+            entity,
+            draw_function: opaque_draw,
+            pipeline: pipeline_id,
+            distance: 0.0,
+        });
+    }
+}
+
+pub fn get_material_key<M: Material>(
+    msaa: &Msaa,
+    view: &ExtractedView,
+    normal_prepass: &Option<&NormalPrepass>,
+    taa_settings: &Option<&TemporalAntiAliasSettings>,
+    environment_map: &Option<&EnvironmentMapLight>,
+    images: &RenderAssets<Image>,
+    tonemapping: &Option<&Tonemapping>,
+    dither: &Option<&DebandDither>,
+    ssao: &Option<&ScreenSpaceAmbientOcclusionSettings>,
+    mesh: &GpuMesh,
+    material: &PreparedMaterial<M>
+) -> MaterialPipelineKey<M> where M::Data: Clone
+{
+    //View Key:
+    let mut view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
+        | MeshPipelineKey::from_hdr(view.hdr);
+    if normal_prepass.is_some() {
+        view_key |= MeshPipelineKey::NORMAL_PREPASS;
+    }
+    if taa_settings.is_some() {
+        view_key |= MeshPipelineKey::TAA;
+    }
+    let environment_map_loaded = match environment_map {
+        Some(environment_map) => environment_map.is_loaded(&images),
+        None => false,
+    };
+    if environment_map_loaded {
+        view_key |= MeshPipelineKey::ENVIRONMENT_MAP;
+    }
+    if !view.hdr {
+        if let Some(tonemapping) = tonemapping {
+            view_key |= MeshPipelineKey::TONEMAP_IN_SHADER;
+            view_key |= match tonemapping {
+                Tonemapping::None => MeshPipelineKey::TONEMAP_METHOD_NONE,
+                Tonemapping::Reinhard => MeshPipelineKey::TONEMAP_METHOD_REINHARD,
+                Tonemapping::ReinhardLuminance => {
+                    MeshPipelineKey::TONEMAP_METHOD_REINHARD_LUMINANCE
+                }
+                Tonemapping::AcesFitted => MeshPipelineKey::TONEMAP_METHOD_ACES_FITTED,
+                Tonemapping::AgX => MeshPipelineKey::TONEMAP_METHOD_AGX,
+                Tonemapping::SomewhatBoringDisplayTransform => {
+                    MeshPipelineKey::TONEMAP_METHOD_SOMEWHAT_BORING_DISPLAY_TRANSFORM
+                }
+                Tonemapping::TonyMcMapface => MeshPipelineKey::TONEMAP_METHOD_TONY_MC_MAPFACE,
+                Tonemapping::BlenderFilmic => MeshPipelineKey::TONEMAP_METHOD_BLENDER_FILMIC,
+            };
+        }
+        if let Some(DebandDither::Enabled) = dither {
+            view_key |= MeshPipelineKey::DEBAND_DITHER;
+        }
+    }
+    if ssao.is_some() {
+        view_key |= MeshPipelineKey::SCREEN_SPACE_AMBIENT_OCCLUSION;
+    }
+    //Mesh Key:
+    let mut mesh_key = 
+        MeshPipelineKey::from_primitive_topology(mesh.primitive_topology) | view_key;
+    if mesh.morph_targets.is_some() {
+        mesh_key |= MeshPipelineKey::MORPH_TARGETS;
+    }
+    match material.properties.alpha_mode {
+        AlphaMode::Blend => {
+            mesh_key |= MeshPipelineKey::BLEND_ALPHA;
+        }
+        AlphaMode::Premultiplied | AlphaMode::Add => {
+            // Premultiplied and Add share the same pipeline key
+            // They're made distinct in the PBR shader, via `premultiply_alpha()`
+            mesh_key |= MeshPipelineKey::BLEND_PREMULTIPLIED_ALPHA;
+        }
+        AlphaMode::Multiply => {
+            mesh_key |= MeshPipelineKey::BLEND_MULTIPLY;
+        }
+        AlphaMode::Mask(_) => {
+            mesh_key |= MeshPipelineKey::MAY_DISCARD;
+        }
+        _ => (),
+    }
+    //Material Key
+    MaterialPipelineKey {
+        mesh_key,
+        bind_group_data: material.key.clone(),
+    }
+}
+
+pub struct CornRenderPlugin;
+impl Plugin for CornRenderPlugin{
+    fn build(&self, app: &mut bevy::prelude::App) {
+        app.sub_app_mut(RenderApp)
+        .add_render_command::<Opaque3d, DrawMaterialInstanced<StandardMaterial, CornRenderData>>()
+        .init_resource::<SpecializedMeshPipelines<CornMaterialPipeline<StandardMaterial>>>()
+        .add_systems(Render, 
+            corn_field_queue.in_set(RenderSet::Queue)
+        )
+        .add_systems(ExtractSchedule, spawn_field_entity);
+    }
+    fn finish(&self, app: &mut bevy::prelude::App) {
+        app.sub_app_mut(RenderApp).init_resource::<CornMaterialPipeline<StandardMaterial>>();
     }
 }

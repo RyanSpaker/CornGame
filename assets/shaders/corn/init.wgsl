@@ -40,11 +40,12 @@ fn init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) 
     let res_width: u32 = bitcast<u32>(instance_settings.origin_res_width.w);
     let pos: vec2<f32> = vec2<f32>(f32(instance_index%res_width), f32(instance_index/res_width));
     var out: PerCornData;
-    out.offset = instance_settings.origin_res_width.xyz + vec3<f32>(pos*instance_settings.step, 0.0);
+    let xz_offset = pos*instance_settings.step;
+    out.offset = instance_settings.origin_res_width.xyz + vec3<f32>(xz_offset.x, 0.0, xz_offset.y);
     out.scale = randomFloat(gid.x) * instance_settings.height_width_min.x + instance_settings.height_width_min.y;
     let theta = randomFloat(gid.x+256u*id_count.x)*6.2832;
     out.rotation = vec2<f32>(sin(theta), cos(theta));
-    out.uuid = 1u<<range.id;
+    out.uuid = range.id;
     out.enabled = u32(range.id<32u);
     instance_data[buffer_index] = out;
   }

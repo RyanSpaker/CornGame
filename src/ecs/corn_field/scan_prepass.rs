@@ -6,8 +6,8 @@ use bevy::{
         RenderApp, 
         RenderSet, 
         Render, 
-        render_graph::{Node, RenderGraphContext}
-    }
+        render_graph::{Node, RenderGraphContext, RenderGraph}
+    }, pbr::draw_3d_graph::node::SHADOW_PASS, core_pipeline::core_3d
 };
 use super::CornInstanceBuffer;
 /// ### Keeps hold of all of the vote-scan-compact shader resources
@@ -35,7 +35,7 @@ impl VoteScanCompactBuffers{
         self.vote_scan = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Vote Scan Buffer"), 
             size: self.instance_count as u64 * 8u64, 
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
+            usage: BufferUsages::STORAGE, 
             mapped_at_creation: false
         }));
         self.count_buffers = Some((
@@ -83,6 +83,7 @@ impl VoteScanCompactBuffers{
             layout: &pipeline.bind_group_layout, 
             entries: &init_bind_group
         }));
+        if !instance_buffer.ready_to_render(){return;}
     }
     pub fn update_size(
         &mut self, 
@@ -115,20 +116,12 @@ pub fn prepare_vote_scan_compact_pass(
     mut pipelines: ResMut<SpecializedComputePipelines<CornBufferPrePassPipeline>>,
     pipeline_cache: Res<PipelineCache>
 ){
-    if !instance_buffer.ready_to_read(){
+    if !instance_buffer.ready_to_render(){
         buffers.destroy();
         return;
     }
     if !buffers.enabled{
         buffers.init(&render_device, &instance_buffer, &pipeline);
-        return;
-    }
-    if instance_buffer.data_count != buffers.instance_count{
-        buffers.update_size(&render_device, &instance_buffer, &pipeline);
-        return;
-    }
-    if  instance_buffer.lod_count != buffers.lod_count{
-        buffers.update_size(&render_device, &instance_buffer, &pipeline);
         let ids = vec![
             pipelines.specialize(&pipeline_cache, &pipeline, ("vote_scan".to_string(), instance_buffer.lod_count)),
             pipelines.specialize(&pipeline_cache, &pipeline, ("group_scan_1".to_string(), instance_buffer.lod_count)),
@@ -137,6 +130,19 @@ pub fn prepare_vote_scan_compact_pass(
         ];
         pipeline.ids = ids;
         return;
+    }
+    if instance_buffer.data_count != buffers.instance_count || instance_buffer.lod_count != buffers.lod_count{
+        let update_pipeline_ids = instance_buffer.lod_count != buffers.lod_count;
+        buffers.update_size(&render_device, &instance_buffer, &pipeline);
+        if update_pipeline_ids{
+            let ids = vec![
+                pipelines.specialize(&pipeline_cache, &pipeline, ("vote_scan".to_string(), instance_buffer.lod_count)),
+                pipelines.specialize(&pipeline_cache, &pipeline, ("group_scan_1".to_string(), instance_buffer.lod_count)),
+                pipelines.specialize(&pipeline_cache, &pipeline, ("group_scan_2".to_string(), instance_buffer.lod_count)),
+                pipelines.specialize(&pipeline_cache, &pipeline, ("compact".to_string(), instance_buffer.lod_count)),
+            ];
+            pipeline.ids = ids;
+        }
     }
 }
 /// ### Added to the rendergraph as an asynchronous step
@@ -164,7 +170,6 @@ impl Node for CornBufferPrepassNode{
         );
         compute_pass.set_bind_group(0, buffers.bind_group.as_ref().unwrap(), &[]);
         if let Some(pipeline2) = pipeline_cache.get_compute_pipeline(pipeline.ids[0]){
-            println!("{:?}", pipeline.ids[0]);
             compute_pass.set_pipeline(pipeline2);
             compute_pass.dispatch_workgroups((buffers.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
         }
@@ -268,7 +273,8 @@ impl SpecializedComputePipeline for CornBufferPrePassPipeline{
             push_constant_ranges: vec![],
             shader: self.shader.clone(),
             shader_defs: vec![
-                ShaderDefVal::Int("OVERRIDE_LOD_COUNT".to_string(), key.1 as i32)
+                ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), key.1 as u32 + 1),
+                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), key.1 as u32*5)
             ],
             entry_point: key.0.into()
         }
@@ -284,6 +290,12 @@ impl Plugin for CornBufferPrepassPlugin{
             .add_systems(Render, 
                 prepare_vote_scan_compact_pass.in_set(RenderSet::Prepare)
             );
+        let mut binding = app.get_sub_app_mut(RenderApp).unwrap()
+            .world.get_resource_mut::<RenderGraph>().unwrap();
+        let graph = binding
+            .get_sub_graph_mut(core_3d::graph::NAME).unwrap();
+        graph.add_node("vote_scan_compact", CornBufferPrepassNode{});
+        graph.add_node_edge("vote_scan_compact", SHADOW_PASS);
     }
     fn finish(&self, app: &mut App) {
         app.sub_app_mut(RenderApp).init_resource::<CornBufferPrePassPipeline>();
