@@ -887,7 +887,7 @@ pub struct ComputeSettings {
 impl From::<CornFieldSettings> for ComputeSettings{
     fn from(value: CornFieldSettings) -> Self {
         let mut output = Self { 
-            origin: value.center - value.half_extents.extend(0.0),
+            origin: value.center - Vec3 { x: value.half_extents.x, y: 0.0, z: value.half_extents.y },
             height_width_min: Vec2::new(value.height_range.y-value.height_range.x, value.height_range.x),
             step: Vec2::new(
                 value.half_extents.x*2.0/(value.resolution.0 as f32 - 1.0), 
