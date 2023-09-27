@@ -183,6 +183,10 @@ async fn corn_combine_task(meshes: Vec<Vec<(Mesh, usize)>>) -> (Mesh, Vec<(usize
     let mut vertex_counts: Vec<(usize, Vec<usize>, usize)> = vec![];
 
     let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut normal: Vec<[f32; 3]> = Vec::new();
+    let mut uv: Vec<[f32; 2]> = Vec::new();
+    let mut tangent: Vec<[f32; 4]> = Vec::new();
+
     let mut materials: Vec<u32> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
     let mut indices_offset: u32 = 0;
@@ -195,6 +199,15 @@ async fn corn_combine_task(meshes: Vec<Vec<(Mesh, usize)>>) -> (Mesh, Vec<(usize
                     mesh.attribute(Mesh::ATTRIBUTE_POSITION)
                 {
                     positions.extend(vertex_positions);
+                    if let Some(VertexAttributeValues::Float32x3(normals)) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL){
+                        normal.extend(normals);
+                    }
+                    if let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0){
+                        uv.extend(uvs);
+                    }
+                    if let Some(VertexAttributeValues::Float32x4(tangents)) = mesh.attribute(Mesh::ATTRIBUTE_TANGENT){
+                        tangent.extend(tangents);
+                    }
                     materials.extend([*mat as u32].repeat(vertex_positions.len()));
                     indices_offset += vertex_positions.len() as u32;
                 }
@@ -205,12 +218,15 @@ async fn corn_combine_task(meshes: Vec<Vec<(Mesh, usize)>>) -> (Mesh, Vec<(usize
     }
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    if normal.len() > 0{mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normal);}
+    if uv.len() > 0{mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uv);}
+    if tangent.len() > 0{mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, tangent);}
     mesh.insert_attribute(
         MeshVertexAttribute::new("Mesh_Index", 7, VertexFormat::Uint32), 
         materials
     );
     mesh.set_indices(Some(Indices::U32(indices)));
-
+    
     (mesh, vertex_counts)
 }
 fn handle_combine_corn_tasks(

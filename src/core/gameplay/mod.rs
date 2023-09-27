@@ -59,13 +59,13 @@ fn spawn_corn(
     //material: Res<CornMaterials>
 ){
     
-    if frames.0 == 100u32{
+    if frames.0 == 10u32{
         commands.spawn((
             SpatialBundle::INHERITED_IDENTITY,
             CornField::new(
                 Vec3::ZERO, 
-                Vec2::ONE*50.0, 
-                (300, 300),
+                Vec2::ONE*5.0, 
+                (20, 20),
                 Vec2::new(0.8, 1.2)
             ),
             NoFrustumCulling

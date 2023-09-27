@@ -80,18 +80,18 @@ fn vertex(vertex_no_morph: Vertex) -> MeshVertexOutput {
     out.world_normal = mesh_functions::mesh_normal_local_to_world(vertex.normal);
 #endif
 #ifdef CORN_INSTANCED
-    let new_x: f32 = dot(vertex.rotation.yx, out.world_normal.xz);
+    let temp_1: f32 = dot(vertex.rotation.yx, out.world_normal.xz);
     out.world_normal.z = dot(vertex.rotation.xy, out.world_normal.xz*vec2<f32>(-1.0, 1.0));
-    out.world_normal.x = new_x;
+    out.world_normal.x = temp_1;
 #endif
 #endif
 
 #ifdef VERTEX_POSITIONS
 #ifdef CORN_INSTANCED
     vertex.position *= vertex.offset_scale.w;
-    let new_x: f32 = dot(vertex.rotation.yx, vertex.position.xz);
+    let temp_2: f32 = dot(vertex.rotation.yx, vertex.position.xz);
     vertex.position.z = dot(vertex.rotation.xy, vertex.position.xz*vec2<f32>(-1.0, 1.0));
-    vertex.position.x = new_x;
+    vertex.position.x = temp_2;
 #endif
     out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
 #ifdef CORN_INSTANCED
@@ -107,9 +107,9 @@ fn vertex(vertex_no_morph: Vertex) -> MeshVertexOutput {
 #ifdef VERTEX_TANGENTS
     out.world_tangent = mesh_functions::mesh_tangent_local_to_world(model, vertex.tangent);
 #ifdef CORN_INSTANCED
-    let new_x: f32 = dot(vertex.rotation.yx, out.world_tangent.xz);
+    let temp_3: f32 = dot(vertex.rotation.yx, out.world_tangent.xz);
     out.world_tangent.z = dot(vertex.rotation.xy, out.world_tangent.xz*vec2<f32>(-1.0, 1.0));
-    out.world_tangent.x = new_x;
+    out.world_tangent.x = temp_3;
 #endif
 #endif
 

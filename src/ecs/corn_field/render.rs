@@ -95,11 +95,11 @@ impl<M: Material> FromWorld for CornMaterialPipeline<M>{
         let material_pipeline = MaterialPipeline::<M>::from_world(world);
         let asset_server = world.resource::<AssetServer>();
         let vertex_shader = Some(asset_server.load("shaders/corn/pbr_vertex.wgsl"));
-        let fragment_shader = Some(asset_server.load("shaders/corn/pbr_vertex.wgsl"));//material_pipeline.fragment_shader.clone();
+        //let fragment_shader = Some(asset_server.load("shaders/corn/pbr_vertex.wgsl"));//material_pipeline.fragment_shader.clone();
         CornMaterialPipeline{
             material_pipeline,
             vertex_shader,
-            fragment_shader,
+            fragment_shader: None,
             marker: PhantomData,
         }
     }
