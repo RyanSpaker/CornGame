@@ -127,10 +127,10 @@ impl Node for CornDataPipelineNode{
 /// - reset planned actions
 /// - reset compute structures
 pub fn cleanup_corn_data(
-    mut corn_fields: ResMut<RenderAppCornFields>,
-    mut next_state: ResMut<NextState<InstanceBufferState>>,
-    mut instance_buffer: ResMut<CornInstanceBuffer>,
-    render_device: Res<RenderDevice>
+    corn_fields: &mut RenderAppCornFields,
+    next_state: &mut NextState<InstanceBufferState>,
+    instance_buffer: &mut CornInstanceBuffer,
+    render_device: &RenderDevice
 ){
     if corn_fields.corn_fields.is_empty(){
         corn_fields.destroy();
@@ -139,18 +139,18 @@ pub fn cleanup_corn_data(
         return;
     }
     if corn_fields.corn_buffer_manager.planned_actions.contains(BufferActions::EXPAND){
-        corn_fields.corn_buffer_manager.finish_expansion(instance_buffer.as_mut(), &render_device);
+        corn_fields.corn_buffer_manager.finish_expansion(instance_buffer, render_device);
     }
     if corn_fields.corn_buffer_manager.planned_actions.contains(BufferActions::INITIALIZE){
         corn_fields.corn_buffer_manager.convert_stale_ranges();
         corn_fields.finish_loading_corn();
     }
     if corn_fields.corn_buffer_manager.planned_actions.contains(BufferActions::DEFRAGMENT){
-        corn_fields.corn_buffer_manager.finish_defragment(instance_buffer.as_mut(), &render_device);
+        corn_fields.corn_buffer_manager.finish_defragment(instance_buffer, render_device);
         corn_fields.finish_defragment();
     }
     if corn_fields.corn_buffer_manager.planned_actions.contains(BufferActions::READBACK){
-        corn_fields.corn_buffer_manager.finish_cpu_readback(&render_device);
+        corn_fields.corn_buffer_manager.finish_cpu_readback(render_device);
     }
     corn_fields.corn_buffer_manager.per_frame_reset();
 }
@@ -852,8 +852,7 @@ impl Ranges<u32> for Vec<Range<u32>>{
 pub enum InstanceBufferState{
     #[default]
     Uninitialized,
-    Initialized,
-    Destroy
+    Initialized
 }
 /// Represents the state of the corn field in the render app
 #[derive(Default, Debug, PartialEq, Eq, Hash, Clone)]
@@ -1077,9 +1076,7 @@ impl Plugin for CornFieldDataPipelinePlugin {
             .add_systems(ExtractSchedule, extract_corn_fields)
             .add_systems(Render, (
                 initialize_instance_buffer.in_set(RenderSet::Prepare).run_if(in_state(InstanceBufferState::Uninitialized)),
-                prepare_corn_data.in_set(RenderSet::Prepare).run_if(in_state(InstanceBufferState::Initialized)),
-                cleanup_corn_data.in_set(RenderSet::Cleanup).run_if(in_state(InstanceBufferState::Initialized)),
-                apply_state_transition::<InstanceBufferState>.in_set(RenderSet::Cleanup).after(cleanup_corn_data)
+                prepare_corn_data.in_set(RenderSet::Prepare).run_if(in_state(InstanceBufferState::Initialized))
             ))
         .world.get_resource_mut::<RenderGraph>().unwrap()
             .add_node("Corn Buffer Data Pipeline", CornDataPipelineNode{});
