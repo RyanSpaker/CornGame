@@ -1,8 +1,6 @@
 use std::f32::consts::PI;
-
 use bevy::prelude::*;
 use bevy::render::view::NoFrustumCulling;
-use crate::core::gameplay::CornMaterials;
 use crate::core::loading::LoadingTaskCount;
 use crate::ecs::corn_field::CornField;
 use crate::ecs::main_camera::MainCamera;
@@ -56,8 +54,7 @@ fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
-    mut next_state: ResMut<NextState<SetupState>>,
-    material: Res<CornMaterials>
+    mut next_state: ResMut<NextState<SetupState>>
 ){
     //Spawn Camera
     commands.spawn((Camera3dBundle {
@@ -68,12 +65,12 @@ fn setup_scene(
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
         CornField::new(
-            Vec3::new(0.0, 0.0, 0.0), 
-            Vec2::ONE*100.0, 
-            (50, 50),
+            Vec3::new(10.0, 0.0, 0.0), 
+            Vec2::ONE*1.0, 
+            (20, 20),
             Vec2::new(0.8, 1.2)
         ),
-        material.0.to_owned(),
+        materials.add(StandardMaterial::default()),
         NoFrustumCulling
     ));
     //box
