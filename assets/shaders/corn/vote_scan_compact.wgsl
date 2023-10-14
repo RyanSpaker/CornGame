@@ -19,21 +19,27 @@ var<workgroup> temp_scan_buffer: array<array<u32, 256>, LOD_COUNT>;
 @group(0) @binding(2)
 var<storage, read_write> count_buffer: array<array<u32, LOD_COUNT>>;
 
-var<push_constant> vectors: array<vec2<f32>, 4>;
-var<push_constant> lod_dists: array<f32, LOD_COUNT>;
+struct FrustumValues {
+  left_normal: vec2<f32>,
+  right_normal: vec2<f32>,
+  offset: vec2<f32>,
+  padding: vec2<f32>,
+  lod_dists: array<f32, LOD_COUNT>
+}
+var<push_constant> cull_settings: FrustumValues;
 
 fn calc_lod(position: u32) -> u32{
   var lod: u32 = 0u;
-  let offset: vec2<f32> = instance_data[position].offset.xz - vectors[3];
-  let distance = dot(offset, offset);
-  for (var i = 0u; i < LOD_COUNT; i++){
-    if distance > lod_dists[i]{
+  let offset: vec2<f32> = instance_data[position].offset.xz - cull_settings.offset;
+  let distance: f32 = dot(offset, offset);
+  for (var i = 0u; i < LOD_COUNT-(1u); i++){
+    if distance > cull_settings.lod_dists[i]{
       lod += 1u;
     }
   }
   let enabled: u32 = u32(
-    step(dot(instance_data[position].offset.xz, vectors[0]), vectors[2].x)*
-    step(dot(instance_data[position].offset.xz, vectors[1]), vectors[2].y) > 0.0
+    step(dot(offset, cull_settings.left_normal), 0.0)*
+    step(dot(offset, cull_settings.right_normal), 0.0) > 0.0
   ) * instance_data[position].enabled;
   lod = select(LOD_COUNT, lod, bool(enabled));
   return lod;
@@ -46,8 +52,10 @@ fn vote_scan(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invoc
     count_buffer2[gid.x+wid.x][j] = 0u;
   }
   //Vote:
+  //let lod1: u32 = (instance_data[2u*gid.x].enabled*(u32(cull_settings.padding.x)+1u) + LOD_COUNT-(1u))%(LOD_COUNT);
+  //let lod2: u32 = (instance_data[2u*gid.x+1u].enabled*(u32(cull_settings.padding.y)+1u) + LOD_COUNT-(1u))%(LOD_COUNT);
   let lod1: u32 = calc_lod(2u*gid.x);
-  let lod2: u32 = calc_lod(2u*gid.x + 1u);
+  let lod2: u32 = calc_lod(2u*gid.x+1u);
   //Scan:
   temp_scan_buffer[lod1][2u*lid.x] = 1u;
   temp_scan_buffer[lod2][2u*lid.x+1u] = 1u;

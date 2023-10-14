@@ -9,9 +9,20 @@ use bevy::{
         render_graph::{Node, RenderGraphContext, RenderGraph}, view::ExtractedView
     }, pbr::draw_3d_graph::node::SHADOW_PASS, core_pipeline::core_3d
 };
+use bytemuck::{Pod, Zeroable};
 use crate::ecs::main_camera::MainCamera;
-
 use super::CornInstanceBuffer;
+
+/// Respresents frustum structure in compute shader sans lod distance cutoffs
+#[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
+#[repr(C)]
+pub struct FrustumValues {
+    pub left_normal: Vec2,
+    pub right_normal: Vec2,
+    pub offset: Vec2,
+    _padding: Vec2
+}
+
 /// ### Keeps hold of all of the vote-scan-compact shader resources
 #[derive(Resource, Default)]
 pub struct VoteScanCompactBuffers{
@@ -23,10 +34,9 @@ pub struct VoteScanCompactBuffers{
     instance_count: u32,
     lod_count: u32,
     bind_group: Option<BindGroup>,
-    enabled: bool,
-    prepass_pipeline_ready: bool,
-    frustum_lr_normals: [Vec2; 4],
-    frustum_lod_sqdists: Vec<f32>
+    frustum_values: FrustumValues,
+    lod_cutoffs: Vec<f32>,
+    enabled: bool
 }
 impl VoteScanCompactBuffers{
     pub fn init(
@@ -36,30 +46,34 @@ impl VoteScanCompactBuffers{
         pipeline: &CornBufferPrePassPipeline
     ){
         self.lod_count = instance_buffer.lod_count;
-        self.frustum_lod_sqdists = (0..self.lod_count).map(|i| ((50.0 / (self.lod_count as f32))*((i+1) as f32)).powi(2)).collect();
+        self.lod_cutoffs = (0..self.lod_count).map(|i| 
+            ((50.0 / (self.lod_count as f32))*((i+1) as f32)).powi(2)
+        ).collect();
         self.instance_count = instance_buffer.data_count;
-        self.enabled = true;
+        self.count_1_size = self.instance_count/256+1;
+        self.count_2_size = self.count_1_size/256+1;
+        if let Some(buffer) = self.vote_scan.as_ref() {buffer.destroy();}
+        if let Some(buffer) = self.count_1.as_ref() {buffer.destroy();}
+        if let Some(buffer) = self.count_2.as_ref() {buffer.destroy();}
         self.vote_scan = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Vote Scan Buffer"), 
             size: self.instance_count as u64 * 8u64, 
             usage: BufferUsages::STORAGE, 
             mapped_at_creation: false
         }));
-        self.count_1_size = self.instance_count/256+1;
         self.count_1 = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Intermediate Count Buffer 1"), 
             size: self.count_1_size as u64 * 4u64*(self.lod_count+1) as u64, 
             usage: BufferUsages::STORAGE, 
             mapped_at_creation: false
         }));
-        self.count_2_size = self.count_1_size/256+1;
         self.count_2 = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Intermediate Count Buffer 2"), 
             size: self.count_2_size as u64 * 4u64*(self.lod_count+1) as u64, 
             usage: BufferUsages::STORAGE, 
             mapped_at_creation: false
         }));
-        let init_bind_group = [
+        let bind_group = [
             BindGroupEntry{
                 binding: 0,
                 resource: BindingResource::Buffer(instance_buffer.data_buffer.as_ref().unwrap().as_entire_buffer_binding())
@@ -86,10 +100,11 @@ impl VoteScanCompactBuffers{
             }
         ];
         self.bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
-            label: Some("Corn Init Buffer Bind Group"), 
+            label: Some("Corn Vote Buffer Bind Group"), 
             layout: &pipeline.bind_group_layout, 
-            entries: &init_bind_group
+            entries: &bind_group
         }));
+        self.enabled = true;
     }
     pub fn update_size(
         &mut self, 
@@ -98,29 +113,34 @@ impl VoteScanCompactBuffers{
         pipeline: &CornBufferPrePassPipeline
     ){
         self.lod_count = instance_buffer.lod_count;
-        self.frustum_lod_sqdists = (0..self.lod_count).map(|i| ((50.0 / (self.lod_count as f32))*((i+1) as f32)).powi(2)).collect();
+        self.lod_cutoffs = (0..self.lod_count).map(|i| 
+            ((50.0 / (self.lod_count as f32))*((i+1) as f32)).powi(2)
+        ).collect();
         self.instance_count = instance_buffer.data_count;
+        self.count_1_size = self.instance_count/256+1;
+        self.count_2_size = self.count_1_size/256+1;
+        if let Some(buffer) = self.vote_scan.as_ref() {buffer.destroy();}
+        if let Some(buffer) = self.count_1.as_ref() {buffer.destroy();}
+        if let Some(buffer) = self.count_2.as_ref() {buffer.destroy();}
         self.vote_scan = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Vote Scan Buffer"), 
             size: self.instance_count as u64 * 8u64, 
             usage: BufferUsages::STORAGE, 
             mapped_at_creation: false
         }));
-        self.count_1_size = self.instance_count/256+1;
         self.count_1 = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Intermediate Count Buffer 1"), 
             size: self.count_1_size as u64 * 4u64*(self.lod_count+1) as u64, 
             usage: BufferUsages::STORAGE, 
             mapped_at_creation: false
         }));
-        self.count_2_size = self.count_1_size/256+1;
         self.count_2 = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Intermediate Count Buffer 2"), 
             size: self.count_2_size as u64 * 4u64*(self.lod_count+1) as u64, 
             usage: BufferUsages::STORAGE, 
             mapped_at_creation: false
         }));
-        let init_bind_group = [
+        let bind_group = [
             BindGroupEntry{
                 binding: 0,
                 resource: BindingResource::Buffer(instance_buffer.data_buffer.as_ref().unwrap().as_entire_buffer_binding())
@@ -147,12 +167,13 @@ impl VoteScanCompactBuffers{
             }
         ];
         self.bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
-            label: Some("Corn Init Buffer Bind Group"), 
+            label: Some("Corn Vote Buffer Bind Group"), 
             layout: &pipeline.bind_group_layout, 
-            entries: &init_bind_group
+            entries: &bind_group
         }));
     }
     pub fn destroy(&mut self){
+        if !self.enabled {return;}
         if let Some(buffer) = self.vote_scan.as_ref(){buffer.destroy(); self.vote_scan = None;}
         if let Some(buffer) = self.count_1.as_ref(){buffer.destroy(); self.count_1 = None;}
         if let Some(buffer) = self.count_2.as_ref(){buffer.destroy(); self.count_2 = None;}
@@ -160,7 +181,6 @@ impl VoteScanCompactBuffers{
         self.instance_count = 0; self.lod_count = 0;
         self.bind_group = None;
         self.enabled = false;
-        self.prepass_pipeline_ready = false;
     }
     pub fn cleanup(
         &mut self, 
@@ -172,8 +192,7 @@ impl VoteScanCompactBuffers{
         if instance_buffer.enabled && !self.enabled {self.init(
             render_device, instance_buffer, prepass_pipeline
         ); return;}
-        if self.instance_count != instance_buffer.data_count || self.lod_count != instance_buffer.lod_count{
-            if self.lod_count != instance_buffer.lod_count {self.prepass_pipeline_ready = false;}
+        if self.instance_count != instance_buffer.data_count || self.lod_count != instance_buffer.lod_count {
             self.update_size(render_device, instance_buffer, prepass_pipeline);
         }
     }
@@ -182,37 +201,49 @@ impl VoteScanCompactBuffers{
 /// Assures that the vote-scan-compact buffer mirrors the instace buffer's status
 pub fn prepare_vote_scan_compact_pass(
     mut buffers: ResMut<VoteScanCompactBuffers>,
-    mut prepass_pipeline: ResMut<CornBufferPrePassPipeline>,
-    mut prepass_pipelines: ResMut<SpecializedComputePipelines<CornBufferPrePassPipeline>>,
-    camera: Query<&ExtractedView, With<MainCamera>>,
-    pipeline_cache: Res<PipelineCache>
+    mut pipeline: ResMut<CornBufferPrePassPipeline>,
+    mut pipelines: ResMut<SpecializedComputePipelines<CornBufferPrePassPipeline>>,
+    pipeline_cache: Res<PipelineCache>,
+    camera: Query<&ExtractedView, With<MainCamera>>
 ){
-    if !buffers.enabled{return;}
-    if !buffers.prepass_pipeline_ready{
-        let ids = vec![
-            prepass_pipelines.specialize(&pipeline_cache, &prepass_pipeline, ("vote_scan".to_string(), buffers.lod_count)),
-            prepass_pipelines.specialize(&pipeline_cache, &prepass_pipeline, ("group_scan_1".to_string(), buffers.lod_count)),
-            prepass_pipelines.specialize(&pipeline_cache, &prepass_pipeline, ("group_scan_2".to_string(), buffers.lod_count)),
-            prepass_pipelines.specialize(&pipeline_cache, &prepass_pipeline, ("compact".to_string(), buffers.lod_count)),
-        ];
-        prepass_pipeline.ids = ids;
-        buffers.prepass_pipeline_ready = true;
+    if !buffers.enabled{
+        return;
     }
-    //create push constants
+    if pipeline.lod_count != buffers.lod_count{
+        let ids = vec![
+            pipelines.specialize(&pipeline_cache, &pipeline, ("vote_scan".to_string(), buffers.lod_count)),
+            pipelines.specialize(&pipeline_cache, &pipeline, ("group_scan_1".to_string(), buffers.lod_count)),
+            pipelines.specialize(&pipeline_cache, &pipeline, ("group_scan_2".to_string(), buffers.lod_count)),
+            pipelines.specialize(&pipeline_cache, &pipeline, ("compact".to_string(), buffers.lod_count)),
+        ];
+        pipeline.ids = ids;
+        pipeline.lod_count = buffers.lod_count;
+    }
+    //Calculate frustum settings
+    buffers.frustum_values._padding = Vec2::new(4.0, 4.0);
     let view = camera.single();
-    let proj = view.projection;
     let trans = view.transform;
+    let proj = view.projection*trans.compute_matrix();
     let lrbtnf = extract_planes_from_projmat(proj);
-    let mut lv = Vec2::new(lrbtnf[0][0], lrbtnf[0][2]);
-    let mut rv = Vec2::new(lrbtnf[1][0], lrbtnf[1][2]);
+    let mut lv = Vec2::new(-lrbtnf[0][2], lrbtnf[0][0]);
+    let mut rv = Vec2::new(-lrbtnf[1][2], lrbtnf[1][0]);
     if lv.dot(Vec2::new(trans.left().x, trans.left().z)) < 0.0 {lv *= -1.0;}
     if rv.dot(Vec2::new(trans.right().x, trans.right().z)) < 0.0 {rv *= -1.0;}
-    let nl = Vec2::new(lv.y, -lv.x).normalize();
-    let nr = Vec2::new(-rv.y, rv.x).normalize();
-    let center = Vec2::new(trans.translation().x, trans.translation().z);
-    let cnl = center.dot(nl);
-    let cnr = center.dot(nr);
-    buffers.frustum_lr_normals = [nl, nr, Vec2::new(cnl, cnr), center];
+    buffers.frustum_values.left_normal = Vec2::new(-lv.y, lv.x).normalize();
+    buffers.frustum_values.right_normal = Vec2::new(rv.y, -rv.x).normalize();
+    buffers.frustum_values.offset = Vec2::new(trans.translation().x, trans.translation().z);
+}
+pub fn extract_planes_from_projmat(mat: Mat4) -> [[f32; 4]; 6]{
+    let mut lrbtnf = [[0.0; 4]; 6];
+    for i in (0..4).rev() { 
+        lrbtnf[0][i] = mat.col(i)[3] + mat.col(i)[0]; 
+        lrbtnf[1][i] = mat.col(i)[3] - mat.col(i)[0];
+        lrbtnf[2][i] = mat.col(i)[3] + mat.col(i)[1]; 
+        lrbtnf[3][i] = mat.col(i)[3] - mat.col(i)[1]; 
+        lrbtnf[4][i] = mat.col(i)[3] + mat.col(i)[2]; 
+        lrbtnf[5][i] = mat.col(i)[3] - mat.col(i)[2]; 
+    }
+    return lrbtnf;
 }
 /// ### Added to the rendergraph as an asynchronous step
 /// - run function is called by the render phase at some point
@@ -225,34 +256,38 @@ impl Node for CornBufferPrepassNode{
         render_context: &mut RenderContext,
         world: &World,
     ) -> Result<(), bevy::render::render_graph::NodeRunError> {
-        let vote_data = world.resource::<VoteScanCompactBuffers>();
-        if !vote_data.enabled {return Ok(());}
-
+        //get vote scan compact resources
+        let vote_res = world.get_resource::<VoteScanCompactBuffers>();
+        if vote_res.is_none() {return Ok(());}
+        let vote_res = vote_res.unwrap();
+        if !vote_res.enabled {return Ok(());}
+        //get our pipeline
         let pipeline_cache = world.resource::<PipelineCache>();
-        let prepass_pipelines = world.resource::<CornBufferPrePassPipeline>();
-        if prepass_pipelines.ids.len() == 0 {return Ok(());}
-
+        let pipeline = world.resource::<CornBufferPrePassPipeline>();
+        if pipeline.ids.len() == 0 {return Ok(());}
+        // Setup compute pass
         let mut compute_pass = render_context.command_encoder().begin_compute_pass(
             &ComputePassDescriptor { label: Some("Vote Scan Compact Pass") }
         );
-        compute_pass.set_bind_group(0, vote_data.bind_group.as_ref().unwrap(), &[]);
-        if let Some(pipeline2) = pipeline_cache.get_compute_pipeline(prepass_pipelines.ids[0]){
-            compute_pass.set_pipeline(pipeline2);
-            compute_pass.set_push_constants(0, bytemuck::cast_slice(&vote_data.frustum_lr_normals));
-            compute_pass.set_push_constants(32, bytemuck::cast_slice(vote_data.frustum_lod_sqdists.as_slice()));
-            compute_pass.dispatch_workgroups((vote_data.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
-        }
-        if let Some(pipeline) = pipeline_cache.get_compute_pipeline(prepass_pipelines.ids[1]){
+        compute_pass.set_bind_group(0, vote_res.bind_group.as_ref().unwrap(), &[]);
+        // Run each of the four compute shaders
+        if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipeline.ids[0]){
             compute_pass.set_pipeline(pipeline);
-            compute_pass.dispatch_workgroups((vote_data.count_1_size as f32 / 256.0).ceil() as u32, 1, 1);
+            compute_pass.set_push_constants(0, bytemuck::cast_slice(&[vote_res.frustum_values]));
+            compute_pass.set_push_constants(32, bytemuck::cast_slice(vote_res.lod_cutoffs.as_slice()));
+            compute_pass.dispatch_workgroups((vote_res.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
         }
-        if let Some(pipeline) = pipeline_cache.get_compute_pipeline(prepass_pipelines.ids[2]){
+        if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipeline.ids[1]){
             compute_pass.set_pipeline(pipeline);
-            compute_pass.dispatch_workgroups((vote_data.count_2_size as f32 / 256.0).ceil() as u32, 1, 1);
+            compute_pass.dispatch_workgroups((vote_res.count_1_size as f32 / 256.0).ceil() as u32, 1, 1);
         }
-        if let Some(pipeline) = pipeline_cache.get_compute_pipeline(prepass_pipelines.ids[3]){
+        if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipeline.ids[2]){
             compute_pass.set_pipeline(pipeline);
-            compute_pass.dispatch_workgroups((vote_data.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
+            compute_pass.dispatch_workgroups((vote_res.count_2_size as f32 / 256.0).ceil() as u32, 1, 1);
+        }
+        if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipeline.ids[3]){
+            compute_pass.set_pipeline(pipeline);
+            compute_pass.dispatch_workgroups((vote_res.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
         }
         return Ok(());
     }
@@ -340,12 +375,12 @@ impl SpecializedComputePipeline for CornBufferPrePassPipeline{
             label: None,
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: (0..(32+4*key.1))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(key.1+9))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![
                 ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), key.1 as u32 + 1),
-                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), key.1 as u32*5)
+                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), key.1 as u32*5),
             ],
             entry_point: key.0.into()
         }
@@ -355,14 +390,14 @@ impl SpecializedComputePipeline for CornBufferPrePassPipeline{
 pub struct CornBufferPrepassPlugin{}
 impl Plugin for CornBufferPrepassPlugin{
     fn build(&self, app: &mut App) {
-        let app = app.sub_app_mut(RenderApp);
-        app
+        app.get_sub_app_mut(RenderApp).unwrap()
             .init_resource::<VoteScanCompactBuffers>()
             .init_resource::<SpecializedComputePipelines<CornBufferPrePassPipeline>>()
             .add_systems(Render, 
                 prepare_vote_scan_compact_pass.in_set(RenderSet::Prepare)
             );
-        let mut binding = app.world.get_resource_mut::<RenderGraph>().unwrap();
+        let mut binding = app.get_sub_app_mut(RenderApp).unwrap()
+            .world.get_resource_mut::<RenderGraph>().unwrap();
         let graph = binding
             .get_sub_graph_mut(core_3d::graph::NAME).unwrap();
         graph.add_node("vote_scan_compact", CornBufferPrepassNode{});
@@ -371,17 +406,4 @@ impl Plugin for CornBufferPrepassPlugin{
     fn finish(&self, app: &mut App) {
         app.sub_app_mut(RenderApp).init_resource::<CornBufferPrePassPipeline>();
     }
-}
-
-pub fn extract_planes_from_projmat(mat: Mat4) -> [[f32; 4]; 6]{
-    let mut lrbtnf = [[0.0; 4]; 6];
-    for i in (0..4).rev() { 
-        lrbtnf[0][i] = mat.col(i)[3] + mat.col(i)[0]; 
-        lrbtnf[1][i] = mat.col(i)[3] - mat.col(i)[0];
-        lrbtnf[2][i] = mat.col(i)[3] + mat.col(i)[1]; 
-        lrbtnf[3][i] = mat.col(i)[3] - mat.col(i)[1]; 
-        lrbtnf[4][i] = mat.col(i)[3] + mat.col(i)[2]; 
-        lrbtnf[5][i] = mat.col(i)[3] - mat.col(i)[2]; 
-    }
-    return lrbtnf;
 }

@@ -1,6 +1,8 @@
-use bevy::{prelude::*, core::FrameCount, render::view::NoFrustumCulling};
-use rand::{thread_rng, Rng};
-use crate::{flycam::{cam_look_plugin::CamLookPlugin, cam_move_plugin::CamMovePlugin}, ecs::corn_field::CornField};
+use bevy::prelude::*;
+//use bevy::{core::FrameCount, render::view::NoFrustumCulling};
+//use rand::{thread_rng, Rng};
+use crate::flycam::{cam_look_plugin::CamLookPlugin, cam_move_plugin::CamMovePlugin}; 
+//use crate::ecs::corn_field::CornField;
 
 #[derive(Resource, Default)]
 pub struct GamePlayExitState<T>(T) where T: States + Copy;
@@ -46,7 +48,7 @@ fn exit_state_on_key<T: States + Copy>(
 pub struct CornDespawn(Vec<Entity>);
 
 #[derive(Resource, Default)]
-pub struct CornMaterials(pub Handle<StandardMaterial>);
+pub struct CornMaterials(Handle<StandardMaterial>);
 impl From<&Handle<StandardMaterial>> for CornMaterials{
     fn from(value: &Handle<StandardMaterial>) -> Self {
         Self(value.to_owned())
@@ -54,12 +56,12 @@ impl From<&Handle<StandardMaterial>> for CornMaterials{
 }
 
 fn spawn_corn(
-    mut commands: Commands, frames: Res<FrameCount>, 
-    mut despawn_corn: ResMut<CornDespawn>,
-    material: Res<CornMaterials>
+    //mut commands: Commands, frames: Res<FrameCount>, 
+    //mut despawn_corn: ResMut<CornDespawn>,
+    //material: Res<CornMaterials>
 ){
-    
-    /*if frames.0 == 10u32{
+    /*
+    if frames.0 == 10u32{
         commands.spawn((
             SpatialBundle::INHERITED_IDENTITY,
             CornField::new(
@@ -82,14 +84,13 @@ fn spawn_corn(
                 despawn_corn.0.remove(rand_corn);
             }
         }else{
-            let rand_count = rng.gen_range(1..10);
-            let rand_count2 = rng.gen_range(1..10);
+            let rand_count = rng.gen_range(1..50);
             despawn_corn.0.push(commands.spawn((
                 SpatialBundle::INHERITED_IDENTITY,
                 CornField::new(
-                    Vec3::new(rng.gen_range(-50.0..50.0), 0.0, rng.gen_range(-50.0..50.0)), 
-                    Vec2::ONE*Vec2::new(rand_count as f32, rand_count2 as f32), 
-                    (rand_count, rand_count2),
+                    Vec3::ZERO, 
+                    Vec2::ONE, 
+                    (rand_count, 1),
                     Vec2::new(0.8, 1.2)
                 ),
                 material.0.to_owned(),
