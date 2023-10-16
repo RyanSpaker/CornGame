@@ -1,3 +1,5 @@
+use std::sync::{Mutex, Arc};
+
 use bevy::{
     prelude::*, 
     render::{
@@ -10,6 +12,7 @@ use bevy::{
     }, pbr::draw_3d_graph::node::SHADOW_PASS, core_pipeline::core_3d
 };
 use bytemuck::{Pod, Zeroable};
+use wgpu::Maintain;
 use crate::ecs::main_camera::MainCamera;
 use super::CornInstanceBuffer;
 
@@ -17,10 +20,11 @@ use super::CornInstanceBuffer;
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
 #[repr(C)]
 pub struct FrustumValues {
-    pub left_normal: Vec2,
-    pub right_normal: Vec2,
-    pub offset: Vec2,
-    _padding: Vec2
+    pub col1: Vec4,
+    pub col2: Vec4,
+    pub col3: Vec4,
+    pub col4: Vec4,
+    pub offset: Vec4
 }
 
 /// ### Keeps hold of all of the vote-scan-compact shader resources
@@ -36,7 +40,8 @@ pub struct VoteScanCompactBuffers{
     bind_group: Option<BindGroup>,
     frustum_values: FrustumValues,
     lod_cutoffs: Vec<f32>,
-    enabled: bool
+    enabled: bool,
+    //read_back: Option<(Buffer, Buffer, Buffer, Buffer, Buffer, Buffer)>
 }
 impl VoteScanCompactBuffers{
     pub fn init(
@@ -46,9 +51,8 @@ impl VoteScanCompactBuffers{
         pipeline: &CornBufferPrePassPipeline
     ){
         self.lod_count = instance_buffer.lod_count;
-        self.lod_cutoffs = (0..self.lod_count).map(|i| 
-            ((50.0 / (self.lod_count as f32))*((i+1) as f32)).powi(2)
-        ).collect();
+        self.lod_cutoffs = get_lod_cutoffs(self.lod_count, 2.0, 50.0);
+        println!("{:?}", self.lod_cutoffs);
         self.instance_count = instance_buffer.data_count;
         self.count_1_size = self.instance_count/256+1;
         self.count_2_size = self.count_1_size/256+1;
@@ -58,19 +62,19 @@ impl VoteScanCompactBuffers{
         self.vote_scan = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Vote Scan Buffer"), 
             size: self.instance_count as u64 * 8u64, 
-            usage: BufferUsages::STORAGE, 
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
             mapped_at_creation: false
         }));
         self.count_1 = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Intermediate Count Buffer 1"), 
             size: self.count_1_size as u64 * 4u64*(self.lod_count+1) as u64, 
-            usage: BufferUsages::STORAGE, 
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
             mapped_at_creation: false
         }));
         self.count_2 = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Intermediate Count Buffer 2"), 
             size: self.count_2_size as u64 * 4u64*(self.lod_count+1) as u64, 
-            usage: BufferUsages::STORAGE, 
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
             mapped_at_creation: false
         }));
         let bind_group = [
@@ -113,9 +117,8 @@ impl VoteScanCompactBuffers{
         pipeline: &CornBufferPrePassPipeline
     ){
         self.lod_count = instance_buffer.lod_count;
-        self.lod_cutoffs = (0..self.lod_count).map(|i| 
-            ((50.0 / (self.lod_count as f32))*((i+1) as f32)).powi(2)
-        ).collect();
+        self.lod_cutoffs = get_lod_cutoffs(self.lod_count, 1.5, 50.0);
+        println!("{:?}", self.lod_cutoffs);
         self.instance_count = instance_buffer.data_count;
         self.count_1_size = self.instance_count/256+1;
         self.count_2_size = self.count_1_size/256+1;
@@ -125,19 +128,19 @@ impl VoteScanCompactBuffers{
         self.vote_scan = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Vote Scan Buffer"), 
             size: self.instance_count as u64 * 8u64, 
-            usage: BufferUsages::STORAGE, 
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
             mapped_at_creation: false
         }));
         self.count_1 = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Intermediate Count Buffer 1"), 
             size: self.count_1_size as u64 * 4u64*(self.lod_count+1) as u64, 
-            usage: BufferUsages::STORAGE, 
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
             mapped_at_creation: false
         }));
         self.count_2 = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Intermediate Count Buffer 2"), 
             size: self.count_2_size as u64 * 4u64*(self.lod_count+1) as u64, 
-            usage: BufferUsages::STORAGE, 
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
             mapped_at_creation: false
         }));
         let bind_group = [
@@ -195,8 +198,68 @@ impl VoteScanCompactBuffers{
         if self.instance_count != instance_buffer.data_count || self.lod_count != instance_buffer.lod_count {
             self.update_size(render_device, instance_buffer, prepass_pipeline);
         }
+        /*
+        if self.read_back.is_none() {return;}
+        //Buffer 1
+        println!("{:?}", self.frustum_values);
+        println!("{:?}", self.lod_cutoffs);
+        println!("LOD Count / Array size - 1: {}", instance_buffer.lod_count);
+        let buffer = &self.read_back.as_ref().unwrap().0;
+        print_readback::<PerCornData>(buffer, "Done with Instance Data".to_string(), render_device);
+        buffer.destroy();
+        let buffer = &self.read_back.as_ref().unwrap().1;
+        print_readback::<UVec2>(buffer, "Done with Vote Data".to_string(), render_device);
+        buffer.destroy();
+        let buffer = &self.read_back.as_ref().unwrap().2;
+        print_readback::<u32>(buffer, "Done with Count 1 Data".to_string(), render_device);
+        buffer.destroy();
+        let buffer = &self.read_back.as_ref().unwrap().3;
+        print_readback::<u32>(buffer, "Done with Count 2 Data".to_string(), render_device);
+        buffer.destroy();
+        let buffer = &self.read_back.as_ref().unwrap().4;
+        print_readback::<u32>(buffer, "Done with Indirect Data".to_string(), render_device);
+        buffer.destroy();
+        let buffer = &self.read_back.as_ref().unwrap().5;
+        print_readback::<PerCornData>(buffer, "Done with Index Data".to_string(), render_device);
+        buffer.destroy();
+        self.read_back = None;*/
     }
 }
+// max_cutoff / step count
+// step count is a geomtetric series where the first lod has 1, seocnd has 1*a, third 1*a*a
+// a currently is 2, the total steps equatest to (a^lod_count-1)/(a-1)
+pub fn get_lod_cutoffs(lod_count: u32, k: f32, max_cutoff: f32) -> Vec<f32>{
+    let step_size: f32 = max_cutoff/((k.powi(lod_count as i32)-1.0)/(k-1.0));
+    let lod_cutoffs = (0..lod_count).map(|i| 
+        (((k.powi((i+1) as i32)-1.0)/(k-1.0))*step_size).powi(2)
+    ).collect();
+    return lod_cutoffs;
+}
+pub fn print_readback<T>(buffer: &Buffer, message: String, render_device: &RenderDevice) 
+where T: std::fmt::Debug + Pod{
+    let slice = buffer.slice(..);
+    let flag: Arc<Mutex<Box<bool>>> = Arc::new(Mutex::new(Box::new(false)));
+    let flag_captured = flag.clone();
+    slice.map_async(MapMode::Read, move |v|{
+        let mut a = flag_captured.lock().unwrap();
+        **a = v.is_ok().to_owned();
+        drop(a);
+        drop(v);
+    });
+    render_device.poll(Maintain::Wait);
+    let a = flag.lock().unwrap();
+    if **a {
+        let raw = buffer
+            .slice(..).get_mapped_range()
+            .iter().map(|v| *v).collect::<Vec<u8>>();
+        let data: Vec<T> = bytemuck::cast_slice::<u8, T>(raw.as_slice()).to_vec();
+        for corn in data{
+            println!("{:?}", corn);
+        }
+        println!("{}", message);
+    }
+}
+
 /// ### Runs during cleanup
 /// Assures that the vote-scan-compact buffer mirrors the instace buffer's status
 pub fn prepare_vote_scan_compact_pass(
@@ -220,18 +283,52 @@ pub fn prepare_vote_scan_compact_pass(
         pipeline.lod_count = buffers.lod_count;
     }
     //Calculate frustum settings
-    buffers.frustum_values._padding = Vec2::new(4.0, 4.0);
     let view = camera.single();
-    let trans = view.transform;
-    let proj = view.projection*trans.compute_matrix();
-    let lrbtnf = extract_planes_from_projmat(proj);
-    let mut lv = Vec2::new(-lrbtnf[0][2], lrbtnf[0][0]);
-    let mut rv = Vec2::new(-lrbtnf[1][2], lrbtnf[1][0]);
-    if lv.dot(Vec2::new(trans.left().x, trans.left().z)) < 0.0 {lv *= -1.0;}
-    if rv.dot(Vec2::new(trans.right().x, trans.right().z)) < 0.0 {rv *= -1.0;}
-    buffers.frustum_values.left_normal = Vec2::new(-lv.y, lv.x).normalize();
-    buffers.frustum_values.right_normal = Vec2::new(rv.y, -rv.x).normalize();
-    buffers.frustum_values.offset = Vec2::new(trans.translation().x, trans.translation().z);
+    let proj = view.projection*view.transform.compute_matrix().inverse();
+    buffers.frustum_values.col1 = proj.col(0);
+    buffers.frustum_values.col2 = proj.col(1);
+    buffers.frustum_values.col3 = proj.col(2);
+    buffers.frustum_values.col4 = proj.col(3);
+    buffers.frustum_values.offset = view.transform.translation().extend(1.0);
+    /*
+    buffers.read_back = Some((
+        render_device.create_buffer(&BufferDescriptor { 
+            label: None, 
+            size: instance_buffer.data_buffer.as_ref().unwrap().size(), 
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
+            mapped_at_creation: false 
+        }),
+        render_device.create_buffer(&BufferDescriptor { 
+            label: None, 
+            size: buffers.vote_scan.as_ref().unwrap().size(), 
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
+            mapped_at_creation: false 
+        }),
+        render_device.create_buffer(&BufferDescriptor { 
+            label: None, 
+            size: buffers.count_1.as_ref().unwrap().size(), 
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
+            mapped_at_creation: false 
+        }),
+        render_device.create_buffer(&BufferDescriptor { 
+            label: None, 
+            size: buffers.count_2.as_ref().unwrap().size(), 
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
+            mapped_at_creation: false 
+        }),
+        render_device.create_buffer(&BufferDescriptor { 
+            label: None, 
+            size: instance_buffer.indirect_buffer.as_ref().unwrap().size(), 
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
+            mapped_at_creation: false 
+        }),
+        render_device.create_buffer(&BufferDescriptor { 
+            label: None, 
+            size: instance_buffer.index_buffer.as_ref().unwrap().size(), 
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ, 
+            mapped_at_creation: false 
+        })
+    ));*/
 }
 pub fn extract_planes_from_projmat(mat: Mat4) -> [[f32; 4]; 6]{
     let mut lrbtnf = [[0.0; 4]; 6];
@@ -274,7 +371,7 @@ impl Node for CornBufferPrepassNode{
         if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipeline.ids[0]){
             compute_pass.set_pipeline(pipeline);
             compute_pass.set_push_constants(0, bytemuck::cast_slice(&[vote_res.frustum_values]));
-            compute_pass.set_push_constants(32, bytemuck::cast_slice(vote_res.lod_cutoffs.as_slice()));
+            compute_pass.set_push_constants(80, bytemuck::cast_slice(vote_res.lod_cutoffs.as_slice()));
             compute_pass.dispatch_workgroups((vote_res.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
         }
         if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipeline.ids[1]){
@@ -289,6 +386,33 @@ impl Node for CornBufferPrepassNode{
             compute_pass.set_pipeline(pipeline);
             compute_pass.dispatch_workgroups((vote_res.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
         }
+        drop(compute_pass);
+        /*
+        let instance_buffer = world.get_resource::<CornInstanceBuffer>().unwrap();
+        render_context.command_encoder().copy_buffer_to_buffer(
+            instance_buffer.data_buffer.as_ref().unwrap(), 0, 
+            &vote_res.read_back.as_ref().unwrap().0, 0, 
+            instance_buffer.data_buffer.as_ref().unwrap().size());
+        render_context.command_encoder().copy_buffer_to_buffer(
+            vote_res.vote_scan.as_ref().unwrap(), 0, 
+            &vote_res.read_back.as_ref().unwrap().1, 0, 
+            vote_res.vote_scan.as_ref().unwrap().size());
+        render_context.command_encoder().copy_buffer_to_buffer(
+            vote_res.count_1.as_ref().unwrap(), 0, 
+            &vote_res.read_back.as_ref().unwrap().2, 0, 
+            vote_res.count_1.as_ref().unwrap().size());
+        render_context.command_encoder().copy_buffer_to_buffer(
+            vote_res.count_2.as_ref().unwrap(), 0, 
+            &vote_res.read_back.as_ref().unwrap().3, 0, 
+            vote_res.count_2.as_ref().unwrap().size());
+        render_context.command_encoder().copy_buffer_to_buffer(
+            instance_buffer.indirect_buffer.as_ref().unwrap(), 0, 
+            &vote_res.read_back.as_ref().unwrap().4, 0, 
+            instance_buffer.indirect_buffer.as_ref().unwrap().size());
+        render_context.command_encoder().copy_buffer_to_buffer(
+            instance_buffer.index_buffer.as_ref().unwrap(), 0, 
+            &vote_res.read_back.as_ref().unwrap().5, 0, 
+            instance_buffer.index_buffer.as_ref().unwrap().size());*/
         return Ok(());
     }
 }
@@ -375,7 +499,7 @@ impl SpecializedComputePipeline for CornBufferPrePassPipeline{
             label: None,
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(key.1+9))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(key.1+21))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![

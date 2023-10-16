@@ -67,7 +67,7 @@ impl CornInstanceBuffer{
             self.index_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
                 label: Some("Corn Instance Index Buffer"), 
                 size: init_size * size_of::<PerCornData>() as u64, 
-                usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
+                usage: BufferUsages::STORAGE | BufferUsages::VERTEX | BufferUsages::COPY_SRC, 
                 mapped_at_creation: false
             }));
             self.data_count = init_size as u32;
@@ -86,7 +86,7 @@ impl CornInstanceBuffer{
         if self.indirect_buffer.is_some(){self.indirect_buffer.as_ref().unwrap().destroy();}
         self.indirect_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
             label: Some("Corn Indirect Buffer"), 
-            usage: BufferUsages::STORAGE | BufferUsages::INDIRECT,
+            usage: BufferUsages::STORAGE | BufferUsages::INDIRECT | BufferUsages::COPY_SRC,
             contents: bytemuck::cast_slice(data.as_slice())
         }));
         self.lod_count = lod_count;
@@ -106,7 +106,7 @@ impl CornInstanceBuffer{
         self.index_buffer = Some(render_device.create_buffer(&BufferDescriptor{ 
             label: Some("Corn Instance Index Buffer"), 
             size: new_size as u64 * size_of::<PerCornData>() as u64, 
-            usage: BufferUsages::STORAGE | BufferUsages::VERTEX, 
+            usage: BufferUsages::STORAGE | BufferUsages::VERTEX | BufferUsages::COPY_SRC, 
             mapped_at_creation: false
         }));
         self.data_count = new_size;
