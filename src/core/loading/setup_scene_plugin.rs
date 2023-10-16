@@ -58,16 +58,21 @@ fn setup_scene(
 ){
     //Spawn Camera
     commands.spawn((Camera3dBundle {
-        transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+        transform: Transform::from_xyz(0.0, 2.5, 0.0).looking_at(Vec3::new(10.0, 2.5, 0.0), Vec3::Y),
+        projection: Projection::Perspective(PerspectiveProjection{
+            near: 0.1,
+            far: 200.0,
+            ..default()
+        }),
         ..default()
     }, FlyCam, MainCamera{}));
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
         CornField::new(
-            Vec3::new(10.0, 0.0, 0.0), 
-            Vec2::ONE*1.0, 
-            (20, 20),
+            Vec3::new(0.0, 0.0, 0.0), 
+            Vec2::ONE*50.0, 
+            (1000, 1000),
             Vec2::new(0.8, 1.2)
         ),
         materials.add(StandardMaterial::default()),
@@ -78,6 +83,12 @@ fn setup_scene(
         mesh: meshes.add(shape::Box::new(1.0, 1.0, 1.0).into()),
         material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
         transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
+        ..default()
+    });
+    commands.spawn(PbrBundle{
+        mesh: meshes.add(shape::Box::new(1.0, 1.0, 1.0).into()),
+        material: materials.add(Color::rgb(1.0, 0.0, 0.0).into()),
+        transform: Transform::from_translation(Vec3::new(10.0, 0.5, 0.0)),
         ..default()
     });
     //ground

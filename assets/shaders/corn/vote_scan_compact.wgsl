@@ -20,40 +20,44 @@ var<workgroup> temp_scan_buffer: array<array<u32, 256>, LOD_COUNT>;
 var<storage, read_write> count_buffer: array<array<u32, LOD_COUNT>>;
 
 struct FrustumValues {
-  left_normal: vec2<f32>,
-  right_normal: vec2<f32>,
-  offset: vec2<f32>,
-  padding: vec2<f32>,
+  col1: vec4<f32>,
+  col2: vec4<f32>,
+  col3: vec4<f32>,
+  col4: vec4<f32>,
+  offset: vec4<f32>,
   lod_dists: array<f32, LOD_COUNT>
 }
 var<push_constant> cull_settings: FrustumValues;
 
 fn calc_lod(position: u32) -> u32{
   var lod: u32 = 0u;
-  let offset: vec2<f32> = instance_data[position].offset.xz - cull_settings.offset;
+  let pos: vec4<f32> = vec4<f32>(instance_data[position].offset.xyz, 1.0);
+  let offset: vec2<f32> = pos.xz - cull_settings.offset.xz;
   let distance: f32 = dot(offset, offset);
   for (var i = 0u; i < LOD_COUNT-(1u); i++){
     if distance > cull_settings.lod_dists[i]{
       lod += 1u;
     }
   }
+  let projection: mat4x4<f32> = mat4x4<f32>(cull_settings.col1, cull_settings.col2, cull_settings.col3, cull_settings.col4);
+  let projected: vec4<f32> = projection*pos;
+  let bounds: vec3<f32> = projected.xyz / projected.w;
   let enabled: u32 = u32(
-    step(dot(offset, cull_settings.left_normal), 0.0)*
-    step(dot(offset, cull_settings.right_normal), 0.0) > 0.0
+    step(bounds.x, 1.1)*
+    step(-1.1, bounds.x)* 
+    step(0.0, bounds.z) + step(distance, 16.0) > 0.0
   ) * instance_data[position].enabled;
-  lod = select(LOD_COUNT, lod, bool(enabled));
-  return lod;
+  return select(LOD_COUNT, lod, bool(enabled));
 }
 
 @compute @workgroup_size(128, 1, 1)
 fn vote_scan(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
   for(var j: u32 = 0u; j < LOD_COUNT; j++){
-    count_buffer[gid.x+wid.x][j] = 0u;
-    count_buffer2[gid.x+wid.x][j] = 0u;
+    count_buffer[wid.x][j] = 0u;
   }
   //Vote:
-  //let lod1: u32 = (instance_data[2u*gid.x].enabled*(u32(cull_settings.padding.x)+1u) + LOD_COUNT-(1u))%(LOD_COUNT);
-  //let lod2: u32 = (instance_data[2u*gid.x+1u].enabled*(u32(cull_settings.padding.y)+1u) + LOD_COUNT-(1u))%(LOD_COUNT);
+  //let lod1: u32 = (instance_data[2u*gid.x].enabled + LOD_COUNT-(1u))%(LOD_COUNT);
+  //let lod2: u32 = (instance_data[2u*gid.x+1u].enabled*5u + LOD_COUNT-(1u))%(LOD_COUNT);
   let lod1: u32 = calc_lod(2u*gid.x);
   let lod2: u32 = calc_lod(2u*gid.x+1u);
   //Scan:
@@ -103,6 +107,10 @@ var<storage, read_write> count_buffer2: array<array<u32, LOD_COUNT>>;
 
 @compute @workgroup_size(128, 1, 1)
 fn group_scan_1(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
+  for(var j: u32 = 0u; j < LOD_COUNT; j++){
+    count_buffer2[wid.x][j] = 0u;
+  }
+  
   for(var j: u32 = 0u; j < LOD_COUNT; j++){
     temp_scan_buffer[j][2u*lid.x] = count_buffer[2u*gid.x][j];
     temp_scan_buffer[j][2u*lid.x+1u] = count_buffer[2u*gid.x+1u][j];
@@ -215,14 +223,18 @@ var<storage,read_write> instance_index_buffer: array<PerCornData>;
 
 @compute @workgroup_size(128, 1, 1)
 fn compact(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
-  if 2u*gid.x < indirect_buffer[INDIRECT_COUNT - (1u)]{
+  if 2u*gid.x < arrayLength(&instance_data){
     let lod = vote_scan_buffer[2u*gid.x].x;
-    let offset = vote_scan_buffer[2u*gid.x].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
-    instance_index_buffer[offset] = instance_data[gid.x*2u];
+    if lod+1u < LOD_COUNT {
+      let offset = vote_scan_buffer[2u*gid.x].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
+      instance_index_buffer[offset] = instance_data[gid.x*2u];
+    }
   }
-  if 2u*gid.x+1u < indirect_buffer[INDIRECT_COUNT - (1u)]{
+  if 2u*gid.x+1u < arrayLength(&instance_data){
     let lod = vote_scan_buffer[2u*gid.x+1u].x;
-    let offset = vote_scan_buffer[2u*gid.x+1u].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
-    instance_index_buffer[offset] = instance_data[gid.x*2u+1u];
+    if lod+1u < LOD_COUNT {
+      let offset = vote_scan_buffer[2u*gid.x+1u].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
+      instance_index_buffer[offset] = instance_data[gid.x*2u+1u];
+    }
   }
 }
