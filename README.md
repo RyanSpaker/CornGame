@@ -11,7 +11,8 @@ Corn Maze game written in rust with the bevy engine
 - :heavy_check_mark: Actually render the corn
 - :heavy_check_mark: Fix StandardMaterial/Corn Shader to make it actually render using pbr
 - :heavy_check_mark: Allow for different corn fields to have different origins
-- :x: Frustum culling, and LOD grouping
+- :heavy_check_mark: Frustum culling, and LOD grouping
+- :x: clean up and document rendering code
 - :x: print corn to the shadowmap
 - :x: Find a solution for different parts of the corn being rendered differently
 - :x: allow different corn fields to be rendered with different materials
