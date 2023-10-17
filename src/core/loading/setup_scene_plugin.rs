@@ -71,7 +71,7 @@ fn setup_scene(
         SpatialBundle::INHERITED_IDENTITY,
         CornField::new(
             Vec3::new(0.0, 0.0, 0.0), 
-            Vec2::ONE*250.0, 
+            Vec2::ONE*500.0, 
             (1000, 1000),
             Vec2::new(0.8, 1.2)
         ),
