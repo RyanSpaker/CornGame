@@ -52,7 +52,6 @@ impl VoteScanCompactBuffers{
     ){
         self.lod_count = instance_buffer.lod_count;
         self.lod_cutoffs = get_lod_cutoffs(self.lod_count, 2.0, 500.0);
-        println!("{:?}", self.lod_cutoffs);
         self.instance_count = instance_buffer.data_count;
         self.count_1_size = self.instance_count/256+1;
         self.count_2_size = self.count_1_size/256+1;

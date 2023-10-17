@@ -1,3 +1,5 @@
+pub mod framerate;
+
 use bevy::prelude::*;
 //use bevy::{core::FrameCount, render::view::NoFrustumCulling};
 //use rand::{thread_rng, Rng};
@@ -27,6 +29,7 @@ impl<T> Plugin for CornGamePlayPlugin<T> where T: States + Copy{
             ))
             .add_systems(Update, (
                 exit_state_on_key::<T>,
+                //framerate::print_frame_rate,
                 spawn_corn
             ).run_if(in_state(self.active_state)));
         let corn_mat = app.world.resource_mut::<Assets<StandardMaterial>>().add(StandardMaterial::default());

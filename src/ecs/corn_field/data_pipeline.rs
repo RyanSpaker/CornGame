@@ -844,8 +844,8 @@ impl From::<(CornFieldSettings, ComputeRange)> for ComputeSettings{
             step: Vec2::new(
                 value.0.half_extents.x*2.0/(value.0.resolution.0 as f32 - 1.0), 
                 value.0.half_extents.y*2.0/(value.0.resolution.1 as f32 - 1.0)
-            ),
-            res_width: value.0.resolution.0 as u32
+            )*0.5,
+            res_width: value.0.resolution.0 as u32*2-1
          };
          if !output.step.x.is_finite() || output.step.x.is_nan(){
             output.origin.x = value.0.center.x;
@@ -879,7 +879,7 @@ impl CornFieldData{
         }
     }
     pub fn get_instance_count(&self) -> u64{
-        (self.settings.resolution.0*self.settings.resolution.1) as u64
+        (2*self.settings.resolution.0*self.settings.resolution.1 - self.settings.resolution.0 - self.settings.resolution.1 + 1) as u64
     }
 }
 /// per corn field configuration settings
