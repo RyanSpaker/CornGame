@@ -65,8 +65,8 @@ pub fn prepare_corn_data(
     corn_fields.retire_stale_data();
     // if no corn exists, exit early as any operations would panic
     if corn_fields.corn_fields.is_empty(){return;}
-    // assign new corn field's an id between 0-31
-    corn_fields.assign_new_data_ids();
+    // start loading uninitialized data
+    corn_fields.init_new_data_load();
     // if our loading corn fields need more space than is avaiable, queue up buffer expansion
     if let Some(overflow) = 
         corn_fields.get_loading_corn_count().checked_sub(
@@ -212,9 +212,8 @@ impl RenderAppCornFields{
     pub fn retire_stale_data(&mut self){
         self.corn_fields.retain(|_, val| {
             if val.state!=CornFieldDataState::Stale{return true;}
-            if val.buffer_settings.is_none(){return false;}
-            self.corn_buffer_manager.add_id(val.buffer_settings.as_ref().unwrap().0);
-            self.corn_buffer_manager.add_stale_range(&val.buffer_settings.as_ref().unwrap().1);
+            if val.ranges.is_empty(){return false;}
+            self.corn_buffer_manager.add_stale_range(&val.ranges);
             return false;
         });
     }
@@ -227,18 +226,11 @@ impl RenderAppCornFields{
             return Some(data.1.get_instance_count() as u32);
         }).sum()
     }
-    /// ### Assigns an id to new corn fields in the system
-    /// - If there are no id's left, they remain as uninitialized
-    /// - Updates the state of corn fields that recieved an id to Loading
-    pub fn assign_new_data_ids(&mut self){
+    /// ### Sets the state of uninitialized data to loading
+    pub fn init_new_data_load(&mut self){
         for (_, data) in self.corn_fields.iter_mut(){
             if data.state != CornFieldDataState::Uninitialized {continue;}
-            if let Some(id) = self.corn_buffer_manager.get_id(){
-                data.buffer_settings = Some((id, vec![]));
-                data.state = CornFieldDataState::Loading;
-            }else{
-                break;
-            }
+            data.state = CornFieldDataState::Loading;
         }
     }
     /// ### Assigns a list of ranges to new data
@@ -248,7 +240,7 @@ impl RenderAppCornFields{
         self.corn_fields.iter_mut().filter(|(_, v)| v.state==CornFieldDataState::Loading)
             .for_each(|(_, data)| 
         {
-            data.buffer_settings.as_mut().unwrap().1 = self.corn_buffer_manager.get_ranges(data.get_instance_count() as u32);
+            data.ranges = self.corn_buffer_manager.get_ranges(data.get_instance_count() as u32);
         });
     }
     /// ### Returns whether or not the buffer is fragmented too much
@@ -265,12 +257,12 @@ impl RenderAppCornFields{
     /// - Creates the constant buffers used in the init compute pass
     /// - creates the bind group for the ini compute pass
     pub fn queue_init(&mut self, render_device: &RenderDevice, pipeline: &CornDataPipeline){
-        let new_data: Vec<(u32, Vec<Range<u32>>, CornFieldSettings)> = self.corn_fields
+        let new_data: Vec<(Vec<Range<u32>>, CornFieldSettings)> = self.corn_fields
             .iter()
             .filter_map(|(_, v)| {
                 if v.state!=CornFieldDataState::Loading {return None;}
-                if let Some((id, ranges)) = v.buffer_settings.as_ref(){
-                    return Some((id.to_owned(), ranges.to_owned(), v.settings));
+                if !v.ranges.is_empty(){
+                    return Some((v.ranges.to_owned(), v.settings));
                 }
                 return None;
             }).collect();
@@ -303,12 +295,12 @@ impl RenderAppCornFields{
 //==========================================================================================
     /// ### Creates the structures used in the defragment compute pass
     pub fn create_defrag_structures(&mut self, render_device: &RenderDevice, pipeline: &CornDataPipeline){
-        let id_range_offset: Vec<(u32, Vec<Range<u32>>, u32)> = self.corn_fields
+        let id_range_offset: Vec<(Vec<Range<u32>>, u32)> = self.corn_fields
             .iter().filter_map(|(_, v)| {
                 if v.state!=CornFieldDataState::Loading && v.state != CornFieldDataState::Loaded {return None;}
-                if let Some((id, ranges)) = v.buffer_settings.as_ref(){
+                if !v.ranges.is_empty(){
                     if let Some(new_range) = v.defragmented_range.as_ref(){
-                        return Some((id.to_owned(), ranges.to_owned(), new_range.start));
+                        return Some((v.ranges.to_owned(), new_range.start));
                     }
                 }
                 return None;
@@ -342,7 +334,7 @@ impl RenderAppCornFields{
             .for_each(|(_, data)| 
         {
             if let Some(ranges) = data.defragmented_range.as_ref(){
-                data.buffer_settings.as_mut().unwrap().1 = vec![ranges.to_owned()];
+                data.ranges = vec![ranges.to_owned()];
                 data.defragmented_range = None;
             }
         });
@@ -363,8 +355,6 @@ pub struct DynamicBufferManager{
     instance_buffer: Option<Buffer>,
     /// Holds the pointer to the corn instance buffer resource during buffer expansions
     original_instance_buffer: Option<Buffer>,
-    /// Contains all available, unused id's, 0-31 initially
-    ids: Vec<u32>,
     /// list of all unused ranges in the instance buffer
     ranges: Vec<Range<u32>>,
     /// list of ranges that contain stale data
@@ -390,8 +380,7 @@ impl DynamicBufferManager{
     pub fn new() -> Self{
         Self { 
             instance_buffer: None, 
-            original_instance_buffer: None,
-            ids: vec![], 
+            original_instance_buffer: None, 
             ranges: vec![], 
             stale_ranges: vec![], 
             planned_actions: BufferActions::NONE,
@@ -399,11 +388,9 @@ impl DynamicBufferManager{
             defragmented_buffer: None,
             defragmented_ranges: None,
             readback_buffer: None, 
-            compute_structures: ComputeStructures { 
-                ranges_buffer: None, 
+            compute_structures: ComputeStructures {
                 settings_buffer: None, 
-                defrag_ranges_buffer: None, 
-                defrag_offset_buffer: None, 
+                defrag_ranges_buffer: None,
                 init_bind_group: None, 
                 defrag_bind_group: None,
                 total_init_corn: 0, 
@@ -413,7 +400,6 @@ impl DynamicBufferManager{
     }
     /// ### Initializes the struct with a given instance buffer and size
     pub fn init(&mut self, instance_count: u32, instance_buffer: &Buffer){
-        self.ids = (0..32).collect();
         self.ranges = vec![(0..instance_count)];
         self.active_size = instance_count;
         self.instance_buffer = Some(instance_buffer.to_owned());
@@ -431,10 +417,8 @@ impl DynamicBufferManager{
         if let Some(buffer) = self.readback_buffer.as_ref(){buffer.destroy(); self.readback_buffer = None;}
         self.compute_structures.destroy();
         self.compute_structures = ComputeStructures{
-            ranges_buffer: None,
             settings_buffer: None,
             defrag_ranges_buffer: None,
-            defrag_offset_buffer: None,
             init_bind_group: None,
             defrag_bind_group: None,
             total_defrag_corn:0,
@@ -442,10 +426,6 @@ impl DynamicBufferManager{
         };
     }
 //==========================================================================================
-    /// ### Adds an id to the list of available ids
-    pub fn add_id(&mut self, id: u32){
-        self.ids.push(id);
-    }
     /// ### Adds a range to the list of stale ranges
     pub fn add_stale_range(&mut self, stale_ranges: &Vec<Range<u32>>){
         self.stale_ranges.combine(stale_ranges);
@@ -459,10 +439,6 @@ impl DynamicBufferManager{
     /// - returns stale_ranges.total()+available_ranges.total()
     pub fn get_available_space(&self) -> u32{
         return self.ranges.total() + self.stale_ranges.total();
-    }
-    /// ### Removes and returns an available id if one exists
-    pub fn get_id(&mut self) -> Option<u32>{
-        self.ids.pop()
     }
     /// ### Removes and returns a list of ranges totaling count in length
     pub fn get_ranges(&mut self, count: u32) -> Vec<Range<u32>>{
@@ -538,7 +514,7 @@ impl DynamicBufferManager{
     /// ### Creates the buffers and bind groups used in the init compute pass
     pub fn create_init_structures(
         &mut self, 
-        new_data: Vec<(u32, Vec<Range<u32>>, CornFieldSettings)>, 
+        new_data: Vec<(Vec<Range<u32>>, CornFieldSettings)>, 
         render_device: &RenderDevice, 
         pipeline: &CornDataPipeline
     ){
@@ -554,7 +530,7 @@ impl DynamicBufferManager{
     /// ### Creates the buffers and bind groups used in the defrag compute pass
     pub fn create_defrag_structures(
         &mut self,
-        id_range_offset: Vec<(u32, Vec<Range<u32>>, u32)>,
+        id_range_offset: Vec<(Vec<Range<u32>>, u32)>,
         render_device: &RenderDevice,
         pipeline: &CornDataPipeline
     ){
@@ -668,14 +644,10 @@ impl DynamicBufferManager{
 #[derive(Default)]
 /// Stores per frame compute shader values
 pub struct ComputeStructures{
-    /// used in init, list of new and stale data ranges
-    ranges_buffer: Option<Buffer>,
     /// used in init, list of per corn field settings
     settings_buffer: Option<Buffer>,
     /// used in defrag, list of all data ranges
     defrag_ranges_buffer: Option<Buffer>,
-    /// used in defrag, list of per corn field offsets in defragmented buffer
-    defrag_offset_buffer: Option<Buffer>,
     /// bind group for the init pass
     init_bind_group: Option<BindGroup>,
     /// bind group for the defrag pass
@@ -688,28 +660,23 @@ pub struct ComputeStructures{
 impl ComputeStructures{
     pub fn create_init_structures(
         &mut self, 
-        new_data: Vec<(u32, Vec<Range<u32>>, CornFieldSettings)>, 
+        new_data: Vec<(Vec<Range<u32>>, CornFieldSettings)>, 
         stale_data: Vec<Range<u32>>,
         instance_buffer: &Buffer,
         render_device: &RenderDevice,
         pipeline: &CornDataPipeline
     ){
-        let mut ranges: Vec<ComputeRange> = vec![];
-        let mut settings: Vec<ComputeSettings> = vec![ComputeSettings::default(); 32];
-        for (id, new_ranges, new_settings) in new_data{
-            ranges.extend(new_ranges.into_compute_ranges(id));
-            settings[id as usize] = new_settings.into();
-        }
-        ranges.extend(stale_data.into_compute_ranges(32));
-        self.total_init_corn = ranges.iter().map(|r| r.length).sum();
-        self.ranges_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
-            label: Some("Corn Ranges Buffer"), 
-            usage: BufferUsages::STORAGE,
-            contents: bytemuck::cast_slice(&ranges[..])
-        }));
+        let settings: Vec<ComputeSettings> = new_data.iter().flat_map(|(ranges, settings)| {
+            ranges.into_compute_ranges(false).into_iter().map(|range| 
+                ComputeSettings::from((settings.to_owned(), range))
+            )
+        }).chain(stale_data.into_compute_ranges(true).into_iter().map(|stale_range| {
+            ComputeSettings::from((CornFieldSettings::default(), stale_range.to_owned()))
+        })).collect();
+        self.total_init_corn = settings.iter().map(|r| r.range.length).sum();
         self.settings_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
             label: Some("Corn Settings Buffer"), 
-            usage: BufferUsages::UNIFORM,
+            usage: BufferUsages::STORAGE,
             contents: bytemuck::cast_slice(&settings[..])
         }));
         let init_bind_group = [
@@ -720,11 +687,7 @@ impl ComputeStructures{
             BindGroupEntry{
                 binding: 1,
                 resource: BindingResource::Buffer(self.settings_buffer.as_ref().unwrap().as_entire_buffer_binding())
-            },
-            BindGroupEntry{
-                binding: 2,
-                resource: BindingResource::Buffer(self.ranges_buffer.as_ref().unwrap().as_entire_buffer_binding())
-            }            
+            }    
         ];
         self.init_bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
             label: Some("Corn Init Buffer Bind Group"), 
@@ -734,30 +697,24 @@ impl ComputeStructures{
     }
     pub fn create_defrag_structures(
         &mut self,
-        id_range_offset: Vec<(u32, Vec<Range<u32>>, u32)>,
+        id_range_offset: Vec<(Vec<Range<u32>>, u32)>,
         instance_buffer: &Buffer,
         defrag_buffer: &Buffer,
         render_device: &RenderDevice,
         pipeline: &CornDataPipeline
     ){
-        let mut ranges: Vec<ComputeRange> = vec![];
-        let mut sum: u32 = 0;
-        let mut defrag_offsets: [u32; 128] = [0; 128];
-        for (id, old_range, offset) in id_range_offset{
-            sum += old_range.total();
-            ranges.extend(old_range.into_compute_ranges(id));
-            defrag_offsets[id as usize*4] = offset;
-        }
-        self.total_defrag_corn = sum;
+        let ranges: Vec<ComputeRange> = id_range_offset.iter().flat_map(|(ranges, new_offset)| {
+            ranges.into_compute_ranges(false).into_iter().map(|range| {
+                let mut x = range.to_owned();
+                x.stale_range = *new_offset;
+                return x;
+            })
+        }).collect();
+        self.total_defrag_corn = ranges.iter().map(|range| range.length).sum();
         self.defrag_ranges_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
             label: Some("Corn Defrag Ranges Buffer"), 
             usage: BufferUsages::STORAGE,
             contents: bytemuck::cast_slice(&ranges[..])
-        }));
-        self.defrag_offset_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor{ 
-            label: Some("Corn Defrag Offsets Buffer"), 
-            usage: BufferUsages::UNIFORM,
-            contents: bytemuck::cast_slice(&defrag_offsets)
         }));
         let defrag_bind_group = [
             BindGroupEntry{
@@ -766,14 +723,10 @@ impl ComputeStructures{
             },
             BindGroupEntry{
                 binding: 1,
-                resource: BindingResource::Buffer(self.defrag_offset_buffer.as_ref().unwrap().as_entire_buffer_binding())
-            },
-            BindGroupEntry{
-                binding: 2,
                 resource: BindingResource::Buffer(defrag_buffer.as_entire_buffer_binding())
             },
             BindGroupEntry{
-                binding: 3,
+                binding: 2,
                 resource: BindingResource::Buffer(instance_buffer.as_entire_buffer_binding())
             }
         ];
@@ -784,9 +737,7 @@ impl ComputeStructures{
         }));
     }
     pub fn destroy(&mut self){
-        if let Some(buffer) = self.ranges_buffer.as_ref(){buffer.destroy();}
         if let Some(buffer) = self.settings_buffer.as_ref(){buffer.destroy();}
-        if let Some(buffer) = self.defrag_offset_buffer.as_ref(){buffer.destroy();}
         if let Some(buffer) = self.defrag_ranges_buffer.as_ref(){buffer.destroy();}
     }
 }
@@ -797,7 +748,7 @@ pub trait Ranges<T>{
     fn combine(&mut self, other: &Self);
     fn total(&self) -> T;
     fn take(&mut self, count: T) -> (T, Self);
-    fn into_compute_ranges(&self, id: u32) -> Vec<ComputeRange>;
+    fn into_compute_ranges(&self, stale: bool) -> Vec<ComputeRange>;
 }
 impl Ranges<u32> for Vec<Range<u32>>{
     fn combine(&mut self, other: &Self) {
@@ -834,13 +785,13 @@ impl Ranges<u32> for Vec<Range<u32>>{
         });
         return (count, ranges);
     }
-    fn into_compute_ranges(&self, id: u32) -> Vec<ComputeRange> {
+    fn into_compute_ranges(&self, stale: bool) -> Vec<ComputeRange> {
         self.iter().scan(0, |acc, val| {
             let range = ComputeRange{
                 start: val.start,
                 length: val.end - val.start,
-                id,
-                offset: *acc
+                offset: *acc,
+                stale_range: stale as u32
             };
             *acc += range.length;
             Some(range)
@@ -869,37 +820,39 @@ pub enum CornFieldDataState{
 pub struct ComputeRange {
     start: u32,
     length: u32,
-    /// 0-31, corresponds to corn field id
-    id: u32,
     /// instance offset for corresponding corn field
-    offset: u32
+    offset: u32,
+    /// 0-1 whether or not this range is meant as a stale range
+    stale_range: u32
 }
 /// Respresents corn field settings for use in a compute shader
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
 #[repr(C)]
 pub struct ComputeSettings {
+    range: ComputeRange,
     origin: Vec3,
     res_width: u32,
     height_width_min: Vec2,
     step: Vec2    
 }
-impl From::<CornFieldSettings> for ComputeSettings{
-    fn from(value: CornFieldSettings) -> Self {
+impl From::<(CornFieldSettings, ComputeRange)> for ComputeSettings{
+    fn from(value: (CornFieldSettings, ComputeRange)) -> Self {
         let mut output = Self { 
-            origin: value.center - Vec3 { x: value.half_extents.x, y: 0.0, z: value.half_extents.y },
-            height_width_min: Vec2::new(value.height_range.y-value.height_range.x, value.height_range.x),
+            range: value.1.to_owned(),
+            origin: value.0.center - Vec3 { x: value.0.half_extents.x, y: 0.0, z: value.0.half_extents.y },
+            height_width_min: Vec2::new(value.0.height_range.y-value.0.height_range.x, value.0.height_range.x),
             step: Vec2::new(
-                value.half_extents.x*2.0/(value.resolution.0 as f32 - 1.0), 
-                value.half_extents.y*2.0/(value.resolution.1 as f32 - 1.0)
+                value.0.half_extents.x*2.0/(value.0.resolution.0 as f32 - 1.0), 
+                value.0.half_extents.y*2.0/(value.0.resolution.1 as f32 - 1.0)
             ),
-            res_width: value.resolution.0 as u32
+            res_width: value.0.resolution.0 as u32
          };
          if !output.step.x.is_finite() || output.step.x.is_nan(){
-            output.origin.x = value.center.x;
+            output.origin.x = value.0.center.x;
             output.step.x = 0.0;
          }
          if !output.step.y.is_finite() || output.step.y.is_nan(){
-            output.origin.y = value.center.y;
+            output.origin.y = value.0.center.y;
             output.step.y = 0.0;
          }
          return output;
@@ -913,7 +866,7 @@ pub struct CornFieldData{
     /// state of the data
     state: CornFieldDataState,
     /// (id, range list)
-    buffer_settings: Option<(u32, Vec<Range<u32>>)>,
+    ranges: Vec<Range<u32>>,
     defragmented_range: Option<Range<u32>>
 }
 impl CornFieldData{
@@ -921,7 +874,7 @@ impl CornFieldData{
         Self { 
             settings: CornFieldSettings { center, half_extents, resolution, height_range }, 
             state: CornFieldDataState::Uninitialized, 
-            buffer_settings: None ,
+            ranges: vec![],
             defragmented_range: None
         }
     }
@@ -930,7 +883,7 @@ impl CornFieldData{
     }
 }
 /// per corn field configuration settings
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct CornFieldSettings{
     center: Vec3,
     half_extents: Vec2,
@@ -977,15 +930,6 @@ impl FromWorld for CornDataPipeline {
                         binding: 1,
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::Buffer { 
-                            ty: BufferBindingType::Uniform, 
-                            has_dynamic_offset: false, 
-                            min_binding_size: None },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Buffer { 
                             ty: BufferBindingType::Storage { read_only: true }, 
                             has_dynamic_offset: false, 
                             min_binding_size: None },
@@ -1011,22 +955,13 @@ impl FromWorld for CornDataPipeline {
                         binding: 1,
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::Buffer { 
-                            ty: BufferBindingType::Uniform, 
-                            has_dynamic_offset: false, 
-                            min_binding_size: None },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Buffer { 
                             ty: BufferBindingType::Storage { read_only: false }, 
                             has_dynamic_offset: false, 
                             min_binding_size: None },
                         count: None,
                     },
                     BindGroupLayoutEntry {
-                        binding: 3,
+                        binding: 2,
                         visibility: ShaderStages::COMPUTE,
                         ty: BindingType::Buffer { 
                             ty: BufferBindingType::Storage { read_only: true }, 
