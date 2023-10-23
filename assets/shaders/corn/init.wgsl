@@ -25,7 +25,7 @@ fn init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) 
     let buffer_index: u32 = gid.x - index.y + range.start;
     //the current index of our corn stalk in the corn field
     let instance_index: u32 = buffer_index - range.start + range.offset;
-    //The total number of corn stalks in a row 
+    //The total number of expanded locations in a row for corn stalks
     let res_width: u32 = bitcast<u32>(instance_settings.origin_res_width.w);
     // the expanded index of our corn stalk. 
     // Normal indices would be a homogenous array, 
@@ -37,6 +37,7 @@ fn init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) 
     var out: PerCornData;
     let xz_offset = pos*instance_settings.step;
     out.offset = instance_settings.origin_res_width.xyz + vec3<f32>(xz_offset.x, 0.0, xz_offset.y);
+    out.offset += vec3<f32>(randomFloat(gid.x+512u*id_count.x), 0.0, randomFloat(gid.x+768u*id_count.x))*instance_settings.random_settings.x;
     out.scale = randomFloat(gid.x) * instance_settings.height_width_min.x + instance_settings.height_width_min.y;
     let theta = randomFloat(gid.x+256u*id_count.x)*6.2832;
     out.rotation = vec2<f32>(sin(theta), cos(theta));

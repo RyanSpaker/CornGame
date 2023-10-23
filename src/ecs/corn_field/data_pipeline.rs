@@ -187,8 +187,9 @@ impl RenderAppCornFields{
         let new_data = CornFieldData::new(
             field.center, 
             field.half_extents, 
-            field.resolution, 
-            field.height_range
+            field.dist_between, 
+            field.height_range,
+            field.rand_offset_factor
         );
         if let Some(old_data) = self.corn_fields.insert(entity.clone(), new_data){
             self.displaced_stale_data.push_back(old_data);
@@ -833,19 +834,18 @@ pub struct ComputeSettings {
     origin: Vec3,
     res_width: u32,
     height_width_min: Vec2,
-    step: Vec2    
+    step: Vec2,
+    random_settings: Vec4
 }
 impl From::<(CornFieldSettings, ComputeRange)> for ComputeSettings{
     fn from(value: (CornFieldSettings, ComputeRange)) -> Self {
         let mut output = Self { 
             range: value.1.to_owned(),
-            origin: value.0.center - Vec3 { x: value.0.half_extents.x, y: 0.0, z: value.0.half_extents.y },
+            origin: value.0.get_origin(),
             height_width_min: Vec2::new(value.0.height_range.y-value.0.height_range.x, value.0.height_range.x),
-            step: Vec2::new(
-                value.0.half_extents.x*2.0/(value.0.resolution.0 as f32 - 1.0), 
-                value.0.half_extents.y*2.0/(value.0.resolution.1 as f32 - 1.0)
-            )*0.5,
-            res_width: value.0.resolution.0 as u32*2-1
+            step: value.0.get_step(),
+            res_width: (value.0.get_resolution().0*2-1) as u32,
+            random_settings: Vec4::new(value.0.get_random_offset_range(), 0.0, 0.0, 0.0)
          };
          if !output.step.x.is_finite() || output.step.x.is_nan(){
             output.origin.x = value.0.center.x;
@@ -870,16 +870,16 @@ pub struct CornFieldData{
     defragmented_range: Option<Range<u32>>
 }
 impl CornFieldData{
-    pub fn new(center: Vec3, half_extents: Vec2, resolution: (u32, u32), height_range: Vec2) -> Self{
+    pub fn new(center: Vec3, half_extents: Vec2, seperation_distance: f32, height_range: Vec2, rand_offset: f32) -> Self{
         Self { 
-            settings: CornFieldSettings { center, half_extents, resolution, height_range }, 
+            settings: CornFieldSettings { center, half_extents, dist_between: seperation_distance, height_range, rand_offset_factor: rand_offset}, 
             state: CornFieldDataState::Uninitialized, 
             ranges: vec![],
             defragmented_range: None
         }
     }
     pub fn get_instance_count(&self) -> u64{
-        (2*self.settings.resolution.0*self.settings.resolution.1 - self.settings.resolution.0 - self.settings.resolution.1 + 1) as u64
+        self.settings.get_instance_count()
     }
 }
 /// per corn field configuration settings
@@ -887,8 +887,39 @@ impl CornFieldData{
 pub struct CornFieldSettings{
     center: Vec3,
     half_extents: Vec2,
-    resolution: (u32, u32),
+    dist_between: f32,
     height_range: Vec2,
+    rand_offset_factor: f32
+}
+impl CornFieldSettings{
+    pub fn get_resolution(&self) -> (u64, u64){
+        let width = self.half_extents.x.max(self.half_extents.y)*2.0;
+        let height = self.half_extents.x.min(self.half_extents.y)*2.0;
+        //bigger of the two width resolutions
+        let width_res = (width/self.dist_between) as u64+1;
+        // total height resolution of both big and small rows
+        let height_res = ((2f32*height)/(self.dist_between*3f32.sqrt())) as u64+1;
+        (width_res, height_res)
+    }
+    pub fn get_instance_count(&self) -> u64{
+        let (width_res, height_res) = self.get_resolution();
+        width_res*(height_res-height_res/2)+(width_res-1)*(height_res/2)
+    }
+    pub fn get_origin(&self) -> Vec3{
+        let (width_res, height_res) = self.get_resolution();
+        let true_width = (width_res-1) as f32*self.dist_between;
+        let true_height = (height_res-1) as f32*self.dist_between*3f32.sqrt()*0.5;
+        return self.center - Vec3::new(true_width*0.5, 0.0, true_height*0.5);
+    }
+    pub fn get_step(&self) -> Vec2{
+        Vec2::new(
+            self.dist_between*0.5, 
+            self.dist_between*3f32.sqrt()*0.5
+        )
+    }
+    pub fn get_random_offset_range(&self) -> f32{
+        return self.dist_between*self.rand_offset_factor;
+    }
 }
 bitflags! {
     /// Flags used to represent the planned actions of the corn data pipeline in the current frame

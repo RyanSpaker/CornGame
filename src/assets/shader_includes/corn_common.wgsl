@@ -19,7 +19,8 @@ struct CornSettings {
   range: Range,
   origin_res_width: vec4<f32>,
   height_width_min: vec2<f32>,
-  step: vec2<f32>
+  step: vec2<f32>,
+  random_settings: vec4<f32>
 }
 
 fn hash(value: u32) -> u32 {

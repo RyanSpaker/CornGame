@@ -29,17 +29,19 @@ pub struct PerCornData{
 pub struct CornField{
     center: Vec3,
     half_extents: Vec2,
-    resolution: (u32, u32),
-    height_range: Vec2
+    dist_between: f32,
+    height_range: Vec2,
+    rand_offset_factor: f32
 }
 impl CornField{
     //creates instance data from width and density values
-    pub fn new(center: Vec3, half_extents: Vec2, resolution: (u32, u32), height_range: Vec2) -> Self{
+    pub fn new(center: Vec3, half_extents: Vec2, seperation_distance: f32, height_range: Vec2, rand_offset: f32) -> Self{
         Self{
             center, 
             half_extents, 
-            resolution,
-            height_range
+            dist_between: seperation_distance,
+            height_range,
+            rand_offset_factor: rand_offset
         }
     }
 }
