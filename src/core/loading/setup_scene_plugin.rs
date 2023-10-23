@@ -72,8 +72,9 @@ fn setup_scene(
         CornField::new(
             Vec3::new(0.0, 0.0, 0.0), 
             Vec2::ONE*500.0, 
-            (1000, 1000),
-            Vec2::new(0.8, 1.2)
+            0.75,
+            Vec2::new(0.9, 1.4),
+            0.4
         ),
         materials.add(StandardMaterial::default()),
         NoFrustumCulling
