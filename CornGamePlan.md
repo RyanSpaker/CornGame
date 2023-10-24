@@ -11,8 +11,9 @@ to corn rendering
 Resources:
 ---
 1. [Overview of Real-Time Hard Shadow Mapping Techniques](https://onlinelibrary.wiley.com/doi/full/10.1111/j.1467-8659.2010.01841.x)
-2. [GPU-Based Dynamic Quad Stream for Forest Rendering](GPU-Based_Quad_Stream.pdf)
+2. [GPU-Based Dynamic Quad Stream for Forest Rendering](GPU_Based_Quad_Stream.pdf)
 3. [Light Space Perspective Shadowmaps](https://diglib.eg.org/bitstream/handle/10.2312/EGWR.EGSR04.143-151/143-151.pdf)
+4. [Procedural Mazes](Mazes_for_Programmers.pdf)
 
 List of Features:
 ===
