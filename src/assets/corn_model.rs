@@ -101,7 +101,7 @@ fn add_corn_load_task(
     mut next_state: ResMut<NextState<CornLoadState>>
 ){
     task_count.0 += 1;
-    corn_handles.0 = Some(server.load("models\\corn_master.glb"));
+    corn_handles.0 = Some(server.load("models/corn_master.glb"));
     next_state.set(CornLoadState::Loading);
 }
 fn remove_corn_load_task(
