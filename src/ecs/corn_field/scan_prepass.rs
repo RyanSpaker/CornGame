@@ -8,12 +8,12 @@ use bevy::{
         RenderApp, 
         RenderSet, 
         Render, 
-        render_graph::{Node, RenderGraphContext, RenderGraph}, view::ExtractedView
+        render_graph::{Node, RenderGraphContext, RenderGraph}, view::ExtractedView, Extract
     }, pbr::draw_3d_graph::node::SHADOW_PASS, core_pipeline::core_3d
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::Maintain;
-use crate::ecs::main_camera::MainCamera;
+use crate::{ecs::main_camera::MainCamera, prelude::corn_model::CornMeshes};
 use super::CornInstanceBuffer;
 
 /// Respresents frustum structure in compute shader sans lod distance cutoffs
@@ -25,6 +25,33 @@ pub struct FrustumValues {
     pub col3: Vec4,
     pub col4: Vec4,
     pub offset: Vec4
+}
+
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource)]
+pub struct LodCutoffs(pub Vec<f32>);
+//Makes sure lodcutoffs has the right number of lods
+pub fn update_lod_cutoffs(mut lods: ResMut<LodCutoffs>, corn_mesh: Res<CornMeshes>){
+    if corn_mesh.loaded && corn_mesh.lod_count as usize != lods.0.len(){
+        lods.0.resize(corn_mesh.lod_count as usize, 0.0);
+    }
+}
+fn extract_lod_cutoffs(
+    mut render_lods: ResMut<LodCutoffs>, 
+    main_lods: Extract<Res<LodCutoffs>>,
+){
+    render_lods.0 = main_lods.0.clone();
+}
+
+// max_cutoff / step count
+// step count is a geomtetric series where the first lod has 1, seocnd has 1*a, third 1*a*a
+// a currently is 2, the total steps equatest to (a^lod_count-1)/(a-1)
+pub fn get_lod_cutoffs(lod_count: u32, k: f32, max_cutoff: f32) -> Vec<f32>{
+    let step_size: f32 = max_cutoff/((k.powi(lod_count as i32)-1.0)/(k-1.0));
+    let lod_cutoffs = (0..lod_count).map(|i| 
+        (((k.powi((i+1) as i32)-1.0)/(k-1.0))*step_size).powi(2)
+    ).collect();
+    return lod_cutoffs;
 }
 
 /// ### Keeps hold of all of the vote-scan-compact shader resources
@@ -39,7 +66,6 @@ pub struct VoteScanCompactBuffers{
     lod_count: u32,
     bind_group: Option<BindGroup>,
     frustum_values: FrustumValues,
-    lod_cutoffs: Vec<f32>,
     enabled: bool,
     //read_back: Option<(Buffer, Buffer, Buffer, Buffer, Buffer, Buffer)>
 }
@@ -51,7 +77,6 @@ impl VoteScanCompactBuffers{
         pipeline: &CornBufferPrePassPipeline
     ){
         self.lod_count = instance_buffer.lod_count;
-        self.lod_cutoffs = get_lod_cutoffs(self.lod_count, 2.0, 500.0);
         self.instance_count = instance_buffer.data_count;
         self.count_1_size = self.instance_count/256+1;
         self.count_2_size = self.count_1_size/256+1;
@@ -116,8 +141,6 @@ impl VoteScanCompactBuffers{
         pipeline: &CornBufferPrePassPipeline
     ){
         self.lod_count = instance_buffer.lod_count;
-        self.lod_cutoffs = get_lod_cutoffs(self.lod_count, 1.5, 50.0);
-        println!("{:?}", self.lod_cutoffs);
         self.instance_count = instance_buffer.data_count;
         self.count_1_size = self.instance_count/256+1;
         self.count_2_size = self.count_1_size/256+1;
@@ -224,16 +247,7 @@ impl VoteScanCompactBuffers{
         self.read_back = None;*/
     }
 }
-// max_cutoff / step count
-// step count is a geomtetric series where the first lod has 1, seocnd has 1*a, third 1*a*a
-// a currently is 2, the total steps equatest to (a^lod_count-1)/(a-1)
-pub fn get_lod_cutoffs(lod_count: u32, k: f32, max_cutoff: f32) -> Vec<f32>{
-    let step_size: f32 = max_cutoff/((k.powi(lod_count as i32)-1.0)/(k-1.0));
-    let lod_cutoffs = (0..lod_count).map(|i| 
-        (((k.powi((i+1) as i32)-1.0)/(k-1.0))*step_size).powi(2)
-    ).collect();
-    return lod_cutoffs;
-}
+
 pub fn print_readback<T>(buffer: &Buffer, message: String, render_device: &RenderDevice) 
 where T: std::fmt::Debug + Pod{
     let slice = buffer.slice(..);
@@ -357,6 +371,9 @@ impl Node for CornBufferPrepassNode{
         if vote_res.is_none() {return Ok(());}
         let vote_res = vote_res.unwrap();
         if !vote_res.enabled {return Ok(());}
+        let lod_cutoffs = world.get_resource::<LodCutoffs>();
+        if lod_cutoffs.is_none() {return Ok(());}
+        let lod_cutoffs = lod_cutoffs.unwrap();
         //get our pipeline
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<CornBufferPrePassPipeline>();
@@ -370,7 +387,7 @@ impl Node for CornBufferPrepassNode{
         if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipeline.ids[0]){
             compute_pass.set_pipeline(pipeline);
             compute_pass.set_push_constants(0, bytemuck::cast_slice(&[vote_res.frustum_values]));
-            compute_pass.set_push_constants(80, bytemuck::cast_slice(vote_res.lod_cutoffs.as_slice()));
+            compute_pass.set_push_constants(80, bytemuck::cast_slice(lod_cutoffs.0.iter().map(|x| x*x).collect::<Vec<f32>>().as_slice()));
             compute_pass.dispatch_workgroups((vote_res.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
         }
         if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipeline.ids[1]){
@@ -513,12 +530,17 @@ impl SpecializedComputePipeline for CornBufferPrePassPipeline{
 pub struct CornBufferPrepassPlugin{}
 impl Plugin for CornBufferPrepassPlugin{
     fn build(&self, app: &mut App) {
+        app
+            .register_type::<LodCutoffs>()
+            .init_resource::<LodCutoffs>()
+            .add_systems(PostUpdate, update_lod_cutoffs);
         app.get_sub_app_mut(RenderApp).unwrap()
+            .init_resource::<LodCutoffs>()
             .init_resource::<VoteScanCompactBuffers>()
             .init_resource::<SpecializedComputePipelines<CornBufferPrePassPipeline>>()
             .add_systems(Render, 
                 prepare_vote_scan_compact_pass.in_set(RenderSet::Prepare)
-            );
+            ).add_systems(ExtractSchedule, extract_lod_cutoffs);
         let mut binding = app.get_sub_app_mut(RenderApp).unwrap()
             .world.get_resource_mut::<RenderGraph>().unwrap();
         let graph = binding
