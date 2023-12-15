@@ -1,8 +1,6 @@
 use std::f32::consts::PI;
 use bevy::prelude::*;
-use bevy::render::view::NoFrustumCulling;
 use crate::core::loading::LoadingTaskCount;
-use crate::ecs::corn_field::CornField;
 use crate::ecs::main_camera::MainCamera;
 use crate::flycam::FlyCam;
 use crate::prelude::corn_model::CornLoadState;
@@ -67,18 +65,18 @@ fn setup_scene(
         ..default()
     }, FlyCam, MainCamera{}));
     //Spawn Rest of Scene
-    commands.spawn((
+    /*commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
-        CornField::new(
+        SimpleCornField::new(
             Vec3::new(0.0, 0.0, 0.0), 
             Vec2::ONE*100.0, 
             0.75,
             Vec2::new(0.9, 1.4),
             0.4
         ),
-        materials.add(StandardMaterial::default()),
+        //materials.add(StandardMaterial::default()),
         NoFrustumCulling
-    ));
+    ));*/
     //box
     commands.spawn(PbrBundle{
         mesh: meshes.add(shape::Box::new(1.0, 1.0, 1.0).into()),

@@ -77,7 +77,7 @@ impl VoteScanCompactBuffers{
         pipeline: &CornBufferPrePassPipeline
     ){
         self.lod_count = instance_buffer.lod_count;
-        self.instance_count = instance_buffer.data_count;
+        self.instance_count = instance_buffer.data_count as u32;
         self.count_1_size = self.instance_count/256+1;
         self.count_2_size = self.count_1_size/256+1;
         if let Some(buffer) = self.vote_scan.as_ref() {buffer.destroy();}
@@ -124,7 +124,7 @@ impl VoteScanCompactBuffers{
             },
             BindGroupEntry{
                 binding: 5,
-                resource: BindingResource::Buffer(instance_buffer.index_buffer.as_ref().unwrap().as_entire_buffer_binding())
+                resource: BindingResource::Buffer(instance_buffer.sorted_buffer.as_ref().unwrap().as_entire_buffer_binding())
             }
         ];
         self.bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
@@ -141,7 +141,7 @@ impl VoteScanCompactBuffers{
         pipeline: &CornBufferPrePassPipeline
     ){
         self.lod_count = instance_buffer.lod_count;
-        self.instance_count = instance_buffer.data_count;
+        self.instance_count = instance_buffer.data_count as u32;
         self.count_1_size = self.instance_count/256+1;
         self.count_2_size = self.count_1_size/256+1;
         if let Some(buffer) = self.vote_scan.as_ref() {buffer.destroy();}
@@ -188,7 +188,7 @@ impl VoteScanCompactBuffers{
             },
             BindGroupEntry{
                 binding: 5,
-                resource: BindingResource::Buffer(instance_buffer.index_buffer.as_ref().unwrap().as_entire_buffer_binding())
+                resource: BindingResource::Buffer(instance_buffer.sorted_buffer.as_ref().unwrap().as_entire_buffer_binding())
             }
         ];
         self.bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
@@ -208,17 +208,17 @@ impl VoteScanCompactBuffers{
         self.enabled = false;
     }
     pub fn cleanup(
-        &mut self, 
-        instance_buffer: &CornInstanceBuffer,
-        render_device: &RenderDevice,
-        prepass_pipeline: &CornBufferPrePassPipeline
+        mut vote_scan: ResMut<VoteScanCompactBuffers>,
+        instance_buffer: Res<CornInstanceBuffer>,
+        render_device: Res<RenderDevice>,
+        prepass_pipeline: Res<CornBufferPrePassPipeline>
     ){
-        if !instance_buffer.enabled && self.enabled {self.destroy(); return;}
-        if instance_buffer.enabled && !self.enabled {self.init(
-            render_device, instance_buffer, prepass_pipeline
+        if !instance_buffer.enabled && vote_scan.enabled {vote_scan.destroy(); return;}
+        if instance_buffer.enabled && !vote_scan.enabled {vote_scan.init(
+            render_device.as_ref(), instance_buffer.as_ref(), prepass_pipeline.as_ref()
         ); return;}
-        if self.instance_count != instance_buffer.data_count || self.lod_count != instance_buffer.lod_count {
-            self.update_size(render_device, instance_buffer, prepass_pipeline);
+        if vote_scan.instance_count != instance_buffer.data_count as u32 || vote_scan.lod_count != instance_buffer.lod_count {
+            vote_scan.update_size(render_device.as_ref(), instance_buffer.as_ref(), prepass_pipeline.as_ref());
         }
         /*
         if self.read_back.is_none() {return;}
