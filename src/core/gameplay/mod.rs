@@ -1,9 +1,9 @@
 pub mod framerate;
 
-use bevy::prelude::*;
+use bevy::{prelude::*, core::FrameCount, render::view::NoFrustumCulling};
 //use bevy::{core::FrameCount, render::view::NoFrustumCulling};
 //use rand::{thread_rng, Rng};
-use crate::flycam::{cam_look_plugin::CamLookPlugin, cam_move_plugin::CamMovePlugin}; 
+use crate::{flycam::{cam_look_plugin::CamLookPlugin, cam_move_plugin::CamMovePlugin}, ecs::corn_field::corn_fields::simple_corn_field::SimpleCornField}; 
 //use crate::ecs::corn_field::CornField;
 
 #[derive(Resource, Default)]
@@ -59,23 +59,24 @@ impl From<&Handle<StandardMaterial>> for CornMaterials{
 }
 
 fn spawn_corn(
-    //mut commands: Commands, frames: Res<FrameCount>, 
+    mut commands: Commands, frames: Res<FrameCount>, 
     //mut despawn_corn: ResMut<CornDespawn>,
     //material: Res<CornMaterials>
 ){
-    /*
-    if frames.0 == 10u32{
+    println!("{}", frames.0);
+    if frames.0 == 100u32{
         commands.spawn((
             SpatialBundle::INHERITED_IDENTITY,
-            CornField::new(
+            SimpleCornField::new(
                 Vec3::ZERO, 
                 Vec2::ONE*5.0, 
-                (20, 20),
-                Vec2::new(0.8, 1.2)
+                2.0,
+                Vec2::new(0.8, 1.2),
+                0.1
             ),
             NoFrustumCulling
         ));
-    }*/
+    }
     /*
     if frames.0%1u32 == 0u32{
         let mut rng = thread_rng();

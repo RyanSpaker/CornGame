@@ -128,7 +128,7 @@ pub fn draw_corn_instanced_opaque<'w>(
     let Some(global_mesh) = meshes.get(&corn_data.global_mesh) else{
         return RenderCommandResult::Failure;
     };
-    let Some(data_buffer) = corn_data.instance_buffer.index_buffer.as_ref() else{
+    let Some(data_buffer) = corn_data.instance_buffer.sorted_buffer.as_ref() else{
         return RenderCommandResult::Failure;
     };
     let Some(indirect_buffer) = corn_data.instance_buffer.indirect_buffer.as_ref() else {
