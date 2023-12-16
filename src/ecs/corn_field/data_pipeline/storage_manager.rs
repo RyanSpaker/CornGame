@@ -107,6 +107,12 @@ impl CornBufferStorageManager{
         }).collect());
         manager.free_space.difference_with(&deleted_space);
     }
+    pub fn erase_buffer(&mut self){
+        self.ranges = HashMap::new();
+        self.stale_space = BufferRange::default();
+        self.free_space = BufferRange::default();
+        self.total_space = 0;
+    }
 }
 
 /// This event means that the range specified was just flagged as not stale anymore by direct flagging. Overwrites are handled by allocSpaceEvents

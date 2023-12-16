@@ -10,11 +10,11 @@ use bevy::{
         render_resource::*,
         renderer::RenderDevice, 
         RenderApp, RenderSet, Render,
-    }
+    }, reflect::GetTypeRegistration
 };
 use bytemuck::{Pod, Zeroable};
 use crate::prelude::corn_model::CornMeshes;
-use self::{data_pipeline::{storage_manager::{CornBufferStorageManager, BufferRange}, MasterCornFieldDataPipelinePlugin}, render::CornRenderPlugin, scan_prepass::{CornBufferPrepassPlugin, VoteScanCompactBuffers}};
+use self::{data_pipeline::{storage_manager::{CornBufferStorageManager, BufferRange}, MasterCornFieldDataPipelinePlugin}, corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}};
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
 #[repr(C)]
@@ -31,7 +31,7 @@ pub const CORN_DATA_SIZE: u64 = 32;
 /// This trait represents all implementation specific corn field settings
 /// Impl this trait to create a type of corn field
 /// Make sure to add a RenderableCornFieldPlugin<T> to the app as well
-pub trait RenderableCornField: Component + Clone{
+pub trait RenderableCornField: Component + Clone + GetTypeRegistration + std::fmt::Debug{
     /// This function returns a hash of the component used for an ID. 
     /// The hash value should use any values that change the structure of the corn, and none others.
     /// Any time the hash is changed, the corn is deleted off the gpu and re-initialized.
@@ -138,7 +138,7 @@ impl CornInstanceBuffer{
     /// Runs during cleanup, deletes the buffers if no corn is in them
     pub fn cleanup(
         mut instance_buffer: ResMut<CornInstanceBuffer>,
-        storage: Res<CornBufferStorageManager>
+        mut storage: ResMut<CornBufferStorageManager>
     ){
         if storage.ranges.is_empty() && storage.stale_space.is_empty(){
             instance_buffer.data_buffer.take().and_then(|buffer| Some(buffer.destroy()));
@@ -149,6 +149,7 @@ impl CornInstanceBuffer{
             instance_buffer.lod_count = 0;
             instance_buffer.indirect_ready = false;
             instance_buffer.enabled = false;
+            storage.erase_buffer();
         }
     }
     /// Returns whether or not the corn data is ready to begin rendering
@@ -162,13 +163,14 @@ pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins((MasterCornFieldDataPipelinePlugin{}, CornRenderPlugin{}, CornBufferPrepassPlugin{}))
+            .add_plugins(MasterCornFieldDataPipelinePlugin{})
+            .register_type::<SimpleRectangularCornField>()
+            .register_type::<SimpleHexagonalCornField>()
         .sub_app_mut(RenderApp)
             .init_resource::<CornInstanceBuffer>()
             .add_systems(Render, (
                 CornInstanceBuffer::cleanup.after(CornBufferStorageManager::handle_shrink_events),
-                CornInstanceBuffer::update_indirect_buffer,
-                VoteScanCompactBuffers::cleanup
+                CornInstanceBuffer::update_indirect_buffer
             ).chain().in_set(RenderSet::Cleanup));
     }
 }

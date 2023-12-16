@@ -12,6 +12,8 @@ use super::{
     RenderableCornField
 };
 
+pub const READBACK_ENABLED: bool = false;
+
 /*
     Corn Buffer Operation Calculator
 */
@@ -69,6 +71,7 @@ impl CornBufferOperationCalculator{
             }).collect()
         ));
         manager.avg_range_count = storage.ranges.values().map(|range| range.range_count()).sum::<usize>() as f32 / storage.ranges.len() as f32;
+        if manager.avg_range_count.is_nan() {manager.avg_range_count = 0.0;}
     }
     /// Runs for each type of renderable corn field, creates init operations for any field that needs continuos space on the buffer
     pub fn create_continuos_init_operations<T: RenderableCornField>(
@@ -141,8 +144,9 @@ impl CornBufferOperationCalculator{
                         let new_buffer_size = instance_count + instance_count/4;
                         manager.shrink = (manager.new_buffer_length as i64 - new_buffer_size as i64).max(0) as u64;
                         manager.new_buffer_length -= manager.shrink;
-                        manager.readback = true;
+                        manager.readback = READBACK_ENABLED;
                     }else if manager.should_defrag(){
+                        println!("Defrag!");
                         manager.defrag = true;
                         manager.readback = true;
                     }
@@ -156,10 +160,10 @@ impl CornBufferOperationCalculator{
             let buffer_length: u64 = manager.new_buffer_length;
             // if we expand, free space and stale space are 0, meaning t +t/4 - b will always be positive since t == b
             manager.expand((instance_count + instance_count / 4) - buffer_length);
-            manager.readback = true;
+            manager.readback = READBACK_ENABLED;
         }else{
             // this else block only gets run when init ops inst empty, or when stale space isnt empty, so readback is needed
-            manager.readback = true;
+            manager.readback = READBACK_ENABLED;
         }
     }
     /// Returns whether or not the buffer should shrink
