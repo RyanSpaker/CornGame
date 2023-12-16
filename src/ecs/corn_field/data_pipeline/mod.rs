@@ -5,7 +5,7 @@ pub mod operation_executor;
 
 use std::marker::PhantomData;
 use bevy::{prelude::*, render::{RenderApp, Extract}};
-use super::{corn_fields::simple_corn_field::SimpleCornField, RenderableCornField};
+use super::{corn_fields::simple_corn_field::{SimpleHexagonalCornField, SimpleRectangularCornField}, RenderableCornField};
 
 /*
     Plugins:
@@ -45,7 +45,8 @@ impl Plugin for MasterCornFieldDataPipelinePlugin{
             storage_manager::MasterCornStorageManagerPlugin{},
             operation_manager::MasterCornOperationPlugin{},
             operation_executor::MasterCornOperationExecutionPlugin{},
-            RenderableCornFieldPlugin::<SimpleCornField>::new()
+            RenderableCornFieldPlugin::<SimpleHexagonalCornField>::new(),
+            RenderableCornFieldPlugin::<SimpleRectangularCornField>::new()
         ));
     }
 }
@@ -69,3 +70,9 @@ pub fn extract_renderable_corn_field<T: RenderableCornField>(
     *previous_len = values.len();
     commands.insert_or_spawn_batch(values);
 }
+
+/*
+    Tests:
+*/
+
+

@@ -292,7 +292,7 @@ impl CornOperationResources{
             }));
         }
         // Create readback Buffer is any of the operations are happening
-        if operations.expansion > 0 || operations.defrag || !operations.new_stale_space.is_empty() || !operations.init_ops.is_empty(){
+        if operations.readback{
             resources.readback_buffer = Some(render_device.create_buffer(&BufferDescriptor { 
                 label: Some("Corn Readback Buffer".into()), 
                 size: operations.get_new_buffer_count()*CORN_DATA_SIZE, 
@@ -323,6 +323,7 @@ impl CornOperationResources{
             return;
         }
         let operation_buffer = if operations.expansion == 0 {
+            assert!(instance_buffer.get_instance_buffer().is_some(), "No Instance Buffer{:?} \n {:?}", fields[0], operations);
             instance_buffer.get_instance_buffer().unwrap()
         }else {resources.temporary_buffer.as_ref().unwrap()};
         let (bindgroups, buffers) = T::get_init_resources(
@@ -562,7 +563,7 @@ impl Plugin for MasterCornOperationExecutionPlugin{
                     .configure_set(QueuePipelineCreationSet
                         .after(PrepareInitResourcesSet).after(CornOperationResources::prepare_common_resources)
                         .run_if(run_once()).in_set(RenderSet::Prepare))
-                    .configure_set(PrepareInitResourcesSet.after(CornBufferOperationCalculator::finalize_operations).in_set(RenderSet::Prepare));
+                    .configure_set(PrepareInitResourcesSet.after(CornOperationResources::prepare_common_resources).in_set(RenderSet::Prepare));
             }
         }
     }
