@@ -1,8 +1,10 @@
 pub mod framerate;
 
-use bevy::{prelude::*, core::FrameCount, render::view::NoFrustumCulling};
-use rand::{thread_rng, Rng};
-use crate::{flycam::{cam_look_plugin::CamLookPlugin, cam_move_plugin::CamMovePlugin}, ecs::corn_field::corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}};
+use bevy::prelude::*;
+//use bevy::{core::FrameCount, render::view::NoFrustumCulling};
+//use rand::{thread_rng, Rng};
+//use crate::ecs::corn_field::corn_fields::simple_corn_field::{SimpleHexagonalCornField, SimpleRectangularCornField};
+use crate::flycam::{cam_look_plugin::CamLookPlugin, cam_move_plugin::CamMovePlugin};
 
 #[derive(Resource, Default)]
 pub struct GamePlayExitState<T>(T) where T: States + Copy;
@@ -57,10 +59,85 @@ impl From<&Handle<StandardMaterial>> for CornMaterials{
 }
 
 fn spawn_corn(
-    mut commands: Commands, frames: Res<FrameCount>, 
-    mut despawn_corn: ResMut<CornDespawn>,
+    //mut commands: Commands, frames: Res<FrameCount>, 
+    //mut despawn_corn: ResMut<CornDespawn>,
     //material: Res<CornMaterials>
 ){
+    /*if frames.0 == 100{
+        println!("A");
+        let id = commands.spawn((
+            SpatialBundle::INHERITED_IDENTITY,
+            SimpleRectangularCornField::new(
+                Vec3::ZERO,
+                Vec2::ZERO,
+                UVec2::ONE,
+                Vec2::new(0.5, 0.5),
+                0.0
+            ),
+            NoFrustumCulling
+        )).id();
+        despawn_corn.0.push(id);
+    } else if frames.0 == 101{
+        println!("B");
+        let id = commands.spawn((
+            SpatialBundle::INHERITED_IDENTITY,
+            SimpleRectangularCornField::new(
+                Vec3::ZERO,
+                Vec2::ZERO,
+                UVec2::ONE,
+                Vec2::new(1.0, 1.0),
+                0.0
+            ),
+            NoFrustumCulling
+        )).id();
+        despawn_corn.0.push(id);
+    } else if frames.0 == 102{
+        println!("C");
+        commands.entity(despawn_corn.0.remove(0)).despawn();
+        let id = commands.spawn((
+            SpatialBundle::INHERITED_IDENTITY,
+            SimpleRectangularCornField::new(
+                Vec3::ZERO,
+                Vec2::ZERO,
+                UVec2::new(1, 2),
+                Vec2::new(0.5, 0.5),
+                0.0
+            ),
+            NoFrustumCulling
+        )).id();
+        despawn_corn.0.push(id);
+    } else if frames.0 == 103{
+        println!("D");
+        commands.entity(despawn_corn.0.remove(0)).despawn();
+        let id = commands.spawn((
+            SpatialBundle::INHERITED_IDENTITY,
+            SimpleRectangularCornField::new(
+                Vec3::ZERO,
+                Vec2::ZERO,
+                UVec2::new(1, 2),
+                Vec2::new(1.0, 1.0),
+                0.0
+            ),
+            NoFrustumCulling
+        )).id();
+        despawn_corn.0.push(id);
+    } else if frames.0 == 104{
+        println!("E");
+        commands.entity(despawn_corn.0.remove(0)).despawn();
+        let id = commands.spawn((
+            SpatialBundle::INHERITED_IDENTITY,
+            SimpleRectangularCornField::new(
+                Vec3::ZERO,
+                Vec2::ZERO,
+                UVec2::new(1, 3),
+                Vec2::new(0.5, 0.5),
+                0.0
+            ),
+            NoFrustumCulling
+        )).id();
+        despawn_corn.0.push(id);
+    }*/
+    /*
     if frames.0%1u32 == 0u32{
         let mut rng = thread_rng();
         let rand: f32 = rng.gen_range(0.0..100.0);
@@ -98,5 +175,5 @@ fn spawn_corn(
                 )).id());
             }
         }
-    }
+    }*/
 }

@@ -255,8 +255,9 @@ where T:
     }
     /// Creates an Integer set from a single range [)
     pub fn simple(start: &T, end: &T) -> Self{
-        assert!(start!=end, "Cant create bufferrange with start and end being equal");
-        return Self{endpoints: vec![start.to_owned(), end.to_owned()]};
+        if start == end {Self::default()} else {
+            Self{endpoints: vec![start.to_owned(), end.to_owned()]}
+        }
     }
     /// Returns an Integer set of length continuos elements from self, returning None if there is no continuos range of that size in self
     pub fn get_continuos(&self, length: T) -> Option<Self>{

@@ -146,9 +146,8 @@ impl CornBufferOperationCalculator{
                         manager.new_buffer_length -= manager.shrink;
                         manager.readback = READBACK_ENABLED;
                     }else if manager.should_defrag(){
-                        println!("Defrag!");
                         manager.defrag = true;
-                        manager.readback = true;
+                        manager.readback = READBACK_ENABLED;
                     }
                 }
             }

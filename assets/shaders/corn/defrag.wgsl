@@ -13,7 +13,7 @@ fn defragment(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgr
   var location: u32 = 0u;
   var new_location: u32 = 0u;
   for (var i = 0u; i < arrayLength(&old_ranges); i++){
-    new_location = new_location + old_ranges[i].length;
+    new_location += old_ranges[i].length;
     // If we are in this range, store the data range instance offset, the range instance offset, and the new buffer field instance offset
     index += vec4<u32>(u32(true), gid.x-location, old_ranges[i].start, old_ranges[i].instance_offset + old_ranges[i].field_offset)*u32(location<=gid.x)*u32(new_location>gid.x);
     location = new_location;
