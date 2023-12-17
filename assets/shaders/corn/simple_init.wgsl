@@ -12,7 +12,7 @@ fn simple_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workg
   var location: u32 = 0u;
   var new_location: u32 = 0u;
   for (var i = 0u; i < arrayLength(&settings); i++){
-    let new_location = new_location + settings[i].range.length;
+    new_location += settings[i].range.length;
     // Store settings id, instance index, buffer index
     index += vec3<u32>(i, settings[i].range.instance_offset + gid.x - location, gid.x - location + settings[i].range.start)*u32(location<=gid.x)*u32(new_location>gid.x);
     location = new_location;
@@ -59,9 +59,13 @@ fn simple_rect_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_
   var location: u32 = 0u;
   var new_location: u32 = 0u;
   for (var i = 0u; i < arrayLength(&settings); i++){
-    let new_location = new_location + settings[i].range.length;
+    new_location += settings[i].range.length;
     // Store settings id, instance index, buffer index
-    index += vec3<u32>(i, settings[i].range.instance_offset + gid.x - location, gid.x - location + settings[i].range.start)*u32(location<=gid.x)*u32(new_location>gid.x);
+    index += vec3<u32>(
+      i, 
+      settings[i].range.instance_offset + gid.x - location, 
+      gid.x - location + settings[i].range.start
+    ) * u32(location<=gid.x) * u32(new_location>gid.x);
     location = new_location;
   }
   //check to see if we actually are in a range
