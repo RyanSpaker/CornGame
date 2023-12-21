@@ -14,7 +14,7 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use crate::prelude::corn_model::CornMeshes;
-use self::{data_pipeline::{storage_manager::{CornBufferStorageManager, BufferRange}, MasterCornFieldDataPipelinePlugin}, corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}};
+use self::{data_pipeline::{storage_manager::{CornBufferStorageManager, BufferRange}, MasterCornFieldDataPipelinePlugin}, corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}, scan_prepass::MasterCornPrepassPlugin};
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
 #[repr(C)]
@@ -84,9 +84,10 @@ pub struct CornInstanceBuffer{
     data_count: u64,
     data_ready: bool,
     indirect_buffer: Option<Buffer>,
-    lod_count: u32,
+    pub lod_count: u32,
     indirect_ready: bool,
-    enabled: bool
+    enabled: bool,
+    pub id: u64
 }
 impl CornInstanceBuffer{
     /// Runs during cleanup, making sure the resource has a correct indirect buffer when needed
@@ -117,6 +118,7 @@ impl CornInstanceBuffer{
         instance_buffer.lod_count = corn_meshes.lod_count;
         instance_buffer.indirect_ready = true;
         instance_buffer.enabled = true;
+        instance_buffer.id += 1;
     }
     /// Called by the operation executor, replaces the data buffer with a new one
     pub fn swap_instance_buffer(&mut self, new_data: Buffer, new_size: u64, render_device: &RenderDevice) {
@@ -130,6 +132,7 @@ impl CornInstanceBuffer{
         self.data_count = new_size;
         self.data_ready = true;
         self.enabled = self.indirect_ready;
+        self.id += 1;
     }
     /// Returns the number of instance position in the buffer
     pub fn get_instance_count(&self) -> u64 {return self.data_count;}
@@ -149,6 +152,7 @@ impl CornInstanceBuffer{
             instance_buffer.lod_count = 0;
             instance_buffer.indirect_ready = false;
             instance_buffer.enabled = false;
+            instance_buffer.id += 1;
             storage.erase_buffer();
         }
     }
@@ -163,7 +167,7 @@ pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins(MasterCornFieldDataPipelinePlugin{})
+            .add_plugins((MasterCornFieldDataPipelinePlugin{}, MasterCornPrepassPlugin{}))
             .register_type::<SimpleRectangularCornField>()
             .register_type::<SimpleHexagonalCornField>()
         .sub_app_mut(RenderApp)
