@@ -25,11 +25,11 @@ impl<T> Plugin for CornGamePlayPlugin<T> where T: States + Copy{
             .init_resource::<CornDespawn>()
             .add_plugins((
                 CamLookPlugin::<T>::new(self.active_state),
-                CamMovePlugin::<T>::new(self.active_state)
+                CamMovePlugin::<T>::new(self.active_state),
+                framerate::PrintFPSPlugin
             ))
             .add_systems(Update, (
                 exit_state_on_key::<T>,
-                //framerate::print_frame_rate,
                 spawn_corn
             ).run_if(in_state(self.active_state)));
         let corn_mat = app.world.resource_mut::<Assets<StandardMaterial>>().add(StandardMaterial::default());

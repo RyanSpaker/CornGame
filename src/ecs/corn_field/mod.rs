@@ -14,7 +14,7 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use crate::prelude::corn_model::CornMeshes;
-use self::{data_pipeline::{storage_manager::{CornBufferStorageManager, BufferRange}, MasterCornFieldDataPipelinePlugin}, corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}, scan_prepass::MasterCornPrepassPlugin};
+use self::{data_pipeline::{storage_manager::{CornBufferStorageManager, BufferRange}, MasterCornFieldDataPipelinePlugin}, corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}, scan_prepass::MasterCornPrepassPlugin, render::MasterCornRenderPlugin};
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
 #[repr(C)]
@@ -112,7 +112,7 @@ impl CornInstanceBuffer{
         // Replace indirect buffer
         instance_buffer.indirect_buffer.replace(render_device.create_buffer_with_data(&BufferInitDescriptor { 
             label: Some("Corn Indirect Buffer".into()), 
-            usage: BufferUsages::STORAGE | BufferUsages::INDIRECT, 
+            usage: BufferUsages::STORAGE | BufferUsages::INDIRECT | BufferUsages::COPY_SRC, 
             contents: bytemuck::cast_slice(&data[..]) 
         })).and_then(|old_buffer| Some(old_buffer.destroy()));
         instance_buffer.lod_count = corn_meshes.lod_count;
@@ -126,7 +126,7 @@ impl CornInstanceBuffer{
         self.sorted_buffer.replace(render_device.create_buffer(&BufferDescriptor{
             label: Some("Corn Instance Index Buffer".into()),
             size: new_size*CORN_DATA_SIZE,
-            usage: BufferUsages::STORAGE | BufferUsages::VERTEX,
+            usage: BufferUsages::STORAGE | BufferUsages::VERTEX | BufferUsages::COPY_SRC,
             mapped_at_creation: false
         })).and_then(|old_buffer| Some(old_buffer.destroy()));
         self.data_count = new_size;
@@ -138,6 +138,10 @@ impl CornInstanceBuffer{
     pub fn get_instance_count(&self) -> u64 {return self.data_count;}
     /// Returns the data buffer
     pub fn get_instance_buffer(&self) -> Option<&Buffer> {return self.data_buffer.as_ref()}
+    /// Returns the sorted data buffer
+    pub fn get_sorted_buffer(&self) -> Option<&Buffer> {return self.sorted_buffer.as_ref()}
+    /// Returns the indirect buffer
+    pub fn get_indirect_buffer(&self) -> Option<&Buffer> {return self.indirect_buffer.as_ref()}
     /// Runs during cleanup, deletes the buffers if no corn is in them
     pub fn cleanup(
         mut instance_buffer: ResMut<CornInstanceBuffer>,
@@ -167,7 +171,7 @@ pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins((MasterCornFieldDataPipelinePlugin{}, MasterCornPrepassPlugin{}))
+            .add_plugins((MasterCornFieldDataPipelinePlugin, MasterCornPrepassPlugin, MasterCornRenderPlugin))
             .register_type::<SimpleRectangularCornField>()
             .register_type::<SimpleHexagonalCornField>()
         .sub_app_mut(RenderApp)

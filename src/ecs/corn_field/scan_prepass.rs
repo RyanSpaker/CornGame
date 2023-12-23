@@ -1,8 +1,9 @@
+use std::sync::{Arc, Mutex};
 use bevy::{
     prelude::*, 
     render::{
         render_resource::*, 
-        renderer::{RenderDevice, RenderContext}, 
+        renderer::{RenderDevice, RenderContext, RenderQueue}, 
         RenderApp, 
         RenderSet, 
         Render, 
@@ -10,27 +11,24 @@ use bevy::{
     }, pbr::draw_3d_graph::node::SHADOW_PASS, core_pipeline::core_3d, utils::hashbrown::HashMap
 };
 use bytemuck::{Pod, Zeroable};
-use crate::{ecs::main_camera::MainCamera, prelude::corn_model::CornMeshes};
-use super::CornInstanceBuffer;
+use wgpu::{Maintain, QuerySetDescriptor, QuerySet};
+use crate::{ecs::{main_camera::MainCamera, corn_field::PerCornData}, prelude::corn_model::CornMeshes};
+use super::{CornInstanceBuffer, CORN_DATA_SIZE};
+
+const READBACK_ENABLED: bool = false;
+const TIMING_ENABLED: bool = false;
 
 /// Respresents frustum structure in compute shader sans lod distance cutoffs
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
 #[repr(C)]
 pub struct FrustumValues {
-    pub col1: Vec4,
-    pub col2: Vec4,
-    pub col3: Vec4,
-    pub col4: Vec4,
+    pub mat: Mat4,
     pub offset: Vec4
 }
 impl From<&ExtractedView> for FrustumValues{
     fn from(value: &ExtractedView) -> Self {
-        let proj = value.projection*value.transform.compute_matrix().inverse();
         Self{
-            col1: proj.col(0),
-            col2: proj.col(1),
-            col3: proj.col(2),
-            col4: proj.col(3),
+            mat: value.projection*value.transform.compute_matrix().inverse(),
             offset: value.transform.translation().extend(1.0)
         }
     }
@@ -69,7 +67,6 @@ impl LodCutoffs{
         return Self(lod_cutoffs);
     }
 }
-
 /// ### Keeps hold of all of the vote-scan-compact shader resources
 #[derive(Resource, Default)]
 pub struct ScanPrepassResources{
@@ -90,7 +87,13 @@ pub struct ScanPrepassResources{
     /// Frustum values for the camera for this frame
     frustum_values: FrustumValues,
     /// Whether or not the prepass should run
-    enabled: bool
+    enabled: bool,
+    /// Buffers used to read back buffer data to cpu for debug purposes
+    readback_buffers: Option<(Buffer, Buffer, Buffer, Buffer, Buffer, Buffer)>,
+    /// Query set to hold the timing information for the scan prepass
+    timing_query_set: Option<QuerySet>,
+    /// Buffer to hold the timing values of the scan prepass if timing is enabled
+    timing_buffer: Option<(Buffer, Buffer)>
 }
 impl ScanPrepassResources{
     /// Runs during prepare phase, creates all resources necessary for this frame
@@ -119,8 +122,7 @@ impl ScanPrepassResources{
                 ids
             );
         }
-
-        if instance_buffer.id == resources.buffer_id {return;}
+        
         if instance_buffer.get_instance_count() != resources.instance_count{
             resources.instance_count = instance_buffer.get_instance_count();
             resources.lod_count = instance_buffer.lod_count;
@@ -133,20 +135,20 @@ impl ScanPrepassResources{
             resources.vote_buffer.replace(render_device.create_buffer(&BufferDescriptor { 
                 label: Some("Corn Vote Buffer".into()), 
                 size: instance_count * 8, 
-                usage: BufferUsages::STORAGE, 
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
                 mapped_at_creation: false 
             })).and_then(|buffer| Some(buffer.destroy()));
             resources.sum_buffers.replace((
                 render_device.create_buffer(&BufferDescriptor { 
                     label: Some("Corn Sum Buffer 1".into()), 
                     size: sum_sizes.0 * 4 *(lod_count+1) as u64, 
-                    usage: BufferUsages::STORAGE, 
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
                     mapped_at_creation: false 
                 }),
                 render_device.create_buffer(&BufferDescriptor { 
                     label: Some("Corn Sum Buffer 2".into()), 
                     size: sum_sizes.1 * 4 *(lod_count+1) as u64, 
-                    usage: BufferUsages::STORAGE, 
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
                     mapped_at_creation: false 
                 }),
             )).and_then(|(a, b)| Some((a.destroy(), b.destroy())));
@@ -158,17 +160,96 @@ impl ScanPrepassResources{
                 render_device.create_buffer(&BufferDescriptor { 
                     label: Some("Corn Sum Buffer 1".into()), 
                     size: sum_sizes.0 * 4 *(lod_count+1) as u64, 
-                    usage: BufferUsages::STORAGE, 
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
                     mapped_at_creation: false 
                 }),
                 render_device.create_buffer(&BufferDescriptor { 
                     label: Some("Corn Sum Buffer 2".into()), 
                     size: sum_sizes.1 * 4 *(lod_count+1) as u64, 
-                    usage: BufferUsages::STORAGE, 
+                    usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC, 
                     mapped_at_creation: false 
                 }),
             )).and_then(|(a, b)| Some((a.destroy(), b.destroy())));
         }
+        
+        if READBACK_ENABLED{
+            let instance_count = resources.instance_count;
+            let sum_sizes = resources.sum_sizes;
+            let lod_count = resources.lod_count;
+            resources.readback_buffers.replace((
+                render_device.create_buffer(&BufferDescriptor { 
+                    label: Some("Corn Instances Readback Buffer".into()), 
+                    size: instance_count*CORN_DATA_SIZE, 
+                    usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST, 
+                    mapped_at_creation: false 
+                }),
+                render_device.create_buffer(&BufferDescriptor { 
+                    label: Some("Corn Vote Readback Buffer".into()), 
+                    size: instance_count * 8, 
+                    usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST, 
+                    mapped_at_creation: false 
+                }),
+                render_device.create_buffer(&BufferDescriptor { 
+                    label: Some("Corn Sum Readback Buffer 1".into()), 
+                    size: sum_sizes.0 * 4 *(lod_count+1) as u64, 
+                    usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST, 
+                    mapped_at_creation: false 
+                }),
+                render_device.create_buffer(&BufferDescriptor { 
+                    label: Some("Corn Sum Readback Buffer 2".into()), 
+                    size: sum_sizes.1 * 4 *(lod_count+1) as u64, 
+                    usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST, 
+                    mapped_at_creation: false 
+                }),
+                render_device.create_buffer(&BufferDescriptor { 
+                    label: Some("Corn Indirect Readback Buffer".into()), 
+                    size: 20*lod_count as u64, 
+                    usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST, 
+                    mapped_at_creation: false 
+                }),
+                render_device.create_buffer(&BufferDescriptor { 
+                    label: Some("Corn Sorted Readback Buffer".into()), 
+                    size: instance_count*CORN_DATA_SIZE, 
+                    usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST, 
+                    mapped_at_creation: false 
+                })
+            )).and_then(|buffers| Some((
+                buffers.0.destroy(),
+                buffers.1.destroy(),
+                buffers.2.destroy(),
+                buffers.3.destroy(),
+                buffers.4.destroy(),
+                buffers.5.destroy()
+            )));
+        }
+        
+        if TIMING_ENABLED{
+            if resources.timing_query_set.is_none(){
+                resources.timing_query_set = Some(render_device.wgpu_device().create_query_set(&QuerySetDescriptor { 
+                    label: Some("Scan Prepass Timings".into()), 
+                    ty: wgpu::QueryType::Timestamp, 
+                    count: 2 
+                }));
+            }
+            if resources.timing_buffer.is_none(){
+                resources.timing_buffer = Some((
+                    render_device.create_buffer(&BufferDescriptor{
+                        label: Some("Scan Prepass Timing Query Buffer".into()),
+                        usage: BufferUsages::QUERY_RESOLVE | BufferUsages::COPY_SRC,
+                        size: 16,
+                        mapped_at_creation: false
+                    }),
+                    render_device.create_buffer(&BufferDescriptor{
+                        label: Some("Scan Prepass Timing Query Buffer".into()),
+                        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+                        size: 16,
+                        mapped_at_creation: false
+                    })
+                ));
+            }
+        }
+
+        if instance_buffer.id == resources.buffer_id {return;}
         resources.buffer_id = instance_buffer.id;
         let bind_group = [
             BindGroupEntry{
@@ -202,8 +283,76 @@ impl ScanPrepassResources{
             entries: &bind_group
         }));
     }
+    /// Runs during cleanup if readback is enabled, printing buffer data to the console
+    pub fn finish_readback(
+        mut resources: ResMut<ScanPrepassResources>, 
+        render_device: Res<RenderDevice>
+    ){
+        if let Some((a, b, c, d, e, f)) = resources.readback_buffers.take(){
+            readback_buffer::<PerCornData>("Instance Buffer:".to_string(), a, render_device.as_ref());
+            readback_buffer::<[u32; 2]>("Vote Buffer:".to_string(), b, render_device.as_ref());
+            readback_buffer::<u32>("Sum 1 Buffer:".to_string(), c, render_device.as_ref());
+            readback_buffer::<u32>("Sum 2 Buffer:".to_string(), d, render_device.as_ref());
+            readback_buffer::<[u32; 5]>("Indirect Buffer:".to_string(), e, render_device.as_ref());
+            readback_buffer::<PerCornData>("Sorted Buffer:".to_string(), f, render_device.as_ref());
+        }
+    }
+    /// Runs during cleanup if timing is enabled, printing timing data to the console
+    pub fn finish_timing(
+        resources: ResMut<ScanPrepassResources>, 
+        render_device: Res<RenderDevice>,
+        queue: Res<RenderQueue>
+    ){
+        if let Some(buffer) = resources.timing_buffer.as_ref(){
+            let slice = buffer.1.slice(..);
+            let flag: Arc<Mutex<Box<bool>>> = Arc::new(Mutex::new(Box::new(false)));
+            let flag_captured = flag.clone();
+            slice.map_async(MapMode::Read, move |v|{
+                let mut a = flag_captured.lock().unwrap();
+                **a = v.is_ok().to_owned();
+                drop(a);
+                drop(v);
+            });
+            render_device.poll(Maintain::Wait);
+            let a = flag.lock().unwrap();
+            if **a {
+                let raw = buffer.1
+                    .slice(..).get_mapped_range()
+                    .iter().map(|v| *v).collect::<Vec<u8>>();
+                let data = bytemuck::cast_slice::<u8, u64>(raw.as_slice()).to_vec();
+                let nanos = queue.get_timestamp_period()*(data[1] - data[0]) as f32;
+                println!("Scan Prepass Took: {} nanos", nanos);
+            }
+            buffer.1.unmap();
+        }
+    }
 }
 
+pub fn readback_buffer<T: std::fmt::Debug + Pod>(message: String, buffer: Buffer, render_device: &RenderDevice){
+    let slice = buffer.slice(..);
+    let flag: Arc<Mutex<Box<bool>>> = Arc::new(Mutex::new(Box::new(false)));
+    let flag_captured = flag.clone();
+    slice.map_async(MapMode::Read, move |v|{
+        let mut a = flag_captured.lock().unwrap();
+        **a = v.is_ok().to_owned();
+        drop(a);
+        drop(v);
+    });
+    render_device.poll(Maintain::Wait);
+    let a = flag.lock().unwrap();
+    if **a {
+        let raw = buffer
+            .slice(..).get_mapped_range()
+            .iter().map(|v| *v).collect::<Vec<u8>>();
+        let data = bytemuck::cast_slice::<u8, T>(raw.as_slice()).to_vec();
+        println!("{}", message);
+        for corn in data{
+            println!("{:?}", corn);
+        }
+        println!("");
+    }
+    buffer.destroy();
+}
 
 /// ### Added to the rendergraph as an asynchronous step
 /// - run function is called by the render phase at some point
@@ -229,6 +378,9 @@ impl Node for CornBufferPrepassNode{
             &ComputePassDescriptor { label: Some("Vote Scan Compact Pass") }
         );
         compute_pass.set_bind_group(0, resources.bind_group.as_ref().unwrap(), &[]);
+        if TIMING_ENABLED{
+            compute_pass.write_timestamp(resources.timing_query_set.as_ref().unwrap(), 0);
+        }
         if let Some(pipelines) = pipeline.ids.get(&lod_count){
             if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipelines[0]){
                 compute_pass.set_pipeline(pipeline);
@@ -247,6 +399,50 @@ impl Node for CornBufferPrepassNode{
             if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipelines[3]){
                 compute_pass.set_pipeline(pipeline);
                 compute_pass.dispatch_workgroups((resources.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
+            }
+        }
+        if TIMING_ENABLED{
+            compute_pass.write_timestamp(resources.timing_query_set.as_ref().unwrap(), 1);
+        }
+        drop(compute_pass);
+        if TIMING_ENABLED{
+            render_context.command_encoder().resolve_query_set(
+                resources.timing_query_set.as_ref().unwrap(), 
+                0..2,
+                &resources.timing_buffer.as_ref().unwrap().0, 
+                0
+            );
+            render_context.command_encoder().copy_buffer_to_buffer(
+                &resources.timing_buffer.as_ref().unwrap().0, 0, 
+                &resources.timing_buffer.as_ref().unwrap().1, 0, 16);
+        }
+        if READBACK_ENABLED{
+            let instance_buffer = world.resource::<CornInstanceBuffer>();
+            if let Some((a, b, c, d, e, f)) = resources.readback_buffers.as_ref(){
+                render_context.command_encoder().copy_buffer_to_buffer(
+                    instance_buffer.get_instance_buffer().unwrap(), 0, 
+                    &a, 0, a.size()
+                );
+                render_context.command_encoder().copy_buffer_to_buffer(
+                    resources.vote_buffer.as_ref().unwrap(), 0, 
+                    &b, 0, b.size()
+                );
+                render_context.command_encoder().copy_buffer_to_buffer(
+                    &resources.sum_buffers.as_ref().unwrap().0, 0, 
+                    &c, 0, c.size()
+                );
+                render_context.command_encoder().copy_buffer_to_buffer(
+                    &resources.sum_buffers.as_ref().unwrap().1, 0, 
+                    &d, 0, d.size()
+                );
+                render_context.command_encoder().copy_buffer_to_buffer(
+                    instance_buffer.get_indirect_buffer().unwrap(), 0, 
+                    &e, 0, e.size()
+                );
+                render_context.command_encoder().copy_buffer_to_buffer(
+                    instance_buffer.get_sorted_buffer().unwrap(), 0, 
+                    &f, 0, f.size()
+                );   
             }
         }
         return Ok(());
@@ -387,7 +583,7 @@ impl FromWorld for CornBufferPrePassPipeline {
 }
 
 /// ### Adds the vote scan compact prepass functionality to the game
-pub struct MasterCornPrepassPlugin{}
+pub struct MasterCornPrepassPlugin;
 impl Plugin for MasterCornPrepassPlugin{
     fn build(&self, app: &mut App) {
         app
@@ -400,6 +596,12 @@ impl Plugin for MasterCornPrepassPlugin{
             .add_systems(Render, 
                 ScanPrepassResources::prepare_resources.in_set(RenderSet::Prepare)
             ).add_systems(ExtractSchedule, LodCutoffs::extract_lod_cutoffs);
+        if READBACK_ENABLED{
+            app.sub_app_mut(RenderApp).add_systems(Render, ScanPrepassResources::finish_readback.in_set(RenderSet::Cleanup));
+        }
+        if TIMING_ENABLED{
+            app.sub_app_mut(RenderApp).add_systems(Render, ScanPrepassResources::finish_timing.in_set(RenderSet::Cleanup));
+        }
         let mut binding = app.get_sub_app_mut(RenderApp).unwrap()
             .world.get_resource_mut::<RenderGraph>().unwrap();
         let graph = binding

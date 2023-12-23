@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 use bevy::render::view::NoFrustumCulling;
 use crate::core::loading::LoadingTaskCount;
-use crate::ecs::corn_field::corn_fields::simple_corn_field::SimpleHexagonalCornField;
+use crate::ecs::corn_field::corn_fields::simple_corn_field;
 use crate::ecs::main_camera::MainCamera;
 use crate::flycam::FlyCam;
 use crate::prelude::corn_model::CornLoadState;
@@ -69,12 +69,12 @@ fn setup_scene(
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
-        SimpleHexagonalCornField::new(
+        simple_corn_field::SimpleHexagonalCornField::new(
             Vec3::new(0.0, 0.0, 0.0), 
-            Vec2::ONE*100.0, 
+            Vec2::ONE*50.0, 
             0.75,
             Vec2::new(0.9, 1.4),
-            0.4
+            0.2
         ),
         //materials.add(StandardMaterial::default()),
         NoFrustumCulling
