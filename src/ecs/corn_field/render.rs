@@ -388,8 +388,8 @@ pub fn get_material_key<M: Material>(
     }
 }
 
-pub struct CornRenderPlugin;
-impl Plugin for CornRenderPlugin{
+pub struct MasterCornRenderPlugin;
+impl Plugin for MasterCornRenderPlugin{
     fn build(&self, app: &mut bevy::prelude::App) {
         app.sub_app_mut(RenderApp)
         .add_render_command::<Opaque3d, DrawMaterialInstanced<StandardMaterial, CornRenderData>>()

@@ -20,10 +20,7 @@ var<workgroup> temp_scan_buffer: array<array<u32, 256>, LOD_COUNT>;
 var<storage, read_write> count_buffer: array<array<u32, LOD_COUNT>>;
 
 struct FrustumValues {
-  col1: vec4<f32>,
-  col2: vec4<f32>,
-  col3: vec4<f32>,
-  col4: vec4<f32>,
+  mat: mat4x4<f32>,
   offset: vec4<f32>,
   lod_dists: array<f32, LOD_COUNT>
 }
@@ -39,15 +36,14 @@ fn calc_lod(position: u32) -> u32{
       lod += 1u;
     }
   }
-  let projection: mat4x4<f32> = mat4x4<f32>(cull_settings.col1, cull_settings.col2, cull_settings.col3, cull_settings.col4);
-  let projected: vec4<f32> = projection*pos;
+  let projected: vec4<f32> = cull_settings.mat*pos;
   let bounds: vec3<f32> = projected.xyz / projected.w;
   let enabled: u32 = u32(
     step(bounds.x, 1.1)*
     step(-1.1, bounds.x)* 
     step(0.0, bounds.z) + step(distance, 16.0) > 0.0
   ) * instance_data[position].enabled;
-  return select(LOD_COUNT, lod, bool(enabled));
+  return select(LOD_COUNT-(1u), lod, bool(enabled));
 }
 
 @compute @workgroup_size(128, 1, 1)
@@ -57,7 +53,7 @@ fn vote_scan(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invoc
   }
   //Vote:
   //let lod1: u32 = (instance_data[2u*gid.x].enabled + LOD_COUNT-(1u))%(LOD_COUNT);
-  //let lod2: u32 = (instance_data[2u*gid.x+1u].enabled*5u + LOD_COUNT-(1u))%(LOD_COUNT);
+  //let lod2: u32 = (instance_data[2u*gid.x+1u].enabled + LOD_COUNT-(1u))%(LOD_COUNT);
   let lod1: u32 = calc_lod(2u*gid.x);
   let lod2: u32 = calc_lod(2u*gid.x+1u);
   //Scan:
