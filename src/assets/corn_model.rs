@@ -114,8 +114,8 @@ fn corn_model_loaded(
     mut events: EventReader<AssetEvent<Gltf>>,
     corn_handle: Res<CornGLTFHandle>
 ) -> bool{
-    events.iter().any(|ev| match ev{
-        AssetEvent::Created {handle} => {handle == corn_handle.0.as_ref().unwrap()},
+    events.read().any(|ev| match ev{
+        AssetEvent::LoadedWithDependencies {id} => {*id == corn_handle.0.as_ref().unwrap().id()},
         _ => {false}
     })
 }
@@ -127,7 +127,7 @@ fn save_corn_models(
     mut ev_writer: EventWriter<CornGltfLoadedEvent>,
 ){
     if let Some(handle) = &corn_gltf_handle.0{
-        let gltf = gltf_assets.get(&handle).unwrap();
+        let gltf = gltf_assets.get(handle.id()).unwrap();
         let mut materials: Vec<Handle<StandardMaterial>> = vec![];
         let mut unsorted: Vec<(usize, Vec<(Handle<Mesh>, usize)>)> = gltf.named_meshes.iter().map(|(name, gmesh_handle)| {
             (

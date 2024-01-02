@@ -96,8 +96,8 @@ pub struct ScanPrepassResources{
     timing_buffer: Option<(Buffer, Buffer)>
 }
 impl ScanPrepassResources{
-    /// Runs during prepare phase, creates all resources necessary for this frame
-    pub fn prepare_resources(
+    /// Runs during prepare phase, creates all buffers necessary for this frame
+    pub fn prepare_buffers(
         mut resources: ResMut<ScanPrepassResources>, 
         instance_buffer: Res<CornInstanceBuffer>,
         render_device: Res<RenderDevice>,
@@ -230,7 +230,7 @@ impl ScanPrepassResources{
                     ty: wgpu::QueryType::Timestamp, 
                     count: 2 
                 }));
-            }
+            }            
             if resources.timing_buffer.is_none(){
                 resources.timing_buffer = Some((
                     render_device.create_buffer(&BufferDescriptor{
@@ -248,7 +248,14 @@ impl ScanPrepassResources{
                 ));
             }
         }
-
+    }
+    /// Runs during prepare phase, creates the bind group necessary for this frame
+    pub fn prepare_bind_group(
+        mut resources: ResMut<ScanPrepassResources>, 
+        instance_buffer: Res<CornInstanceBuffer>,
+        render_device: Res<RenderDevice>,
+        pipeline: Res<CornBufferPrePassPipeline>,
+    ){
         if instance_buffer.id == resources.buffer_id {return;}
         resources.buffer_id = instance_buffer.id;
         let bind_group = [
@@ -277,11 +284,11 @@ impl ScanPrepassResources{
                 resource: BindingResource::Buffer(instance_buffer.sorted_buffer.as_ref().unwrap().as_entire_buffer_binding())
             }
         ];
-        resources.bind_group = Some(render_device.create_bind_group(&BindGroupDescriptor { 
-            label: Some("Corn Scan Prepass Bind Group"), 
-            layout: &pipeline.bind_group_layout, 
-            entries: &bind_group
-        }));
+        resources.bind_group = Some(render_device.create_bind_group( 
+            Some("Corn Scan Prepass Bind Group"), 
+            &pipeline.bind_group_layout, 
+            &bind_group
+        ));
     }
     /// Runs during cleanup if readback is enabled, printing buffer data to the console
     pub fn finish_readback(
@@ -593,9 +600,10 @@ impl Plugin for MasterCornPrepassPlugin{
         app.get_sub_app_mut(RenderApp).unwrap()
             .init_resource::<LodCutoffs>()
             .init_resource::<ScanPrepassResources>()
-            .add_systems(Render, 
-                ScanPrepassResources::prepare_resources.in_set(RenderSet::Prepare)
-            ).add_systems(ExtractSchedule, LodCutoffs::extract_lod_cutoffs);
+            .add_systems(Render, (
+                ScanPrepassResources::prepare_buffers.in_set(RenderSet::PrepareResources),
+                ScanPrepassResources::prepare_bind_group.in_set(RenderSet::PrepareBindGroups)
+            )).add_systems(ExtractSchedule, LodCutoffs::extract_lod_cutoffs);
         if READBACK_ENABLED{
             app.sub_app_mut(RenderApp).add_systems(Render, ScanPrepassResources::finish_readback.in_set(RenderSet::Cleanup));
         }

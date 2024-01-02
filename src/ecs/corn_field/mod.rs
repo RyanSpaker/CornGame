@@ -1,8 +1,6 @@
 pub mod scan_prepass;
-pub mod render;
 pub mod data_pipeline;
 pub mod corn_fields;
-//pub mod data_pipeline_old;
 
 use bevy::{
     prelude::*,
@@ -14,7 +12,11 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use crate::prelude::corn_model::CornMeshes;
-use self::{data_pipeline::{storage_manager::{CornBufferStorageManager, BufferRange}, MasterCornFieldDataPipelinePlugin}, corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}, scan_prepass::MasterCornPrepassPlugin, render::MasterCornRenderPlugin};
+use self::{
+    data_pipeline::{storage_manager::{CornBufferStorageManager, BufferRange}, MasterCornFieldDataPipelinePlugin}, 
+    corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}, 
+    scan_prepass::MasterCornPrepassPlugin
+};
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
 #[repr(C)]
@@ -53,15 +55,23 @@ pub trait RenderableCornField: Component + Clone + GetTypeRegistration + std::fm
     fn init_shader_defs() -> Vec<ShaderDefVal> {vec![]}
     /// Returns the init entrypoint
     fn init_entry_point() -> String;
-    /// This function is responsible for creating the necessary resources for initialization of the field data on the gpu
+    /// This function is responsible for creating the necessary buffers for initialization of the field data on the gpu
+    /// The Buffers returned will be re passed into the get_init_bindgroups function in the same order
+    /// should return all buffers created for use in the init shaders
+    fn get_init_buffers(
+        fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
+        render_device: &RenderDevice
+    ) -> Vec<Buffer>;
+    /// This function is responsible for creating the necessary bindgroups and execution counts for initialization of the field data on the gpu
     /// If the field's init function can be batched with other fields of the same type, then it should return a single (BindGroup, u64)
-    /// The Vec<Buffer> should return all buffers created for use in the init shaders
-    fn get_init_resources(
+    /// the u64 is the execution count of the shader, per bind group
+    fn get_init_bindgroups(
         fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
         render_device: &RenderDevice,
         layout: &BindGroupLayout,
-        operation_buffer: &Buffer
-    ) -> (Vec<(BindGroup, u64)>, Vec<Buffer>);
+        operation_buffer: &Buffer,
+        buffers: &Vec<Buffer>
+    ) -> Vec<(BindGroup, u64)>;
 }
 
 /// This component holds the hash id for a single corn field in a recognizable struct.
@@ -171,7 +181,7 @@ pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins((MasterCornFieldDataPipelinePlugin, MasterCornPrepassPlugin, MasterCornRenderPlugin))
+            .add_plugins((MasterCornFieldDataPipelinePlugin, MasterCornPrepassPlugin))
             .register_type::<SimpleRectangularCornField>()
             .register_type::<SimpleHexagonalCornField>()
         .sub_app_mut(RenderApp)

@@ -323,9 +323,6 @@ pub fn get_material_key<M: Material>(
     if normal_prepass.is_some() {
         view_key |= MeshPipelineKey::NORMAL_PREPASS;
     }
-    if taa_settings.is_some() {
-        view_key |= MeshPipelineKey::TAA;
-    }
     let environment_map_loaded = match environment_map {
         Some(environment_map) => environment_map.is_loaded(&images),
         None => false,

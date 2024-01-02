@@ -2,13 +2,13 @@ use std::{marker::PhantomData, any::type_name};
 use bevy::{
     prelude::*, 
     utils::hashbrown::HashMap, 
-    ecs::schedule::SystemSet, 
+    ecs::schedule::{SystemSet, SystemSetConfigs}, 
     render::{RenderSet, RenderApp, Render}
 };
 use crate::ecs::corn_field::RenderableCornFieldID;
 use super::{
     state_manager::{CornFieldStateManager, StaleFieldEvent}, 
-    storage_manager::{CornBufferStorageManager, BufferRange, AsBufferRange},
+    storage_manager::{CornBufferStorageManager, BufferRange},
     RenderableCornField
 };
 
@@ -24,6 +24,7 @@ pub struct CreateContOperationSet;
 /// A System set for create_init_operations<> functions
 #[derive(Hash, Debug, Clone, PartialEq, Eq, SystemSet)]
 pub struct CreateOperationSet;
+
 /// A resource which calculates and stores the actions necessary to keep the corn buffer aligned to the game state
 #[derive(Default, Resource, Debug)]
 pub struct CornBufferOperationCalculator{
@@ -66,7 +67,7 @@ impl CornBufferOperationCalculator{
         manager.new_free_space = storage.free_space.to_owned();
         // add any newly stale data that is currently loaded to the stale ranges
         manager.new_stale_space.union_with(&BufferRange::union_all(
-            &stale_events.iter().filter_map(|ev| {
+            &stale_events.read().filter_map(|ev| {
                 storage.ranges.get(&ev.field).and_then(|range| Some(range.to_owned()))
             }).collect()
         ));
@@ -80,11 +81,8 @@ impl CornBufferOperationCalculator{
         states: Res<CornFieldStateManager>,
         query: Query<(&T, &RenderableCornFieldID)>
     ){
-        query.iter()
-            .filter(|(_, id)| 
-                states.states.get(*id).is_some_and(|state| state.ready_for_init()) && 
-                storage.ranges.get(*id).is_none()
-            ).for_each(|(field, id)| 
+        query.iter().filter(|(_, id)| states.is_ready(id) && !storage.contains(id)).for_each(
+        |(field, id)| 
         {
             manager.reserve_continuos(id.to_owned(), field.get_instance_count(), type_name::<T>().to_string());
         });
@@ -96,33 +94,26 @@ impl CornBufferOperationCalculator{
         states: Res<CornFieldStateManager>,
         query: Query<(&T, &RenderableCornFieldID)>
     ){
-        query.iter()
-            .filter(|(_, id)| 
-                states.states.get(*id).is_some_and(|state| state.ready_for_init()) && 
-                storage.ranges.get(*id).is_none()
-            ).for_each(|(field, id)| 
+        query.iter().filter(|(_, id)| states.is_ready(id) && !storage.contains(id)).for_each(
+        |(field, id)| 
         {
-            if T::needs_continuos_buffer_space(){
-                manager.reserve_continuos(id.to_owned(), field.get_instance_count(), type_name::<T>().to_string());
-            }else{
-                let mut count = field.get_instance_count();
-                let mut range = BufferRange::default();
-                if !manager.new_stale_space.is_empty(){
-                    let (stale_range, excess) = manager.new_stale_space.take(count);
-                    count = excess;
-                    range.union_with(&stale_range);
-                }
-                if !manager.new_free_space.is_empty(){
-                    let (free_range, excess) = manager.new_free_space.take(count);
-                    count = excess;
-                    range.union_with(&free_range);
-                }
-                if count > 0{
-                    manager.expand(count);
-                    range.union_with(&&manager.new_free_space.take(count).0);
-                }
-                manager.init_ops.insert(id.to_owned(), (range, type_name::<T>().to_string()));
+            let mut count = field.get_instance_count();
+            let mut range = BufferRange::default();
+            if !manager.new_stale_space.is_empty(){
+                let (stale_range, excess) = manager.new_stale_space.take(count);
+                count = excess;
+                range.union_with(&stale_range);
             }
+            if !manager.new_free_space.is_empty(){
+                let (free_range, excess) = manager.new_free_space.take(count);
+                count = excess;
+                range.union_with(&free_range);
+            }
+            if count > 0{
+                manager.expand(count);
+                range.union_with(&&manager.new_free_space.take(count).0);
+            }
+            manager.init_ops.insert(id.to_owned(), (range, type_name::<T>().to_string()));
         });
     }
     /// Finalizes the operations, figuring out exactly what needs to happen this frame to the buffer
@@ -201,23 +192,24 @@ impl CornBufferOperationCalculator{
     pub fn get_taken_space(&self) -> u64{
         BufferRange::simple(&0, &self.new_buffer_length).difference_with(&BufferRange::union(&self.new_free_space, &self.new_stale_space)).len()
     }
+    // Returns system config for this resource, which adds all functionaity to the render App
+    pub fn into_configs() -> SystemSetConfigs{
+        (
+            Self::determine_initial_conditions.into_system_set(), 
+            CreateContOperationSet, 
+            CreateOperationSet, 
+            Self::finalize_operations.into_system_set()
+        ).chain().in_set(RenderSet::PrepareAssets).after(CornFieldStateManager::finish_update_cycle)
+    }
 }
 
 /// Adds the Operation Manager functionality to the game
 pub struct MasterCornOperationPlugin;
 impl Plugin for MasterCornOperationPlugin{
     fn build(&self, app: &mut App) {
-        if let Ok(render_app) = app.get_sub_app_mut(RenderApp){
-            render_app.init_resource::<CornBufferOperationCalculator>()
-                .add_systems(Render, (
-                    CornBufferOperationCalculator::determine_initial_conditions.after(CornFieldStateManager::mark_stale_states),
-                    CornBufferOperationCalculator::finalize_operations.after(CreateOperationSet)
-                ).in_set(RenderSet::Prepare));
-            if let Some(schedule) = render_app.get_schedule_mut(Render){
-                schedule.configure_set(CreateContOperationSet.after(CornBufferOperationCalculator::determine_initial_conditions).in_set(RenderSet::Prepare));
-                schedule.configure_set(CreateOperationSet.after(CreateContOperationSet).in_set(RenderSet::Prepare));
-            }
-        }
+        app.sub_app_mut(RenderApp)
+            .init_resource::<CornBufferOperationCalculator>()
+            .configure_sets(Render, CornBufferOperationCalculator::into_configs());
     }
 }
 
@@ -232,11 +224,11 @@ impl<T: RenderableCornField> CornOperationPlugin<T>{
 }
 impl<T: RenderableCornField> Plugin for CornOperationPlugin<T>{
     fn build(&self, app: &mut App) {
-        if let Ok(render_app) = app.get_sub_app_mut(RenderApp){
-            render_app.add_systems(Render, CornBufferOperationCalculator::create_init_operations::<T>.in_set(CreateOperationSet));
-            if T::needs_continuos_buffer_space(){
-                render_app.add_systems(Render, CornBufferOperationCalculator::create_continuos_init_operations::<T>.in_set(CreateContOperationSet));
-            }
-        }
+        app.sub_app_mut(RenderApp).add_systems(Render, 
+        if T::needs_continuos_buffer_space() {
+            CornBufferOperationCalculator::create_continuos_init_operations::<T>.in_set(CreateContOperationSet)
+        } else {
+            CornBufferOperationCalculator::create_init_operations::<T>.in_set(CreateOperationSet)
+        });
     }
 }

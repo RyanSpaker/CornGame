@@ -83,7 +83,7 @@ fn cam_look(
 ){
     camera.iter_mut().for_each(|mut transform| {
         let (mut yaw, mut pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
-        for movement in mouse.iter(){
+        for movement in mouse.read(){
             pitch -= (config.sensitivity*movement.delta.y).to_radians();
             yaw -= (config.sensitivity*movement.delta.x).to_radians();
         }

@@ -6,14 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.11.0", default-features = true, features=["dynamic_linking"]}
-bevy-inspector-egui = "0.19.0"
+bevy = { version = "0.12.1", default-features = true, features=["dynamic_linking"]}
+bevy-inspector-egui = "0.21.0"
 rand = "0.8.5"
 bytemuck = "1.14.0"
-bevy_mod_debugdump = "0.8.0"
-futures-lite = "1.13.0"
-wgpu = "0.16.0"
-bitflags = "2.4.0"
+bevy_mod_debugdump = "0.9.0"
+futures-lite = "2.1.0"
+bitflags = "2.4.1"
+wgpu = "0.17.2"
 
 [profile.dev]
 opt-level = 1
