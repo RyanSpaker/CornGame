@@ -2,7 +2,7 @@ use std::{marker::PhantomData, any::type_name};
 use bevy::{
     prelude::*, 
     utils::hashbrown::HashMap, 
-    ecs::schedule::{SystemSet, SystemSetConfigs}, 
+    ecs::schedule::SystemSet, 
     render::{RenderSet, RenderApp, Render}
 };
 use crate::ecs::corn_field::RenderableCornFieldID;
@@ -193,13 +193,13 @@ impl CornBufferOperationCalculator{
         BufferRange::simple(&0, &self.new_buffer_length).difference_with(&BufferRange::union(&self.new_free_space, &self.new_stale_space)).len()
     }
     // Returns system config for this resource, which adds all functionaity to the render App
-    pub fn into_configs() -> SystemSetConfigs{
-        (
-            Self::determine_initial_conditions.into_system_set(), 
-            CreateContOperationSet, 
-            CreateOperationSet, 
-            Self::finalize_operations.into_system_set()
-        ).chain().in_set(RenderSet::PrepareAssets).after(CornFieldStateManager::finish_update_cycle)
+    pub fn add_systems(app: &mut App) {
+        app
+            .add_systems(Render, (
+                Self::determine_initial_conditions.after(CornFieldStateManager::finish_update_cycle), Self::finalize_operations.after(CreateOperationSet)
+            ).in_set(RenderSet::PrepareAssets))
+            .configure_sets(Render, CreateContOperationSet.after(Self::determine_initial_conditions).in_set(RenderSet::PrepareAssets))
+            .configure_sets(Render, CreateOperationSet.after(CreateContOperationSet).in_set(RenderSet::PrepareAssets));
     }
 }
 
@@ -208,8 +208,8 @@ pub struct MasterCornOperationPlugin;
 impl Plugin for MasterCornOperationPlugin{
     fn build(&self, app: &mut App) {
         app.sub_app_mut(RenderApp)
-            .init_resource::<CornBufferOperationCalculator>()
-            .configure_sets(Render, CornBufferOperationCalculator::into_configs());
+            .init_resource::<CornBufferOperationCalculator>();
+        CornBufferOperationCalculator::add_systems(app);
     }
 }
 

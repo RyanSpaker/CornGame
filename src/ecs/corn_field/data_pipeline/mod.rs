@@ -25,13 +25,11 @@ impl<T: RenderableCornField> RenderableCornFieldPlugin<T>{
 impl<T: RenderableCornField> Plugin for RenderableCornFieldPlugin<T>{
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            //state_manager::CornFieldStatePlugin::<T>::new(),
+            state_manager::CornFieldStatePlugin::<T>::new(),
             operation_manager::CornOperationPlugin::<T>::new(),
             operation_executor::CornOperationExecutionPlugin::<T>::new()
-        ));
-        if let Ok(render_app) = app.get_sub_app_mut(RenderApp){
-            render_app.add_systems(ExtractSchedule, extract_renderable_corn_field::<T>);
-        }
+        )).sub_app_mut(RenderApp)
+            .add_systems(ExtractSchedule, extract_renderable_corn_field::<T>);
     }
 }
 
@@ -41,7 +39,7 @@ pub struct MasterCornFieldDataPipelinePlugin;
 impl Plugin for MasterCornFieldDataPipelinePlugin{
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            //state_manager::MasterCornFieldStatePlugin{},
+            state_manager::MasterCornFieldStatePlugin{},
             storage_manager::MasterCornStorageManagerPlugin{},
             operation_manager::MasterCornOperationPlugin{},
             operation_executor::MasterCornOperationExecutionPlugin{},

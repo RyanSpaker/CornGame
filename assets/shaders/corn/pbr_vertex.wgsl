@@ -1,8 +1,8 @@
 #import bevy_pbr::mesh_functions as mesh_functions
 #import bevy_pbr::skinning
 #import bevy_pbr::morph
-#import bevy_pbr::mesh_bindings       mesh
-#import bevy_pbr::mesh_vertex_output  MeshVertexOutput
+#import bevy_pbr::mesh_bindings::mesh
+#import bevy_pbr::mesh_vertex_output::MeshVertexOutput
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,

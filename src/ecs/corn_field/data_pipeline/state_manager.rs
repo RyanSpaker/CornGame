@@ -5,7 +5,7 @@ use bevy::{
     utils::hashbrown::{HashMap, HashSet}, 
     ecs::{
         system::{Query, ResMut, Resource}, 
-        schedule::{SystemSet, IntoSystemConfigs, IntoSystemSetConfigs, IntoSystemSet, SystemSetConfigs}, event::{EventWriter, Event}}, 
+        schedule::{SystemSet, IntoSystemConfigs, IntoSystemSetConfigs}, event::{EventWriter, Event}}, 
     render::{RenderSet, RenderApp, Render}, 
     app::{Plugin, App}
 };
@@ -136,13 +136,15 @@ impl CornFieldStateManager{
         mut stale_events: EventWriter<StaleFieldEvent>,
         mut new_events: EventWriter<NewFieldEvent>
     ){
-        stale_events.send_batch(manager.stale_hashes.drain().into());
-        new_events.send_batch(manager.new_hashes.drain().into());
+        stale_events.send_batch(manager.stale_hashes.drain().map(|id| id.into()));
+        new_events.send_batch(manager.new_hashes.drain().map(|id| id.into()));
         manager.stale_hashes = HashSet::from_iter(manager.states.keys().cloned());
     }
-    /// Returns function info to add to the render schedule, which enables the systems functionality
-    pub fn into_configs() -> SystemSetConfigs{
-        (UpdateCornStateSet, Self::finish_update_cycle.into_system_set()).chain().in_set(RenderSet::PrepareAssets)
+    /// Adds the systems this resource needs into the app
+    pub fn add_systems(app: &mut App){
+        app
+            .configure_sets(Render, UpdateCornStateSet.in_set(RenderSet::PrepareAssets))
+            .add_systems(Render, Self::finish_update_cycle.after(UpdateCornStateSet).in_set(RenderSet::PrepareAssets));
     }
 }
 
@@ -172,7 +174,7 @@ impl Plugin for MasterCornFieldStatePlugin{
         app.sub_app_mut(RenderApp)
             .add_event::<StaleFieldEvent>()
             .add_event::<NewFieldEvent>()
-            .init_resource::<CornFieldStateManager>()
-            .configure_sets(Render, CornFieldStateManager::into_configs());
+            .init_resource::<CornFieldStateManager>();
+        CornFieldStateManager::add_systems(app);
     }
 }
