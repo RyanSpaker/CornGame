@@ -25,7 +25,7 @@ impl<T: RenderableCornField> RenderableCornFieldPlugin<T>{
 impl<T: RenderableCornField> Plugin for RenderableCornFieldPlugin<T>{
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            state_manager::CornFieldStatePlugin::<T>::new(),
+            //state_manager::CornFieldStatePlugin::<T>::new(),
             operation_manager::CornOperationPlugin::<T>::new(),
             operation_executor::CornOperationExecutionPlugin::<T>::new()
         ));
@@ -41,7 +41,7 @@ pub struct MasterCornFieldDataPipelinePlugin;
 impl Plugin for MasterCornFieldDataPipelinePlugin{
     fn build(&self, app: &mut App) {
         app.add_plugins((
-            state_manager::MasterCornFieldStatePlugin{},
+            //state_manager::MasterCornFieldStatePlugin{},
             storage_manager::MasterCornStorageManagerPlugin{},
             operation_manager::MasterCornOperationPlugin{},
             operation_executor::MasterCornOperationExecutionPlugin{},

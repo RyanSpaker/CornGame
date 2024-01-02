@@ -2,8 +2,7 @@ use std::{collections::hash_map::DefaultHasher, hash::{Hasher, Hash}};
 use bevy::{
     ecs::component::Component, 
     math::{Vec2, Vec3, Vec4, UVec2}, 
-    render::{render_resource::{
-        BindGroupDescriptor, 
+    render::{render_resource::{ 
         BindGroupLayoutDescriptor, 
         BindGroupLayoutEntry, 
         BufferBindingType, 
@@ -168,13 +167,10 @@ impl RenderableCornField for SimpleHexagonalCornField{
         "simple_init".to_string()
     }
 
-    fn get_init_resources(
+    fn get_init_buffers(
         fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
-        render_device: &RenderDevice,
-        layout: &BindGroupLayout,
-        operation_buffer: &Buffer
-    ) -> (Vec<(BindGroup, u64)>, Vec<Buffer>) {
-        let total_instances: u64 = fields.iter().map(|(_, range, _, _)| range.len()).sum();
+        render_device: &RenderDevice
+    ) -> Vec<Buffer> {
         let settings: Vec<SimpleCornFieldShaderSettings> = fields.iter()
             .flat_map(|(field, range, _, _)| 
         {
@@ -188,21 +184,32 @@ impl RenderableCornField for SimpleHexagonalCornField{
             usage: BufferUsages::STORAGE,
             contents: bytemuck::cast_slice(&settings[..])
         });
-        let init_bind_group = render_device.create_bind_group(&BindGroupDescriptor{
-            label: Some("Simple Corn Init Bind Group".into()),
+        return vec![settings_buffer];
+    }
+
+    fn get_init_bindgroups(
+        fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
+        render_device: &RenderDevice,
+        layout: &BindGroupLayout,
+        operation_buffer: &Buffer,
+        buffers: &Vec<Buffer>
+    ) -> Vec<(BindGroup, u64)> {
+        let total_instances: u64 = fields.iter().map(|(_, range, _, _)| range.len()).sum();
+        let init_bind_group = render_device.create_bind_group(
+            Some("Simple Corn Init Bind Group".into()),
             layout,
-            entries: &[
+            &[
                 BindGroupEntry{
                     binding: 0,
                     resource: operation_buffer.as_entire_binding()
                 },
                 BindGroupEntry{
                     binding: 1,
-                    resource: settings_buffer.as_entire_binding()
+                    resource: buffers[0].as_entire_binding()
                 }
             ],
-        });
-        return (vec![(init_bind_group, total_instances)], vec![settings_buffer]);
+        );
+        return vec![(init_bind_group, total_instances)];
     }
 
     fn init_bind_group_descriptor<'a>() -> BindGroupLayoutDescriptor<'a> {
@@ -309,13 +316,10 @@ impl RenderableCornField for SimpleRectangularCornField{
         "simple_rect_init".to_string()
     }
 
-    fn get_init_resources(
+    fn get_init_buffers(
         fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
-        render_device: &RenderDevice,
-        layout: &BindGroupLayout,
-        operation_buffer: &Buffer
-    ) -> (Vec<(BindGroup, u64)>, Vec<Buffer>) {
-        let total_instances: u64 = fields.iter().map(|(_, range, _, _)| range.len()).sum();
+        render_device: &RenderDevice
+    ) -> Vec<Buffer> {
         let settings: Vec<SimpleCornFieldShaderSettings> = fields.iter()
             .flat_map(|(field, range, _, _)| 
         {
@@ -329,21 +333,32 @@ impl RenderableCornField for SimpleRectangularCornField{
             usage: BufferUsages::STORAGE,
             contents: bytemuck::cast_slice(&settings[..])
         });
-        let init_bind_group = render_device.create_bind_group(&BindGroupDescriptor{
-            label: Some("Simple Corn Init Bind Group".into()),
+        return vec![settings_buffer];
+    }
+
+    fn get_init_bindgroups(
+        fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
+        render_device: &RenderDevice,
+        layout: &BindGroupLayout,
+        operation_buffer: &Buffer,
+        buffers: &Vec<Buffer>
+    ) -> Vec<(BindGroup, u64)> {
+        let total_instances: u64 = fields.iter().map(|(_, range, _, _)| range.len()).sum();
+        let init_bind_group = render_device.create_bind_group(
+            Some("Simple Corn Init Bind Group".into()),
             layout,
-            entries: &[
+            &[
                 BindGroupEntry{
                     binding: 0,
                     resource: operation_buffer.as_entire_binding()
                 },
                 BindGroupEntry{
                     binding: 1,
-                    resource: settings_buffer.as_entire_binding()
+                    resource: buffers[0].as_entire_binding()
                 }
             ],
-        });
-        return (vec![(init_bind_group, total_instances)], vec![settings_buffer]);
+        );
+        return vec![(init_bind_group, total_instances)];
     }
 
     fn init_bind_group_descriptor<'a>() -> BindGroupLayoutDescriptor<'a> {
