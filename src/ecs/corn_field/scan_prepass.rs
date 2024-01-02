@@ -67,6 +67,7 @@ impl LodCutoffs{
         return Self(lod_cutoffs);
     }
 }
+
 /// ### Keeps hold of all of the vote-scan-compact shader resources
 #[derive(Resource, Default)]
 pub struct ScanPrepassResources{
@@ -105,8 +106,8 @@ impl ScanPrepassResources{
         pipeline_cache: Res<PipelineCache>,
         camera: Query<&ExtractedView, With<MainCamera>>
     ){
-        resources.enabled = instance_buffer.enabled;
-        if !instance_buffer.enabled {return;}
+        resources.enabled = instance_buffer.ready_to_render();
+        if !resources.enabled {return;}
         resources.frustum_values = camera.single().into();
 
         if pipeline.ids.get(&instance_buffer.lod_count).is_none(){
@@ -256,7 +257,7 @@ impl ScanPrepassResources{
         render_device: Res<RenderDevice>,
         pipeline: Res<CornBufferPrePassPipeline>,
     ){
-        if instance_buffer.id == resources.buffer_id {return;}
+        if instance_buffer.id == resources.buffer_id || !resources.enabled {return;}
         resources.buffer_id = instance_buffer.id;
         let bind_group = [
             BindGroupEntry{

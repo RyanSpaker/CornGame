@@ -1,4 +1,4 @@
-#import corn_game::corn PerCornData, DefragRange
+#import corn_game::corn::{PerCornData, DefragRange}
 
 @group(0) @binding(0)
 var<storage, read> old_ranges: array<DefragRange>;

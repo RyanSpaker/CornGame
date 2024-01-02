@@ -1,4 +1,4 @@
-#import corn_game::corn PerCornData, CornSettings, Range, randomFloat
+#import corn_game::corn::{PerCornData, CornSettings, Range, randomFloat}
 
 @group(0) @binding(0)
 var<storage, read_write> instance_data: array<PerCornData>;

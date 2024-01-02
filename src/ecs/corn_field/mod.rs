@@ -13,7 +13,9 @@ use bevy::{
 use bytemuck::{Pod, Zeroable};
 use crate::prelude::corn_model::CornMeshes;
 use self::{
-    data_pipeline::{storage_manager::{CornBufferStorageManager, BufferRange}, MasterCornFieldDataPipelinePlugin}, 
+    data_pipeline::{
+        storage_manager::{CornBufferStorageManager, BufferRange}, 
+        MasterCornFieldDataPipelinePlugin}, 
     corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}, 
     scan_prepass::MasterCornPrepassPlugin
 };
