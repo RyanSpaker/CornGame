@@ -1,23 +1,24 @@
 pub mod scan_prepass;
 pub mod data_pipeline;
 pub mod corn_fields;
+pub mod render;
 
 use bevy::{
     prelude::*,
     render::{
         render_resource::*,
         renderer::RenderDevice, 
-        RenderApp, RenderSet, Render,
+        RenderApp, RenderSet, Render, view::NoFrustumCulling,
     }, reflect::GetTypeRegistration
 };
 use bytemuck::{Pod, Zeroable};
-use crate::prelude::corn_model::CornMeshes;
+use crate::{prelude::corn_model::CornMeshes, util::specialized_material::SpecializedMaterialPlugin};
 use self::{
     data_pipeline::{
         storage_manager::{CornBufferStorageManager, BufferRange}, 
         MasterCornFieldDataPipelinePlugin}, 
     corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}, 
-    scan_prepass::MasterCornPrepassPlugin
+    scan_prepass::MasterCornPrepassPlugin, render::{CornMaterial, CornMaterialExtension, DrawCorn}
 };
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
@@ -183,9 +184,14 @@ pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_plugins((MasterCornFieldDataPipelinePlugin, MasterCornPrepassPlugin))
+            .add_plugins((
+                MasterCornFieldDataPipelinePlugin, 
+                MasterCornPrepassPlugin, 
+                SpecializedMaterialPlugin::<CornMaterial, DrawCorn, DrawCorn>::default()
+            ))
             .register_type::<SimpleRectangularCornField>()
             .register_type::<SimpleHexagonalCornField>()
+            .add_systems(Update, spawn_corn_anchor.run_if(corn_meshes_just_loaded))
         .sub_app_mut(RenderApp)
             .init_resource::<CornInstanceBuffer>()
             .add_systems(Render, (
@@ -193,4 +199,31 @@ impl Plugin for CornFieldComponentPlugin {
                 CornInstanceBuffer::update_indirect_buffer
             ).chain().in_set(RenderSet::Cleanup));
     }
+}
+
+pub fn corn_meshes_just_loaded(
+    corn_meshes: Res<CornMeshes>,
+    mut local: Local<bool>
+) -> bool{
+    if !*local && corn_meshes.loaded{
+        *local = true;
+        return true;
+    }
+    return false;
+}
+/// Spawns a renderable corn stalk in the center of the screen which will act as our corn field
+/// Our extended material and specialized material plugin override the render logic to instance the stalk into our corn fields
+pub fn spawn_corn_anchor(
+    mut commands: Commands,
+    std_materials: Res<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<CornMaterial>>,
+    corn_meshes: Res<CornMeshes>
+){
+    if let Some(mat) = std_materials.get(corn_meshes.materials.get(&"CornLeaves".to_string()).unwrap().clone()){
+        commands.spawn((MaterialMeshBundle::<CornMaterial>{
+            mesh: corn_meshes.global_mesh.as_ref().unwrap().clone(),
+            material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension::default()}),
+            ..Default::default()
+        }, NoFrustumCulling));
+    }    
 }

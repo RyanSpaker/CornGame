@@ -209,7 +209,7 @@ impl Plugin for MasterCornOperationPlugin{
     fn build(&self, app: &mut App) {
         app.sub_app_mut(RenderApp)
             .init_resource::<CornBufferOperationCalculator>();
-        CornBufferOperationCalculator::add_systems(app);
+        CornBufferOperationCalculator::add_systems(app.sub_app_mut(RenderApp));
     }
 }
 

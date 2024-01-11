@@ -175,6 +175,6 @@ impl Plugin for MasterCornFieldStatePlugin{
             .add_event::<StaleFieldEvent>()
             .add_event::<NewFieldEvent>()
             .init_resource::<CornFieldStateManager>();
-        CornFieldStateManager::add_systems(app);
+        CornFieldStateManager::add_systems(app.sub_app_mut(RenderApp));
     }
 }

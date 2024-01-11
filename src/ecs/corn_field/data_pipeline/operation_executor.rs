@@ -239,6 +239,9 @@ impl CornOperationResources{
         let fields: Vec<(&T, BufferRange, RenderableCornFieldID, String)> = fields.into_iter().filter_map(|(field, id)| {
             operations.init_ops.get(id).and_then(|(range, typename)| Some((field, range.clone(), id.clone(), typename.clone())))
         }).collect();
+        if fields.is_empty(){
+            return;
+        }
         let buffers = T::get_init_buffers(fields, render_device.as_ref());
         resources.init_buffers.insert(type_name::<T>().to_string(), buffers);
     }
@@ -262,6 +265,7 @@ impl CornOperationResources{
         let fields: Vec<(&T, BufferRange, RenderableCornFieldID, String)> = fields.into_iter().filter_map(|(field, id)| {
             operations.init_ops.get(id).and_then(|(range, typename)| Some((field, range.clone(), id.clone(), typename.clone())))
         }).collect();
+        if fields.is_empty(){return;}
         
         let operation_buffer = if operations.expansion == 0 {
             instance_buffer.get_instance_buffer().unwrap()
@@ -690,8 +694,8 @@ impl Plugin for MasterCornOperationExecutionPlugin{
         app.sub_app_mut(RenderApp)
             .init_resource::<CornOperationResources>()
             .init_resource::<NodeSuccess>();
-        CornOperationResources::add_systems(app);
-        CornOperationPipelines::add_systems(app);
+        CornOperationResources::add_systems(app.sub_app_mut(RenderApp));
+        CornOperationPipelines::add_systems(app.sub_app_mut(RenderApp));
     }
     fn finish(&self, app: &mut App) {
         app.sub_app_mut(RenderApp)

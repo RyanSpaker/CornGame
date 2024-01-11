@@ -26,10 +26,9 @@ struct Vertex {
     @location(6) joint_weights: vec4<f32>,
 #endif
 #ifdef CORN_INSTANCED
-    @location(7) material_index: u32,
-    @location(8) offset_scale: vec4<f32>,
-    @location(9) rotation: vec2<f32>,
-    @location(10) id: vec2<u32>,
+    @location(7) offset_scale: vec4<f32>,
+    @location(8) rotation: vec2<f32>,
+    @location(9) id: vec2<u32>,
 #endif
 #ifdef MORPH_TARGETS
     @builtin(vertex_index) index: u32,

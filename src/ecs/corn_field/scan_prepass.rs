@@ -28,7 +28,7 @@ pub struct FrustumValues {
 impl From<&ExtractedView> for FrustumValues{
     fn from(value: &ExtractedView) -> Self {
         Self{
-            mat: value.projection*value.transform.compute_matrix().inverse(),
+            mat: value.projection*(value.transform.compute_matrix().inverse()),
             offset: value.transform.translation().extend(1.0)
         }
     }
