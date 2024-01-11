@@ -1,4 +1,4 @@
-#import corn_game::corn PerCornData
+#import corn_game::corn::PerCornData
 
 #ifdef OVERRIDE_LOD_COUNT
 const LOD_COUNT = #{OVERRIDE_LOD_COUNT}u;
@@ -20,34 +20,30 @@ var<workgroup> temp_scan_buffer: array<array<u32, 256>, LOD_COUNT>;
 var<storage, read_write> count_buffer: array<array<u32, LOD_COUNT>>;
 
 struct FrustumValues {
-  col1: vec4<f32>,
-  col2: vec4<f32>,
-  col3: vec4<f32>,
-  col4: vec4<f32>,
+  mat: mat4x4<f32>,
   offset: vec4<f32>,
   lod_dists: array<f32, LOD_COUNT>
 }
 var<push_constant> cull_settings: FrustumValues;
 
 fn calc_lod(position: u32) -> u32{
-  var lod: u32 = 0u;
+  var lod: u32 = LOD_COUNT;
   let pos: vec4<f32> = vec4<f32>(instance_data[position].offset.xyz, 1.0);
   let offset: vec2<f32> = pos.xz - cull_settings.offset.xz;
   let distance: f32 = dot(offset, offset);
-  for (var i = 0u; i < LOD_COUNT-(1u); i++){
-    if distance > cull_settings.lod_dists[i]{
-      lod += 1u;
+  for (var i = LOD_COUNT; i > 0u; i--){
+    if distance < cull_settings.lod_dists[i-(1u)]{
+      lod = i-(1u);
     }
   }
-  let projection: mat4x4<f32> = mat4x4<f32>(cull_settings.col1, cull_settings.col2, cull_settings.col3, cull_settings.col4);
-  let projected: vec4<f32> = projection*pos;
+  let projected: vec4<f32> = cull_settings.mat*pos;
   let bounds: vec3<f32> = projected.xyz / projected.w;
-  let enabled: u32 = u32(
+  var enabled: u32 = u32(
     step(bounds.x, 1.1)*
     step(-1.1, bounds.x)* 
-    step(0.0, bounds.z) + step(distance, 16.0) > 0.0
+    step(0.0, bounds.z) > 0.0
   ) * instance_data[position].enabled;
-  return select(LOD_COUNT, lod, bool(enabled));
+  return select(LOD_COUNT-(1u), lod, bool(enabled));
 }
 
 @compute @workgroup_size(128, 1, 1)
@@ -57,7 +53,7 @@ fn vote_scan(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invoc
   }
   //Vote:
   //let lod1: u32 = (instance_data[2u*gid.x].enabled + LOD_COUNT-(1u))%(LOD_COUNT);
-  //let lod2: u32 = (instance_data[2u*gid.x+1u].enabled*5u + LOD_COUNT-(1u))%(LOD_COUNT);
+  //let lod2: u32 = (instance_data[2u*gid.x+1u].enabled + LOD_COUNT-(1u))%(LOD_COUNT);
   let lod1: u32 = calc_lod(2u*gid.x);
   let lod2: u32 = calc_lod(2u*gid.x+1u);
   //Scan:

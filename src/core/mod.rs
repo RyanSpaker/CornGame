@@ -6,6 +6,8 @@
 pub mod gameplay;
 pub mod loading;
 
+use std::time::Duration;
+
 use bevy::{prelude::*, app::AppExit};
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
@@ -20,12 +22,17 @@ pub enum CornGameState{
     Exit
 }
 
+#[derive(Default, Resource)]
+pub struct LoadingTimer(Duration);
+
 pub struct CornPlugin{}
 impl Plugin for CornPlugin{
     fn build(&self, app: &mut App) {
         app
             .add_state::<CornGameState>()
+            .init_resource::<LoadingTimer>()
             .add_systems(OnEnter(CornGameState::Init), init_game)
+            .add_systems(OnExit(CornGameState::Loading), finish_loading)
             .add_systems(OnEnter(CornGameState::Exit), exit_game)
             .add_plugins((
                 LoadGamePlugin::<CornGameState>::new(
@@ -43,11 +50,21 @@ impl Plugin for CornPlugin{
 }
 
 pub fn init_game(
-    mut state: ResMut<NextState<CornGameState>>
+    mut state: ResMut<NextState<CornGameState>>,
+    time: Res<Time>,
+    mut loading_timer: ResMut<LoadingTimer>
 ){
     //Init work
-
+    info!("Loading Start");
+    loading_timer.0 = time.elapsed();
     state.set(CornGameState::Loading);
+}
+
+pub fn finish_loading(
+    time: Res<Time>,
+    loading_timer: ResMut<LoadingTimer>
+){
+    info!("Loading Finished, Elapsed Millis: {}", (time.elapsed() - loading_timer.0).as_millis());
 }
 
 pub fn exit_game(

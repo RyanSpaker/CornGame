@@ -1,8 +1,8 @@
 #import bevy_pbr::mesh_functions as mesh_functions
 #import bevy_pbr::skinning
 #import bevy_pbr::morph
-#import bevy_pbr::mesh_bindings       mesh
-#import bevy_pbr::mesh_vertex_output  MeshVertexOutput
+#import bevy_pbr::mesh_bindings::mesh
+#import bevy_pbr::mesh_vertex_output::MeshVertexOutput
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -26,10 +26,9 @@ struct Vertex {
     @location(6) joint_weights: vec4<f32>,
 #endif
 #ifdef CORN_INSTANCED
-    @location(7) material_index: u32,
-    @location(8) offset_scale: vec4<f32>,
-    @location(9) rotation: vec2<f32>,
-    @location(10) id: vec2<u32>,
+    @location(7) offset_scale: vec4<f32>,
+    @location(8) rotation: vec2<f32>,
+    @location(9) id: vec2<u32>,
 #endif
 #ifdef MORPH_TARGETS
     @builtin(vertex_index) index: u32,
