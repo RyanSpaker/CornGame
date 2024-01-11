@@ -27,21 +27,21 @@ struct FrustumValues {
 var<push_constant> cull_settings: FrustumValues;
 
 fn calc_lod(position: u32) -> u32{
-  var lod: u32 = 0u;
+  var lod: u32 = LOD_COUNT;
   let pos: vec4<f32> = vec4<f32>(instance_data[position].offset.xyz, 1.0);
   let offset: vec2<f32> = pos.xz - cull_settings.offset.xz;
   let distance: f32 = dot(offset, offset);
-  for (var i = 0u; i < LOD_COUNT-(1u); i++){
-    if distance > cull_settings.lod_dists[i]{
-      lod += 1u;
+  for (var i = LOD_COUNT; i > 0u; i--){
+    if distance < cull_settings.lod_dists[i-(1u)]{
+      lod = i-(1u);
     }
   }
   let projected: vec4<f32> = cull_settings.mat*pos;
   let bounds: vec3<f32> = projected.xyz / projected.w;
-  let enabled: u32 = u32(
+  var enabled: u32 = u32(
     step(bounds.x, 1.1)*
     step(-1.1, bounds.x)* 
-    step(0.0, bounds.z) + step(distance, 16.0) > 0.0
+    step(0.0, bounds.z) > 0.0
   ) * instance_data[position].enabled;
   return select(LOD_COUNT-(1u), lod, bool(enabled));
 }

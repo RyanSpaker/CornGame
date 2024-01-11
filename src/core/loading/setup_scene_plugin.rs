@@ -1,11 +1,13 @@
 use std::f32::consts::PI;
 use bevy::prelude::*;
+use bevy::render::extract_component::ExtractComponentPlugin;
 use bevy::render::view::NoFrustumCulling;
 use crate::core::loading::LoadingTaskCount;
 use crate::ecs::corn_field::corn_fields::simple_corn_field;
 use crate::ecs::main_camera::MainCamera;
 use crate::flycam::FlyCam;
 use crate::prelude::corn_model::CornLoadState;
+use crate::util::DebugTag;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum SetupState{
@@ -27,6 +29,7 @@ impl<T> Plugin for SetupScenePlugin<T> where T: States + Copy{
     fn build(&self, app: &mut App) {
         app
             .add_state::<SetupState>()
+            .add_plugins(ExtractComponentPlugin::<DebugTag>::default())
             .add_systems(OnEnter(self.active_state), add_setup_scene_task)
             .add_systems(Update, (
                 setup_scene
@@ -58,7 +61,7 @@ fn setup_scene(
 ){
     //Spawn Camera
     commands.spawn((Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 2.5, 0.0).looking_at(Vec3::new(10.0, 2.5, 0.0), Vec3::Y),
+        transform: Transform::from_xyz(0.0, 0.0, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         projection: Projection::Perspective(PerspectiveProjection{
             near: 0.1,
             far: 200.0,
@@ -69,10 +72,10 @@ fn setup_scene(
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
-        simple_corn_field::SimpleHexagonalCornField::new(
+        simple_corn_field::SimpleRectangularCornField::new(
             Vec3::new(0.0, 0.0, 0.0), 
-            Vec2::ONE*50.0, 
-            0.75,
+            Vec2::ONE, 
+            UVec2::new(2, 2),
             Vec2::new(0.9, 1.4),
             0.2
         ),
@@ -80,12 +83,12 @@ fn setup_scene(
         NoFrustumCulling
     ));
     //box
-    commands.spawn(PbrBundle{
+    commands.spawn((PbrBundle{
         mesh: meshes.add(shape::Box::new(1.0, 1.0, 1.0).into()),
         material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
         transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
         ..default()
-    });
+    }, DebugTag{}));
     commands.spawn(PbrBundle{
         mesh: meshes.add(shape::Box::new(1.0, 1.0, 1.0).into()),
         material: materials.add(Color::rgb(1.0, 0.0, 0.0).into()),
