@@ -12,15 +12,41 @@ use bevy::render::{RenderApp, Render, RenderSet};
 use bevy::render::extract_instances::ExtractInstancesPlugin;
 use bevy::render::render_asset::{RenderAssets, prepare_assets};
 use bevy::render::render_phase::{DrawFunctions, AddRenderCommand, SetItemPipeline, RenderCommand, RenderPhase};
-use bevy::render::render_resource::{SpecializedMeshPipelines, PipelineCache};
+use bevy::render::render_resource::{SpecializedMeshPipelines, PipelineCache, AsBindGroup};
 use bevy::pbr::*;
 
-pub trait PrepassDrawCommand: Send + Sync + TypePath + Clone + Sized + 
-RenderCommand<Shadow> + RenderCommand<Opaque3dPrepass> + 
-RenderCommand<AlphaMask3dPrepass> + RenderCommand<Opaque3dDeferred> + RenderCommand<AlphaMask3dDeferred> {}
-pub trait RenderDrawCommand: Send + Sync + TypePath + RenderCommand<Opaque3d> + RenderCommand<Transparent3d> + RenderCommand<Transmissive3d> + RenderCommand<AlphaMask3d> {}
+pub type CustomStandardMaterial = ExtendedMaterial<StandardMaterial, EmptyExtension>;
 
-type SpecializedDrawPrepass<M, F> = (
+#[derive(Default, Debug, Clone, AsBindGroup, Asset, Reflect)]
+pub struct EmptyExtension{}
+impl MaterialExtension for EmptyExtension{
+    fn specialize(
+        _pipeline: &bevy::pbr::MaterialExtensionPipeline,
+        _descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
+        _layout: &bevy::render::mesh::MeshVertexBufferLayout,
+        _key: bevy::pbr::MaterialExtensionKey<Self>,
+    ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
+        Ok(())
+    }
+}
+
+pub type DrawPrepass<M> = (
+    SetItemPipeline,
+    SetPrepassViewBindGroup<0>,
+    SetMaterialBindGroup<M, 1>,
+    SetMeshBindGroup<2>,
+    DrawMesh,
+);
+
+pub type DrawMaterial<M> = (
+    SetItemPipeline,
+    SetMeshViewBindGroup<0>,
+    SetMaterialBindGroup<M, 1>,
+    SetMeshBindGroup<2>,
+    DrawMesh,
+);
+
+pub type SpecializedDrawPrepass<M, F> = (
     SetItemPipeline,
     SetPrepassViewBindGroup<0>,
     SetMaterialBindGroup<M, 1>,
@@ -28,7 +54,7 @@ type SpecializedDrawPrepass<M, F> = (
     F,
 );
 
-type SpecializedDrawMaterial<M, F> = (
+pub type SpecializedDrawMaterial<M, F> = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
     SetMaterialBindGroup<M, 1>,
@@ -36,33 +62,37 @@ type SpecializedDrawMaterial<M, F> = (
     F,
 );
 
-
-/// * Superset of the MaterialPlugin from Bevy
-/// * Lets you add a material to the app and override the final draw functions used during render and prepass steps
-/// * DrawMesh is the default function used by bevy's material plugin for both render and prepass steps, start there to create your own version
-pub struct SpecializedMaterialPlugin<M: Material, P: PrepassDrawCommand, R: RenderDrawCommand>{
-    prepass_enabled: bool,
-    _marker: PhantomData<M>,
-    _marker2: PhantomData<P>,
-    _marker3: PhantomData<R>,
+pub struct SpecializedMaterialPlugin<M: Material, R, P> {
+    pub prepass_enabled: bool,
+    pub _marker: PhantomData<(M, R, P)>,
 }
-impl<M: Material, P: PrepassDrawCommand, R: RenderDrawCommand> Default for SpecializedMaterialPlugin<M, P, R>{
+
+impl<M: Material, R, P> Default for SpecializedMaterialPlugin<M, R, P> {
     fn default() -> Self {
-        Self{prepass_enabled: true, _marker: PhantomData::default(), _marker2: PhantomData::default(), _marker3: PhantomData::default()}
+        Self {
+            prepass_enabled: true,
+            _marker: Default::default(),
+        }
     }
 }
-impl<M: Material, P: PrepassDrawCommand, R: RenderDrawCommand> Plugin for SpecializedMaterialPlugin<M, P, R>
+
+impl<M: Material, R, P> Plugin for SpecializedMaterialPlugin<M, R, P>
 where
+    P: Send + Sync + 'static + RenderCommand<Shadow> +
+        RenderCommand<Opaque3dPrepass> + RenderCommand<Opaque3dDeferred> + 
+        RenderCommand<AlphaMask3dPrepass> + RenderCommand<AlphaMask3dDeferred>, 
+    <P as RenderCommand::<Shadow>>::Param: ReadOnlySystemParam,
+    <P as RenderCommand::<Opaque3dPrepass>>::Param: ReadOnlySystemParam,
+    <P as RenderCommand::<Opaque3dDeferred>>::Param: ReadOnlySystemParam,
+    <P as RenderCommand::<AlphaMask3dPrepass>>::Param: ReadOnlySystemParam,
+    <P as RenderCommand::<AlphaMask3dDeferred>>::Param: ReadOnlySystemParam,
+    R: Send + Sync + 'static + 
+        RenderCommand<Opaque3d> + RenderCommand<Transmissive3d> + RenderCommand<Transparent3d> + RenderCommand<AlphaMask3d>,
+    <R as RenderCommand::<Opaque3d>>::Param: ReadOnlySystemParam,
+    <R as RenderCommand::<AlphaMask3d>>::Param: ReadOnlySystemParam,
+    <R as RenderCommand::<Transparent3d>>::Param: ReadOnlySystemParam,
+    <R as RenderCommand::<Transmissive3d>>::Param: ReadOnlySystemParam,
     M::Data: PartialEq + Eq + Hash + Clone,
-    <P as RenderCommand<Shadow>>::Param: ReadOnlySystemParam,
-    <P as RenderCommand<Opaque3dPrepass>>::Param: ReadOnlySystemParam,
-    <P as RenderCommand<AlphaMask3dPrepass>>::Param: ReadOnlySystemParam,
-    <P as RenderCommand<Opaque3dDeferred>>::Param: ReadOnlySystemParam,
-    <P as RenderCommand<AlphaMask3dDeferred>>::Param: ReadOnlySystemParam,
-    <R as RenderCommand<Opaque3d>>::Param: ReadOnlySystemParam,
-    <R as RenderCommand<Transparent3d>>::Param: ReadOnlySystemParam,
-    <R as RenderCommand<Transmissive3d>>::Param: ReadOnlySystemParam,
-    <R as RenderCommand<AlphaMask3d>>::Param: ReadOnlySystemParam
 {
     fn build(&self, app: &mut App) {
         app.init_asset::<M>()
@@ -71,11 +101,11 @@ where
         if let Ok(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app
                 .init_resource::<DrawFunctions<Shadow>>()
-                .add_render_command::<Shadow, SpecializedDrawPrepass<M, P>>()
-                .add_render_command::<Transmissive3d, SpecializedDrawMaterial<M, R>>()
-                .add_render_command::<Transparent3d, SpecializedDrawMaterial<M, R>>()
-                .add_render_command::<Opaque3d, SpecializedDrawMaterial<M, R>>()
-                .add_render_command::<AlphaMask3d, SpecializedDrawMaterial<M, R>>()
+                .add_render_command::<Shadow, P>()
+                .add_render_command::<Transmissive3d, R>()
+                .add_render_command::<Transparent3d, R>()
+                .add_render_command::<Opaque3d, R>()
+                .add_render_command::<AlphaMask3d, R>()
                 .init_resource::<ExtractedMaterials<M>>()
                 .init_resource::<RenderMaterials<M>>()
                 .init_resource::<SpecializedMeshPipelines<MaterialPipeline<M>>>()
@@ -86,15 +116,16 @@ where
                         prepare_materials::<M>
                             .in_set(RenderSet::PrepareAssets)
                             .after(prepare_assets::<Image>),
-                        specialized_queue_shadows::<M, P>
+                        queue_shadows::<M, P>
                             .in_set(RenderSet::QueueMeshes)
                             .after(prepare_materials::<M>),
-                        specialized_queue_material_meshes::<M, R>
+                        queue_material_meshes::<M, R>
                             .in_set(RenderSet::QueueMeshes)
                             .after(prepare_materials::<M>),
                     ),
                 );
         }
+
         // PrepassPipelinePlugin is required for shadow mapping and the optional PrepassPlugin
         app.add_plugins(PrepassPipelinePlugin::<M>::default());
 
@@ -102,6 +133,7 @@ where
             app.add_plugins(SpecializedPrepassPlugin::<M, P>::default());
         }
     }
+
     fn finish(&self, app: &mut App) {
         if let Ok(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app.init_resource::<MaterialPipeline<M>>();
@@ -110,7 +142,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn specialized_queue_shadows<M: Material, P: PrepassDrawCommand>(
+pub fn queue_shadows<M: Material, P>(
     shadow_draw_functions: Res<DrawFunctions<Shadow>>,
     prepass_pipeline: Res<PrepassPipeline<M>>,
     render_meshes: Res<RenderAssets<Mesh>>,
@@ -125,10 +157,11 @@ fn specialized_queue_shadows<M: Material, P: PrepassDrawCommand>(
     directional_light_entities: Query<&CascadesVisibleEntities, With<ExtractedDirectionalLight>>,
     spot_light_entities: Query<&VisibleEntities, With<ExtractedPointLight>>,
 ) where
-    M::Data: PartialEq + Eq + Hash + Clone
+    P: 'static,
+    M::Data: PartialEq + Eq + Hash + Clone,
 {
     for (entity, view_lights) in &view_lights {
-        let draw_shadow_mesh = shadow_draw_functions.read().id::<SpecializedDrawPrepass<M, P>>();
+        let draw_shadow_mesh = shadow_draw_functions.read().id::<P>();
         for view_light_entity in view_lights.lights.iter().copied() {
             let (light_entity, mut shadow_phase) =
                 view_light_shadow_phases.get_mut(view_light_entity).unwrap();
@@ -222,54 +255,8 @@ fn specialized_queue_shadows<M: Material, P: PrepassDrawCommand>(
     }
 }
 
-const fn alpha_mode_pipeline_key(alpha_mode: AlphaMode) -> MeshPipelineKey {
-    match alpha_mode {
-        // Premultiplied and Add share the same pipeline key
-        // They're made distinct in the PBR shader, via `premultiply_alpha()`
-        AlphaMode::Premultiplied | AlphaMode::Add => MeshPipelineKey::BLEND_PREMULTIPLIED_ALPHA,
-        AlphaMode::Blend => MeshPipelineKey::BLEND_ALPHA,
-        AlphaMode::Multiply => MeshPipelineKey::BLEND_MULTIPLY,
-        AlphaMode::Mask(_) => MeshPipelineKey::MAY_DISCARD,
-        _ => MeshPipelineKey::NONE,
-    }
-}
-
-const fn tonemapping_pipeline_key(tonemapping: Tonemapping) -> MeshPipelineKey {
-    match tonemapping {
-        Tonemapping::None => MeshPipelineKey::TONEMAP_METHOD_NONE,
-        Tonemapping::Reinhard => MeshPipelineKey::TONEMAP_METHOD_REINHARD,
-        Tonemapping::ReinhardLuminance => MeshPipelineKey::TONEMAP_METHOD_REINHARD_LUMINANCE,
-        Tonemapping::AcesFitted => MeshPipelineKey::TONEMAP_METHOD_ACES_FITTED,
-        Tonemapping::AgX => MeshPipelineKey::TONEMAP_METHOD_AGX,
-        Tonemapping::SomewhatBoringDisplayTransform => {
-            MeshPipelineKey::TONEMAP_METHOD_SOMEWHAT_BORING_DISPLAY_TRANSFORM
-        }
-        Tonemapping::TonyMcMapface => MeshPipelineKey::TONEMAP_METHOD_TONY_MC_MAPFACE,
-        Tonemapping::BlenderFilmic => MeshPipelineKey::TONEMAP_METHOD_BLENDER_FILMIC,
-    }
-}
-
-const fn screen_space_specular_transmission_pipeline_key(
-    screen_space_transmissive_blur_quality: ScreenSpaceTransmissionQuality,
-) -> MeshPipelineKey {
-    match screen_space_transmissive_blur_quality {
-        ScreenSpaceTransmissionQuality::Low => {
-            MeshPipelineKey::SCREEN_SPACE_SPECULAR_TRANSMISSION_LOW
-        }
-        ScreenSpaceTransmissionQuality::Medium => {
-            MeshPipelineKey::SCREEN_SPACE_SPECULAR_TRANSMISSION_MEDIUM
-        }
-        ScreenSpaceTransmissionQuality::High => {
-            MeshPipelineKey::SCREEN_SPACE_SPECULAR_TRANSMISSION_HIGH
-        }
-        ScreenSpaceTransmissionQuality::Ultra => {
-            MeshPipelineKey::SCREEN_SPACE_SPECULAR_TRANSMISSION_ULTRA
-        }
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
-fn specialized_queue_material_meshes<M: Material, R: RenderDrawCommand>(
+pub fn queue_material_meshes<M: Material, R>(
     opaque_draw_functions: Res<DrawFunctions<Opaque3d>>,
     alpha_mask_draw_functions: Res<DrawFunctions<AlphaMask3d>>,
     transmissive_draw_functions: Res<DrawFunctions<Transmissive3d>>,
@@ -306,11 +293,8 @@ fn specialized_queue_material_meshes<M: Material, R: RenderDrawCommand>(
         &mut RenderPhase<Transparent3d>,
     )>,
 ) where
+    R: 'static,
     M::Data: PartialEq + Eq + Hash + Clone,
-    <R as RenderCommand<Opaque3d>>::Param: ReadOnlySystemParam,
-    <R as RenderCommand<Transparent3d>>::Param: ReadOnlySystemParam,
-    <R as RenderCommand<Transmissive3d>>::Param: ReadOnlySystemParam,
-    <R as RenderCommand<AlphaMask3d>>::Param: ReadOnlySystemParam
 {
     for (
         view,
@@ -330,10 +314,10 @@ fn specialized_queue_material_meshes<M: Material, R: RenderDrawCommand>(
         mut transparent_phase,
     ) in &mut views
     {
-        let draw_opaque_pbr = opaque_draw_functions.read().id::<SpecializedDrawMaterial<M, R>>();
-        let draw_alpha_mask_pbr = alpha_mask_draw_functions.read().id::<SpecializedDrawMaterial<M, R>>();
-        let draw_transmissive_pbr = transmissive_draw_functions.read().id::<SpecializedDrawMaterial<M, R>>();
-        let draw_transparent_pbr = transparent_draw_functions.read().id::<SpecializedDrawMaterial<M, R>>();
+        let draw_opaque_pbr = opaque_draw_functions.read().id::<R>();
+        let draw_alpha_mask_pbr = alpha_mask_draw_functions.read().id::<R>();
+        let draw_transmissive_pbr = transmissive_draw_functions.read().id::<R>();
+        let draw_transparent_pbr = transparent_draw_functions.read().id::<R>();
 
         let mut view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
             | MeshPipelineKey::from_hdr(view.hdr);
@@ -513,37 +497,39 @@ fn specialized_queue_material_meshes<M: Material, R: RenderDrawCommand>(
     }
 }
 
-/// Sets up the prepasses for a [`Material`].
-///
-/// This depends on the [`PrepassPipelinePlugin`].
-struct SpecializedPrepassPlugin<M: Material, P: PrepassDrawCommand>(PhantomData<(M, P)>);
+pub struct SpecializedPrepassPlugin<M: Material, P>(PhantomData<(M, P)>);
 
-impl<M: Material, P: PrepassDrawCommand> Default for SpecializedPrepassPlugin<M, P> {
+impl<M: Material, P> Default for SpecializedPrepassPlugin<M, P> {
     fn default() -> Self {
-        Self{0: PhantomData::default()}
+        Self(Default::default())
     }
 }
 
-impl<M: Material, P: PrepassDrawCommand> Plugin for SpecializedPrepassPlugin<M, P>
+impl<M: Material, P> Plugin for SpecializedPrepassPlugin<M, P>
 where
+    P: Send + Sync + 'static + 
+        RenderCommand<Opaque3dPrepass> + RenderCommand<Opaque3dDeferred> + 
+        RenderCommand<AlphaMask3dPrepass> + RenderCommand<AlphaMask3dDeferred>,
+    <P as RenderCommand::<Opaque3dPrepass>>::Param: ReadOnlySystemParam,
+    <P as RenderCommand::<Opaque3dDeferred>>::Param: ReadOnlySystemParam,
+    <P as RenderCommand::<AlphaMask3dPrepass>>::Param: ReadOnlySystemParam,
+    <P as RenderCommand::<AlphaMask3dDeferred>>::Param: ReadOnlySystemParam,
     M::Data: PartialEq + Eq + Hash + Clone,
-    <P as RenderCommand<Opaque3dPrepass>>::Param: ReadOnlySystemParam,
-    <P as RenderCommand<AlphaMask3dPrepass>>::Param: ReadOnlySystemParam,
-    <P as RenderCommand<Opaque3dDeferred>>::Param: ReadOnlySystemParam,
-    <P as RenderCommand<AlphaMask3dDeferred>>::Param: ReadOnlySystemParam
 {
     fn build(&self, app: &mut App) {
+
         let Ok(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
+
         render_app
-            .add_render_command::<Opaque3dPrepass, SpecializedDrawPrepass<M, P>>()
-            .add_render_command::<AlphaMask3dPrepass, SpecializedDrawPrepass<M, P>>()
-            .add_render_command::<Opaque3dDeferred, SpecializedDrawPrepass<M, P>>()
-            .add_render_command::<AlphaMask3dDeferred, SpecializedDrawPrepass<M, P>>()
+            .add_render_command::<Opaque3dPrepass, P>()
+            .add_render_command::<AlphaMask3dPrepass, P>()
+            .add_render_command::<Opaque3dDeferred, P>()
+            .add_render_command::<AlphaMask3dDeferred, P>()
             .add_systems(
                 Render,
-                specialized_queue_prepass_material_meshes::<M, P>
+                queue_prepass_material_meshes::<M, P>
                     .in_set(RenderSet::QueueMeshes)
                     .after(prepare_materials::<M>),
             );
@@ -551,7 +537,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn specialized_queue_prepass_material_meshes<M: Material, P: PrepassDrawCommand>(
+pub fn queue_prepass_material_meshes<M: Material, P>(
     opaque_draw_functions: Res<DrawFunctions<Opaque3dPrepass>>,
     alpha_mask_draw_functions: Res<DrawFunctions<AlphaMask3dPrepass>>,
     opaque_deferred_draw_functions: Res<DrawFunctions<Opaque3dDeferred>>,
@@ -585,23 +571,24 @@ fn specialized_queue_prepass_material_meshes<M: Material, P: PrepassDrawCommand>
         )>,
     >,
 ) where
+    P: 'static,
     M::Data: PartialEq + Eq + Hash + Clone,
 {
     let opaque_draw_prepass = opaque_draw_functions
         .read()
-        .get_id::<SpecializedDrawPrepass<M, P>>()
+        .get_id::<P>()
         .unwrap();
     let alpha_mask_draw_prepass = alpha_mask_draw_functions
         .read()
-        .get_id::<SpecializedDrawPrepass<M, P>>()
+        .get_id::<P>()
         .unwrap();
     let opaque_draw_deferred = opaque_deferred_draw_functions
         .read()
-        .get_id::<SpecializedDrawPrepass<M, P>>()
+        .get_id::<P>()
         .unwrap();
     let alpha_mask_draw_deferred = alpha_mask_deferred_draw_functions
         .read()
-        .get_id::<SpecializedDrawPrepass<M, P>>()
+        .get_id::<P>()
         .unwrap();
     for (
         view,
@@ -750,6 +737,52 @@ fn specialized_queue_prepass_material_meshes<M: Material, P: PrepassDrawCommand>
                 | AlphaMode::Add
                 | AlphaMode::Multiply => {}
             }
+        }
+    }
+}
+
+const fn alpha_mode_pipeline_key(alpha_mode: AlphaMode) -> MeshPipelineKey {
+    match alpha_mode {
+        // Premultiplied and Add share the same pipeline key
+        // They're made distinct in the PBR shader, via `premultiply_alpha()`
+        AlphaMode::Premultiplied | AlphaMode::Add => MeshPipelineKey::BLEND_PREMULTIPLIED_ALPHA,
+        AlphaMode::Blend => MeshPipelineKey::BLEND_ALPHA,
+        AlphaMode::Multiply => MeshPipelineKey::BLEND_MULTIPLY,
+        AlphaMode::Mask(_) => MeshPipelineKey::MAY_DISCARD,
+        _ => MeshPipelineKey::NONE,
+    }
+}
+
+const fn tonemapping_pipeline_key(tonemapping: Tonemapping) -> MeshPipelineKey {
+    match tonemapping {
+        Tonemapping::None => MeshPipelineKey::TONEMAP_METHOD_NONE,
+        Tonemapping::Reinhard => MeshPipelineKey::TONEMAP_METHOD_REINHARD,
+        Tonemapping::ReinhardLuminance => MeshPipelineKey::TONEMAP_METHOD_REINHARD_LUMINANCE,
+        Tonemapping::AcesFitted => MeshPipelineKey::TONEMAP_METHOD_ACES_FITTED,
+        Tonemapping::AgX => MeshPipelineKey::TONEMAP_METHOD_AGX,
+        Tonemapping::SomewhatBoringDisplayTransform => {
+            MeshPipelineKey::TONEMAP_METHOD_SOMEWHAT_BORING_DISPLAY_TRANSFORM
+        }
+        Tonemapping::TonyMcMapface => MeshPipelineKey::TONEMAP_METHOD_TONY_MC_MAPFACE,
+        Tonemapping::BlenderFilmic => MeshPipelineKey::TONEMAP_METHOD_BLENDER_FILMIC,
+    }
+}
+
+const fn screen_space_specular_transmission_pipeline_key(
+    screen_space_transmissive_blur_quality: ScreenSpaceTransmissionQuality,
+) -> MeshPipelineKey {
+    match screen_space_transmissive_blur_quality {
+        ScreenSpaceTransmissionQuality::Low => {
+            MeshPipelineKey::SCREEN_SPACE_SPECULAR_TRANSMISSION_LOW
+        }
+        ScreenSpaceTransmissionQuality::Medium => {
+            MeshPipelineKey::SCREEN_SPACE_SPECULAR_TRANSMISSION_MEDIUM
+        }
+        ScreenSpaceTransmissionQuality::High => {
+            MeshPipelineKey::SCREEN_SPACE_SPECULAR_TRANSMISSION_HIGH
+        }
+        ScreenSpaceTransmissionQuality::Ultra => {
+            MeshPipelineKey::SCREEN_SPACE_SPECULAR_TRANSMISSION_ULTRA
         }
     }
 }

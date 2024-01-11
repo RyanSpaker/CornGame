@@ -1,3 +1,9 @@
+/*
+    GOAL:
+    Try to render the first 2 stalks in the unsorted data array using an instanced drawing command
+    Look out for the wierd mesh instance stuff in the vertex shader idk what thats about, but it could be the issue
+*/
+
 pub mod scan_prepass;
 pub mod data_pipeline;
 pub mod corn_fields;
@@ -8,17 +14,17 @@ use bevy::{
     render::{
         render_resource::*,
         renderer::RenderDevice, 
-        RenderApp, RenderSet, Render, view::NoFrustumCulling,
-    }, reflect::GetTypeRegistration
+        RenderApp, RenderSet, Render, view::NoFrustumCulling, batching::NoAutomaticBatching,
+    }, reflect::GetTypeRegistration, pbr::DrawMesh
 };
 use bytemuck::{Pod, Zeroable};
-use crate::{prelude::corn_model::CornMeshes, util::specialized_material::SpecializedMaterialPlugin};
+use crate::{prelude::corn_model::CornMeshes, util::specialized_material::{SpecializedMaterialPlugin, SpecializedDrawMaterial, SpecializedDrawPrepass, EmptyExtension, CustomStandardMaterial}};
 use self::{
     data_pipeline::{
         storage_manager::{CornBufferStorageManager, BufferRange}, 
         MasterCornFieldDataPipelinePlugin}, 
     corn_fields::simple_corn_field::{SimpleRectangularCornField, SimpleHexagonalCornField}, 
-    scan_prepass::MasterCornPrepassPlugin, render::{CornMaterial, CornMaterialExtension, DrawCorn}
+    scan_prepass::MasterCornPrepassPlugin, render::{CornMaterial, CornMaterialExtension, DrawCorn, DrawMesh2}
 };
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
@@ -186,8 +192,8 @@ impl Plugin for CornFieldComponentPlugin {
         app
             .add_plugins((
                 MasterCornFieldDataPipelinePlugin, 
-                MasterCornPrepassPlugin, 
-                SpecializedMaterialPlugin::<CornMaterial, DrawCorn, DrawCorn>::default()
+                MasterCornPrepassPlugin,
+                SpecializedMaterialPlugin::<CornMaterial, SpecializedDrawMaterial<CornMaterial, DrawCorn>, SpecializedDrawPrepass<CornMaterial, DrawCorn>>::default()
             ))
             .register_type::<SimpleRectangularCornField>()
             .register_type::<SimpleHexagonalCornField>()
@@ -222,8 +228,9 @@ pub fn spawn_corn_anchor(
     if let Some(mat) = std_materials.get(corn_meshes.materials.get(&"CornLeaves".to_string()).unwrap().clone()){
         commands.spawn((MaterialMeshBundle::<CornMaterial>{
             mesh: corn_meshes.global_mesh.as_ref().unwrap().clone(),
-            material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension::default()}),
+            //material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension::default()}),
+            material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension{}}),
             ..Default::default()
-        }, NoFrustumCulling));
+        }, NoFrustumCulling, NoAutomaticBatching{}));
     }    
 }

@@ -74,8 +74,8 @@ fn setup_scene(
         SpatialBundle::INHERITED_IDENTITY,
         simple_corn_field::SimpleRectangularCornField::new(
             Vec3::new(0.0, 0.0, 0.0), 
-            Vec2::ONE, 
-            UVec2::new(2, 2),
+            Vec2::ONE*10.0, 
+            UVec2::new(20, 20),
             Vec2::new(0.9, 1.4),
             0.2
         ),

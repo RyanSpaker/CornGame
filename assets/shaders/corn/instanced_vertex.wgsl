@@ -3,9 +3,20 @@
     skinning,
     morph::morph,
     forward_io::VertexOutput,
+    mesh_bindings::mesh,
     view_transformations::position_world_to_clip,
 }
-#import bevy_render::instance_index::get_instance_index
+#import bevy_render::maths::affine_to_square
+
+var<push_constant> base_instance: i32;
+
+fn get_instance_index(instance_index: u32) -> u32 {
+    return u32(base_instance) + instance_index;
+}
+
+fn get_model_matrix(instance_index: u32) -> mat4x4<f32> {
+    return affine_to_square(mesh[get_instance_index(instance_index)].model);
+}
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -75,7 +86,7 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
 #else
     // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
     // See https://github.com/gfx-rs/naga/issues/2416 .
-    var model = mesh_functions::get_model_matrix(vertex_no_morph.instance_index);
+    var model = get_model_matrix(0u);
 #endif
 
 #ifdef VERTEX_NORMALS
@@ -86,23 +97,12 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
         vertex.normal,
         // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
         // See https://github.com/gfx-rs/naga/issues/2416
-        get_instance_index(vertex_no_morph.instance_index)
+        get_instance_index(0u)
     );
-#endif
-#ifdef CORN_INSTANCED
-    let temp_1: f32 = dot(vertex.rotation.yx, out.world_normal.xz);
-    out.world_normal.z = dot(vertex.rotation.xy, out.world_normal.xz*vec2<f32>(-1.0, 1.0));
-    out.world_normal.x = temp_1;
 #endif
 #endif
 
 #ifdef VERTEX_POSITIONS
-#ifdef CORN_INSTANCED
-    vertex.position *= vertex.offset_scale.w;
-    let temp_2: f32 = dot(vertex.rotation.yx, vertex.position.xz);
-    vertex.position.z = dot(vertex.rotation.xy, vertex.position.xz*vec2<f32>(-1.0, 1.0));
-    vertex.position.x = temp_2;
-#endif
     out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
 #ifdef CORN_INSTANCED
     out.world_position += vec4<f32>(vertex.offset_scale.xyz, 0.0);
@@ -120,13 +120,8 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
         vertex.tangent,
         // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
         // See https://github.com/gfx-rs/naga/issues/2416
-        get_instance_index(vertex_no_morph.instance_index)
+        get_instance_index(0u)
     );
-#ifdef CORN_INSTANCED
-    let temp_3: f32 = dot(vertex.rotation.yx, out.world_tangent.xz);
-    out.world_tangent.z = dot(vertex.rotation.xy, out.world_tangent.xz*vec2<f32>(-1.0, 1.0));
-    out.world_tangent.x = temp_3;
-#endif
 #endif
 
 #ifdef VERTEX_COLORS
@@ -136,15 +131,12 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
 #ifdef VERTEX_OUTPUT_INSTANCE_INDEX
     // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
     // See https://github.com/gfx-rs/naga/issues/2416
-    out.instance_index = get_instance_index(vertex_no_morph.instance_index);
+    out.instance_index = get_instance_index(0u);
 #endif
-
-#ifdef BASE_INSTANCE_WORKAROUND
     // Hack: this ensures the push constant is always used, which works around this issue:
     // https://github.com/bevyengine/bevy/issues/10509
     // This can be removed when wgpu 0.19 is released
     out.position.x += min(f32(get_instance_index(0u)), 0.0);
-#endif
 
     return out;
 }
