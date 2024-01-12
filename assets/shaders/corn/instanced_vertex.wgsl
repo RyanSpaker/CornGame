@@ -100,9 +100,20 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
         get_instance_index(0u)
     );
 #endif
+#ifdef CORN_INSTANCED
+    let temp_1: f32 = dot(vertex.rotation.yx, out.world_normal.xz);
+    out.world_normal.z = dot(vertex.rotation.xy, out.world_normal.xz*vec2<f32>(-1.0, 1.0));
+    out.world_normal.x = temp_1;
+#endif
 #endif
 
 #ifdef VERTEX_POSITIONS
+#ifdef CORN_INSTANCED
+    vertex.position *= vertex.offset_scale.w;
+    let temp_2: f32 = dot(vertex.rotation.yx, vertex.position.xz);
+    vertex.position.z = dot(vertex.rotation.xy, vertex.position.xz*vec2<f32>(-1.0, 1.0));
+    vertex.position.x = temp_2;
+#endif
     out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
 #ifdef CORN_INSTANCED
     out.world_position += vec4<f32>(vertex.offset_scale.xyz, 0.0);
@@ -122,6 +133,11 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
         // See https://github.com/gfx-rs/naga/issues/2416
         get_instance_index(0u)
     );
+#ifdef CORN_INSTANCED
+    let temp_3: f32 = dot(vertex.rotation.yx, out.world_tangent.xz);
+    out.world_tangent.z = dot(vertex.rotation.xy, out.world_tangent.xz*vec2<f32>(-1.0, 1.0));
+    out.world_tangent.x = temp_3;
+#endif
 #endif
 
 #ifdef VERTEX_COLORS

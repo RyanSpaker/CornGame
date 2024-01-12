@@ -1,7 +1,6 @@
 use std::f32::consts::PI;
 use bevy::prelude::*;
 use bevy::render::extract_component::ExtractComponentPlugin;
-use bevy::render::view::NoFrustumCulling;
 use crate::core::loading::LoadingTaskCount;
 use crate::ecs::corn_field::corn_fields::simple_corn_field;
 use crate::ecs::main_camera::MainCamera;
@@ -61,7 +60,7 @@ fn setup_scene(
 ){
     //Spawn Camera
     commands.spawn((Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 0.0, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        transform: Transform::from_xyz(0.0, 2.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         projection: Projection::Perspective(PerspectiveProjection{
             near: 0.1,
             far: 200.0,
@@ -72,15 +71,13 @@ fn setup_scene(
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
-        simple_corn_field::SimpleRectangularCornField::new(
+        simple_corn_field::SimpleHexagonalCornField::new(
             Vec3::new(0.0, 0.0, 0.0), 
-            Vec2::ONE*10.0, 
-            UVec2::new(20, 20),
-            Vec2::new(0.9, 1.4),
+            Vec2::ONE*500.0, 
+            1.0,
+            Vec2::new(0.9, 1.2),
             0.2
-        ),
-        //materials.add(StandardMaterial::default()),
-        NoFrustumCulling
+        )
     ));
     //box
     commands.spawn((PbrBundle{
@@ -97,7 +94,7 @@ fn setup_scene(
     });
     //ground
     commands.spawn(PbrBundle {
-        mesh: meshes.add(shape::Plane::from_size(50.0).into()),
+        mesh: meshes.add(shape::Plane::from_size(1000.0).into()),
         material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
         ..default()
     });

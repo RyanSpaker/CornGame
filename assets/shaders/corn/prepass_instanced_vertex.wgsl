@@ -4,11 +4,25 @@
     prepass_io::{VertexOutput, FragmentOutput},
     skinning,
     morph,
+    mesh_bindings::mesh,
     mesh_view_bindings::{view, previous_view_proj},
     view_transformations::position_world_to_clip
 }
+#import bevy_render::maths::affine_to_square
 
-#import bevy_render::instance_index::get_instance_index
+var<push_constant> base_instance: i32;
+
+fn get_instance_index(instance_index: u32) -> u32 {
+    return u32(base_instance) + instance_index;
+}
+
+fn get_model_matrix(instance_index: u32) -> mat4x4<f32> {
+    return affine_to_square(mesh[get_instance_index(instance_index)].model);
+}
+
+fn get_previous_model_matrix(instance_index: u32) -> mat4x4<f32> {
+    return affine_to_square(mesh[get_instance_index(instance_index)].previous_model);
+}
 
 #ifdef DEFERRED_PREPASS
 #import bevy_pbr::rgb9e5
@@ -83,7 +97,7 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
 #else // SKINNED
     // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
     // See https://github.com/gfx-rs/naga/issues/2416
-    var model = mesh_functions::get_model_matrix(vertex_no_morph.instance_index);
+    var model = get_model_matrix(0u);
 #endif // SKINNED
 
 #ifdef CORN_INSTANCED
@@ -114,7 +128,7 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
         vertex.normal,
         // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
         // See https://github.com/gfx-rs/naga/issues/2416
-        get_instance_index(vertex_no_morph.instance_index)
+        get_instance_index(0u)
     );
 #endif // SKINNED
 #ifdef CORN_INSTANCED
@@ -129,7 +143,7 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
         vertex.tangent,
         // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
         // See https://github.com/gfx-rs/naga/issues/2416
-        get_instance_index(vertex_no_morph.instance_index)
+        get_instance_index(0u)
     );
 #ifdef CORN_INSTANCED
     let temp_3: f32 = dot(vertex.rotation.yx, out.world_tangent.xz);
@@ -147,7 +161,7 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
     // See https://github.com/gfx-rs/naga/issues/2416
     out.previous_world_position = mesh_functions::mesh_position_local_to_world(
-        mesh_functions::get_previous_model_matrix(vertex_no_morph.instance_index),
+        get_previous_model_matrix(0u),
         vec4<f32>(vertex.position, 1.0)
     );
 #endif // MOTION_VECTOR_PREPASS
@@ -155,7 +169,7 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
 #ifdef VERTEX_OUTPUT_INSTANCE_INDEX
     // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
     // See https://github.com/gfx-rs/naga/issues/2416
-    out.instance_index = get_instance_index(vertex_no_morph.instance_index);
+    out.instance_index = get_instance_index(0u);
 #endif
 #ifdef BASE_INSTANCE_WORKAROUND
     // Hack: this ensures the push constant is always used, which works around this issue:
