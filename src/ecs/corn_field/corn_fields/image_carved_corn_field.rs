@@ -256,13 +256,13 @@ impl RenderableCornField for ImageCarvedHexagonalCornField{
                 BindGroupLayoutEntry {
                     binding: 2,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+                    ty: BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
                     count: None,
                 },
                 BindGroupLayoutEntry {
                     binding: 3,
                     visibility: ShaderStages::COMPUTE,
-                    ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 }
             ]
@@ -270,6 +270,7 @@ impl RenderableCornField for ImageCarvedHexagonalCornField{
     }
 
     fn assets_ready(&self) -> bool {
+        println!("Hey");
         return self.image_ready;
     }
 

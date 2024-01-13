@@ -5,7 +5,7 @@ pub mod operation_executor;
 
 use std::marker::PhantomData;
 use bevy::{prelude::*, render::{RenderApp, Extract}};
-use super::{corn_fields::simple_corn_field::{SimpleHexagonalCornField, SimpleRectangularCornField}, RenderableCornField};
+use super::RenderableCornField;
 
 /*
     Plugins:
@@ -34,7 +34,7 @@ impl<T: RenderableCornField> Plugin for RenderableCornFieldPlugin<T>{
 }
 
 /// A plugin that contains all single instance systems and data that corn fields need
-/// Adds each master plugin, as well as each corn field specific plugin
+/// Adds each master plugin
 pub struct MasterCornFieldDataPipelinePlugin;
 impl Plugin for MasterCornFieldDataPipelinePlugin{
     fn build(&self, app: &mut App) {
@@ -42,9 +42,7 @@ impl Plugin for MasterCornFieldDataPipelinePlugin{
             state_manager::MasterCornFieldStatePlugin{},
             storage_manager::MasterCornStorageManagerPlugin{},
             operation_manager::MasterCornOperationPlugin{},
-            operation_executor::MasterCornOperationExecutionPlugin{},
-            RenderableCornFieldPlugin::<SimpleHexagonalCornField>::new(),
-            RenderableCornFieldPlugin::<SimpleRectangularCornField>::new()
+            operation_executor::MasterCornOperationExecutionPlugin{}
         ));
     }
 }

@@ -5,7 +5,7 @@ var<storage, read_write> instance_data: array<PerCornData>;
 @group(0) @binding(1)
 var<storage, read> settings: array<CornSettings>;
 @group(0) @binding(2) var path_texture: texture_2d<f32>;
-@group(2) @binding(3) var path_texture_sampler: sampler;
+@group(0) @binding(3) var path_texture_sampler: sampler;
 
 @compute @workgroup_size(256, 1)
 fn simple_image_hex_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) id_count: vec3<u32>) {
@@ -43,19 +43,17 @@ fn simple_image_hex_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin
     // Add random offsets to the x and z position of the corn stalk
     out.offset += vec3<f32>(randomFloat(gid.x+512u*id_count.x), 0.0, randomFloat(gid.x+768u*id_count.x))*instance_settings.random_settings.x;
     // cutout corn that is in the path
-    let uv: vec2<f32> = (out.offset - instance_settings.origin_res_width.xyz).xz * random_settings.yz;
-    let color: vec4<f32> = textureSample(path_texture, path_texture_sampler, uv, 0u);
+    let uv: vec2<f32> = (out.offset - instance_settings.origin_res_width.xyz).xz * instance_settings.random_settings.yz;
+    let color: vec4<f32> = textureSampleLevel(path_texture, path_texture_sampler, uv, 0.0);
     out.enabled = 1u;
     if color.r < 0.5 {
-        //out.enabled = 0u;
+        out.enabled = 0u;
     }
     // set the random scale of the corn stalk
     out.scale = randomFloat(gid.x) * instance_settings.height_width_min.x + instance_settings.height_width_min.y;
     // set the random rotation of the corn stalk
     let theta = randomFloat(gid.x+256u*id_count.x)*6.2832;
     out.rotation = vec2<f32>(sin(theta), cos(theta));
-    // enable the corn stalk
-    out.enabled = 1u;
     out.uuid = 1u;
     instance_data[index.z] = out;
   }
