@@ -8,7 +8,7 @@ use bevy::{
     render::{
         render_resource::*,
         renderer::RenderDevice, 
-        RenderApp, RenderSet, Render, view::NoFrustumCulling, batching::NoAutomaticBatching,
+        RenderApp, RenderSet, Render, view::NoFrustumCulling, batching::NoAutomaticBatching, render_asset::RenderAssets,
     }, reflect::GetTypeRegistration
 };
 use bytemuck::{Pod, Zeroable};
@@ -64,16 +64,17 @@ pub trait RenderableCornField: Component + Clone + GetTypeRegistration + std::fm
     fn get_init_buffers(
         fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
         render_device: &RenderDevice
-    ) -> Vec<Buffer>;
+    ) -> Vec<(Buffer, Option<RenderableCornFieldID>)>;
     /// This function is responsible for creating the necessary bindgroups and execution counts for initialization of the field data on the gpu
     /// If the field's init function can be batched with other fields of the same type, then it should return a single (BindGroup, u64)
     /// the u64 is the execution count of the shader, per bind group
     fn get_init_bindgroups(
         fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
         render_device: &RenderDevice,
+        images: &RenderAssets<Image>,
         layout: &BindGroupLayout,
         operation_buffer: &Buffer,
-        buffers: &Vec<Buffer>
+        buffers: &Vec<(Buffer, Option<RenderableCornFieldID>)>
     ) -> Vec<(BindGroup, u64)>;
 }
 
@@ -187,7 +188,8 @@ impl Plugin for CornFieldComponentPlugin {
             .add_plugins((
                 MasterCornFieldDataPipelinePlugin, 
                 MasterCornPrepassPlugin,
-                SpecializedMaterialPlugin::<CornMaterial, CornDrawRender, CornDrawPrepass>::default()
+                SpecializedMaterialPlugin::<CornMaterial, CornDrawRender, CornDrawPrepass>::default(),
+                corn_fields::CornFieldsPlugin{}
             ))
             .register_type::<SimpleRectangularCornField>()
             .register_type::<SimpleHexagonalCornField>()

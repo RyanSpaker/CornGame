@@ -5,7 +5,7 @@ use bevy::{
     render::{
         render_resource::*, 
         renderer::{RenderDevice, RenderContext},
-        render_graph::{Node, RenderGraphContext, RenderGraph}, RenderApp, Render, RenderSet
+        render_graph::{Node, RenderGraphContext, RenderGraph}, RenderApp, Render, RenderSet, render_asset::RenderAssets
     }
 };
 use bytemuck::{Pod, Zeroable};
@@ -83,7 +83,7 @@ pub struct CornOperationResources{
     /// Corn fields that can't be batched will have multiple elements, while those that can will only have 1
     init_bindgroups: HashMap<String, Vec<(BindGroup, u64)>>,
     /// Holds all buffers used during a specific initialization operation
-    init_buffers: HashMap<String, Vec<Buffer>>,
+    init_buffers: HashMap<String, Vec<(Buffer, Option<RenderableCornFieldID>)>>,
     /// Holds resources for a flag stale compute pass
     stale_resources: OperationSettings,
     /// Holds resources for a defrag compute pass
@@ -250,6 +250,7 @@ impl CornOperationResources{
     pub fn prepare_init_bindgroup<T: RenderableCornField>(
         fields: Query<(&T, &RenderableCornFieldID)>,
         mut resources: ResMut<CornOperationResources>,
+        images: Res<RenderAssets<Image>>,
         operations: Res<CornBufferOperationCalculator>,
         pipelines: Res<CornOperationPipelines>,
         render_device: Res<RenderDevice>,
@@ -276,6 +277,7 @@ impl CornOperationResources{
         let bindgroups = T::get_init_bindgroups(
             fields, 
             render_device.as_ref(),
+            images.as_ref(),
             layout, 
             operation_buffer,
             resources.init_buffers.get(&type_name::<T>().to_string()).unwrap()
@@ -329,7 +331,7 @@ impl CornOperationResources{
         resources.defrag_resources.destroy();
         resources.defrag_replaced_ranges = vec![];
         resources.init_bindgroups.clear();
-        resources.init_buffers.drain().for_each(|(_, buffers)| buffers.into_iter().for_each(|buffer| buffer.destroy()));
+        resources.init_buffers.drain().for_each(|(_, buffers)| buffers.into_iter().for_each(|(buffer, _)| buffer.destroy()));
 
         if let Some(readback_buffer) = resources.readback_buffer.take(){
             let slice = readback_buffer.slice(..);

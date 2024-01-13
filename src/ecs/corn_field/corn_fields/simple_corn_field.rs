@@ -13,7 +13,7 @@ use bevy::{
         BindGroup,
         BindGroupEntry,
         BufferUsages
-    }, renderer::RenderDevice}, reflect::Reflect
+    }, renderer::RenderDevice, render_asset::RenderAssets, texture::Image}, reflect::Reflect
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::BufferInitDescriptor;
@@ -170,7 +170,7 @@ impl RenderableCornField for SimpleHexagonalCornField{
     fn get_init_buffers(
         fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
         render_device: &RenderDevice
-    ) -> Vec<Buffer> {
+    ) -> Vec<(Buffer, Option<RenderableCornFieldID>)> {
         let settings: Vec<SimpleCornFieldShaderSettings> = fields.iter()
             .flat_map(|(field, range, _, _)| 
         {
@@ -184,15 +184,16 @@ impl RenderableCornField for SimpleHexagonalCornField{
             usage: BufferUsages::STORAGE,
             contents: bytemuck::cast_slice(&settings[..])
         });
-        return vec![settings_buffer];
+        return vec![(settings_buffer, None)];
     }
 
     fn get_init_bindgroups(
         fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
         render_device: &RenderDevice,
+        _images: &RenderAssets<Image>,
         layout: &BindGroupLayout,
         operation_buffer: &Buffer,
-        buffers: &Vec<Buffer>
+        buffers: &Vec<(Buffer, Option<RenderableCornFieldID>)>
     ) -> Vec<(BindGroup, u64)> {
         let total_instances: u64 = fields.iter().map(|(_, range, _, _)| range.len()).sum();
         let init_bind_group = render_device.create_bind_group(
@@ -205,7 +206,7 @@ impl RenderableCornField for SimpleHexagonalCornField{
                 },
                 BindGroupEntry{
                     binding: 1,
-                    resource: buffers[0].as_entire_binding()
+                    resource: buffers[0].0.as_entire_binding()
                 }
             ],
         );
@@ -319,7 +320,7 @@ impl RenderableCornField for SimpleRectangularCornField{
     fn get_init_buffers(
         fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
         render_device: &RenderDevice
-    ) -> Vec<Buffer> {
+    ) -> Vec<(Buffer, Option<RenderableCornFieldID>)> {
         let settings: Vec<SimpleCornFieldShaderSettings> = fields.iter()
             .flat_map(|(field, range, _, _)| 
         {
@@ -333,15 +334,16 @@ impl RenderableCornField for SimpleRectangularCornField{
             usage: BufferUsages::STORAGE,
             contents: bytemuck::cast_slice(&settings[..])
         });
-        return vec![settings_buffer];
+        return vec![(settings_buffer, None)];
     }
 
     fn get_init_bindgroups(
         fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
         render_device: &RenderDevice,
+        _images: &RenderAssets<Image>,
         layout: &BindGroupLayout,
         operation_buffer: &Buffer,
-        buffers: &Vec<Buffer>
+        buffers: &Vec<(Buffer, Option<RenderableCornFieldID>)>
     ) -> Vec<(BindGroup, u64)> {
         let total_instances: u64 = fields.iter().map(|(_, range, _, _)| range.len()).sum();
         let init_bind_group = render_device.create_bind_group(
@@ -354,7 +356,7 @@ impl RenderableCornField for SimpleRectangularCornField{
                 },
                 BindGroupEntry{
                     binding: 1,
-                    resource: buffers[0].as_entire_binding()
+                    resource: buffers[0].0.as_entire_binding()
                 }
             ],
         );
