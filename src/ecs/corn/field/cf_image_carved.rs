@@ -1,23 +1,14 @@
 use std::{collections::hash_map::DefaultHasher, hash::{Hasher, Hash}};
 use bevy::{
-    ecs::{component::Component, system::Query, event::EventReader}, 
-    math::{Vec2, Vec3, Vec4}, 
-    render::{render_resource::{ 
-        BindGroupLayoutDescriptor, 
-        BindGroupLayoutEntry, 
-        BufferBindingType, 
-        ShaderStages, 
-        BindingType, 
-        Buffer, 
-        BindGroupLayout, 
-        BindGroup,
-        BindGroupEntry,
-        BufferUsages
-    }, renderer::RenderDevice, texture::Image, render_asset::RenderAssets}, reflect::Reflect, asset::{Handle, AssetEvent}
+    app::Update, asset::{Assets, Handle}, ecs::{component::Component, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::Image}
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::{util::BufferInitDescriptor, SamplerBindingType};
-use crate::ecs::corn_field::{data_pipeline::storage_manager::BufferRange, RenderableCornField, RenderableCornFieldID};
+use crate::ecs::corn::data_pipeline::{operation_executor::{CreateInitBindgroupStructures, CreateInitBufferStructures, IntoCornPipeline, IntoOperationResources}, operation_manager::IntoBufferOperation};
+
+use super::{
+    cf_simple::SimpleHexagonalCornField, state::CornAssetState, RenderableCornField, RenderableCornFieldID
+};
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 #[repr(C)]
@@ -79,20 +70,27 @@ impl From::<(&ImageCarvedHexagonalCornField, SimpleCornFieldRange)> for SimpleCo
     Corn Fields:
 */
 
-/// This is a super simple corn field implementation
-/// There is no path, just a block of corn
+/// This is a Corn Field with a path carved out based on a input image. Any corn stalks on a pixel with red are kept, corn on a pixel without red are discarded
 /// The corn is placed in a hexagonal pattern, making stright line patterns less common
 #[derive(Clone, Component, Debug, Reflect)]
 pub struct ImageCarvedHexagonalCornField{
+    /// World Space center of the corn field
     center: Vec3,
+    /// Half extents of the corn field
     half_extents: Vec2,
+    /// minimum distance between adjacent pieces of corn
     dist_between: f32,
+    /// Min and Max height scalars
     height_range: Vec2,
+    /// Percent of dist between of whihc corn can shift
     rand_offset_factor: f32,
+    /// The image used to carve the path
     image: Handle<Image>,
+    /// A bool used to store whether the path image has been fully loaded
     image_ready: bool
 }
 impl ImageCarvedHexagonalCornField{
+    /// Creates a new field, defaulting image_ready to false
     pub fn new(center: Vec3, half_extents: Vec2, seperation_distance: f32, height_range: Vec2, rand_offset: f32, image: Handle<Image>) -> Self{
         Self{
             center, 
@@ -103,6 +101,14 @@ impl ImageCarvedHexagonalCornField{
             image, image_ready: false
         }
     }
+    /// Turns a simple hex corn field into an image carved hex field with the supplied image
+    pub fn from_hex(field: SimpleHexagonalCornField, image: Handle<Image>) -> Self{
+        let mut a: Self = field.into();
+        a.image = image;
+        a.image_ready = false;
+        return a;
+    }
+    /// Returns teh resolution of the corn
     pub fn get_resolution(&self) -> (u64, u64){
         let width = self.half_extents.x.max(self.half_extents.y)*2.0;
         let height = self.half_extents.x.min(self.half_extents.y)*2.0;
@@ -112,105 +118,86 @@ impl ImageCarvedHexagonalCornField{
         let height_res = ((2f32*height)/(self.dist_between*3f32.sqrt())) as u64+1;
         (width_res, height_res)
     }
+    /// Returns the origin of the corn, bottom left corner
     pub fn get_origin(&self) -> Vec3{
         let (width_res, height_res) = self.get_resolution();
         let true_width = (width_res-1) as f32*self.dist_between;
         let true_height = (height_res-1) as f32*self.dist_between*3f32.sqrt()*0.5;
         return self.center - Vec3::new(true_width*0.5, 0.0, true_height*0.5);
     }
+    /// Returns the distance between each grid position (x, y), 
+    /// keep in mind that corn stalks are placed in a checkerboard pattern in this grid as a way to create the hexagonal pattern
+    /// So the distance between two x adjacent stalks will actually be 2 * get_step().x
     pub fn get_step(&self) -> Vec2{
         Vec2::new(
             self.dist_between*0.5, 
             self.dist_between*3f32.sqrt()*0.5
         )
     }
+    /// Returns the total distance range of the random position offset
     pub fn get_random_offset_range(&self) -> f32{
         return self.dist_between*self.rand_offset_factor;
     }
-    // Should run once per frame checking if the image needed is loaded
+    /// A bevy system that should run once per frame. 
+    /// Queries the Assets<Image> for whether or not a image is loaded, updated the image_ready bool if it is.
     pub fn update_image_state(
         mut fields: Query<&mut ImageCarvedHexagonalCornField>, 
-        mut events: EventReader<AssetEvent<Image>>
+        images: Res<Assets<Image>>
     ){
-        let cur_events: Vec<&AssetEvent<Image>> = events.read().collect();
         for field in fields.iter_mut(){
-            if !field.image_ready && cur_events.iter().any(|ev| ev.is_loaded_with_dependencies(field.image.clone())){
+            if !field.image_ready && images.get(field.image.clone()).is_some() {
                 field.into_inner().image_ready = true;
             }
         }
     }
 }
-impl RenderableCornField for ImageCarvedHexagonalCornField{
-    fn gen_id(&self) -> RenderableCornFieldID {
-        let mut hasher = DefaultHasher::new();
-        self.center.x.to_bits().hash(&mut hasher);
-        self.center.y.to_bits().hash(&mut hasher);
-        self.center.z.to_bits().hash(&mut hasher);
-        self.half_extents.x.to_bits().hash(&mut hasher);
-        self.half_extents.y.to_bits().hash(&mut hasher);
-        self.dist_between.to_bits().hash(&mut hasher);
-        self.height_range.x.to_bits().hash(&mut hasher);
-        self.height_range.y.to_bits().hash(&mut hasher);
-        self.rand_offset_factor.to_bits().hash(&mut hasher);
-        self.image.hash(&mut hasher);
-        return hasher.finish().into();
+impl CornAssetState for ImageCarvedHexagonalCornField{
+    fn assets_ready(&self) -> bool {
+        return self.image_ready;
     }
-
+}
+impl IntoBufferOperation for ImageCarvedHexagonalCornField{
     fn get_instance_count(&self) -> u64 {
         let (width_res, height_res) = self.get_resolution();
         width_res*(height_res-height_res/2)+(width_res-1)*(height_res/2)
     }
-
-    fn init_shader() -> String {
-        "shaders/corn/image_init.wgsl".to_string()
-    }
-
-    fn init_entry_point() -> String {
-        "simple_image_hex_init".to_string()
-    }
-
+}
+impl IntoOperationResources for ImageCarvedHexagonalCornField{
     fn get_init_buffers(
-        fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
-        render_device: &RenderDevice
+        info: CreateInitBufferStructures<Self>
     ) -> Vec<(Buffer, Option<RenderableCornFieldID>)> {
-        let settings: Vec<(Buffer, Option<RenderableCornFieldID>)> = fields.iter().map(
-            |(field, range, id, _)| 
+        return info.fields.into_iter().map(
+            |(field, range)| 
         {
             let data = SimpleCornFieldRange::get_ranges(range.get_continuos_ranges())
                 .into_iter()
-                .map(|corn_range| (*field, corn_range).into())
+                .map(|corn_range| (field, corn_range).into())
                 .collect::<Vec<SimpleCornFieldShaderSettings>>();
-            let settings_buffer: Buffer = render_device.create_buffer_with_data(&BufferInitDescriptor{
+            let settings_buffer: Buffer = info.render_device.create_buffer_with_data(&BufferInitDescriptor{
                 label: Some("Image Carved Corn Field Init Settings Buffer".into()),
                 usage: BufferUsages::STORAGE,
                 contents: bytemuck::cast_slice(&data[..])
             });
-            return (settings_buffer, Some(id.clone()));
+            return (settings_buffer, Some(field.gen_id()));
         }).collect();
-        return settings
     }
-
     fn get_init_bindgroups(
-        fields: Vec<(&Self, BufferRange, RenderableCornFieldID, String)>,
-        render_device: &RenderDevice,
-        image_assets: &RenderAssets<Image>,
-        layout: &BindGroupLayout,
-        operation_buffer: &Buffer,
-        buffers: &Vec<(Buffer, Option<RenderableCornFieldID>)>
+        data: CreateInitBindgroupStructures<Self>
     ) -> Vec<(BindGroup, u64)> {
-        let bindgroups = fields.iter().filter_map(|(field, range, id, _)| {
+        return data.fields.into_iter().filter_map(|(field, range)| {
             let total_instances: u64 = range.len();
-            let Some((buffer, _)) = buffers.iter().filter(|(_, val)| val.as_ref().is_some_and(|val| *val == *id)).next() else{
+            let id = field.gen_id();
+            let Some((buffer, _)) = data.buffers.iter().filter(|(_, val)| val.as_ref().is_some_and(|val| *val == id)).next() else{
                 return None;
             };
-            let Some(image) = image_assets.get(field.image.clone()) else {return None;};
-            let init_bind_group = render_device.create_bind_group(
+            let Some(image) = data.images.get(field.image.clone()) else {return None;};
+            let init_bind_group = data.render_device.create_bind_group(
                 Some("Image Carved Corn Init Bind Group".into()),
-                layout,
+                data.layout,
                 &[
                     BindGroupEntry{
                         binding: 0,
-                        resource: operation_buffer.as_entire_binding()
+                        resource: data.operation_buffer.as_entire_binding()
                     },
                     BindGroupEntry{
                         binding: 1,
@@ -228,9 +215,15 @@ impl RenderableCornField for ImageCarvedHexagonalCornField{
             );
             return Some((init_bind_group, total_instances));
         }).collect();
-        return bindgroups;
     }
-
+}
+impl IntoCornPipeline for ImageCarvedHexagonalCornField{
+    fn init_shader() -> String {
+        "shaders/corn/image_init.wgsl".to_string()
+    }
+    fn init_entry_point() -> String {
+        "simple_image_hex_init".to_string()
+    }
     fn init_bind_group_descriptor<'a>() -> BindGroupLayoutDescriptor<'a> {
         BindGroupLayoutDescriptor { 
             label: Some("Simple Corn Field Init Bind Group Layout".into()), 
@@ -268,15 +261,23 @@ impl RenderableCornField for ImageCarvedHexagonalCornField{
             ]
         }
     }
-
-    fn assets_ready(&self) -> bool {
-        println!("Hey");
-        return self.image_ready;
+}
+impl RenderableCornField for ImageCarvedHexagonalCornField{
+    fn gen_id(&self) -> RenderableCornFieldID {
+        let mut hasher = DefaultHasher::new();
+        self.center.x.to_bits().hash(&mut hasher);
+        self.center.y.to_bits().hash(&mut hasher);
+        self.center.z.to_bits().hash(&mut hasher);
+        self.half_extents.x.to_bits().hash(&mut hasher);
+        self.half_extents.y.to_bits().hash(&mut hasher);
+        self.dist_between.to_bits().hash(&mut hasher);
+        self.height_range.x.to_bits().hash(&mut hasher);
+        self.height_range.y.to_bits().hash(&mut hasher);
+        self.rand_offset_factor.to_bits().hash(&mut hasher);
+        self.image.hash(&mut hasher);
+        return hasher.finish().into();
     }
-
-    fn needs_continuos_buffer_space() -> bool {false}
-
-    fn init_push_constant_ranges() -> Vec<wgpu::PushConstantRange> {vec![]}
-
-    fn init_shader_defs() -> Vec<bevy::render::render_resource::ShaderDefVal> {vec![]}
+    fn add_functionality(app: &mut bevy::prelude::App) {
+        app.add_systems(Update, Self::update_image_state);
+    }
 }

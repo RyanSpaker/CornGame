@@ -1,8 +1,8 @@
-pub mod corn_field;
+pub mod corn;
 pub mod main_camera;
 
 use bevy::prelude::*;
-use self::corn_field::CornFieldComponentPlugin;
+use self::corn::CornFieldComponentPlugin;
 
 pub struct CustomComponentRenderingPlugin;
 impl Plugin for CustomComponentRenderingPlugin{

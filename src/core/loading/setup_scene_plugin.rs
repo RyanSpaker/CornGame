@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 use bevy::render::extract_component::ExtractComponentPlugin;
 use crate::core::loading::LoadingTaskCount;
-use crate::ecs::corn_field::corn_fields::image_carved_corn_field::ImageCarvedHexagonalCornField;
+use crate::ecs::corn::field::cf_simple::SimpleRectangularCornField;
 use crate::ecs::main_camera::MainCamera;
 use crate::flycam::FlyCam;
 use crate::prelude::corn_model::CornLoadState;
@@ -56,8 +56,7 @@ fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
-    mut next_state: ResMut<NextState<SetupState>>,
-    asset_server: Res<AssetServer>
+    mut next_state: ResMut<NextState<SetupState>>
 ){
     //Spawn Camera
     commands.spawn((Camera3dBundle {
@@ -72,10 +71,9 @@ fn setup_scene(
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
-        ImageCarvedHexagonalCornField::new(
+        SimpleRectangularCornField::new(
             Vec3::ZERO, Vec2::ONE*50.0, 
-            0.5, Vec2::new(0.9, 1.2), 0.2, 
-            asset_server.load("textures/maze.png")
+            UVec2::new(1000, 1000), Vec2::new(0.9, 1.2), 0.2,
         )
     ));
     //box

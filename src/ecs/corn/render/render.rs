@@ -1,13 +1,12 @@
 use bevy::{
-    pbr::{ExtendedMaterial, StandardMaterial, MaterialExtension, RenderMeshInstances}, 
-    render::{render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}, render_phase::{PhaseItem, RenderCommand, TrackedRenderPass, RenderCommandResult}, render_asset::RenderAssets, mesh::{Mesh, GpuBufferInfo}}, 
-    asset::Asset, 
-    reflect::Reflect, ecs::system::{lifetimeless::SRes, SystemParamItem}
+    prelude::*,
+    pbr::{ExtendedMaterial, MaterialExtension, MaterialMeshBundle, RenderMeshInstances, StandardMaterial}, 
+    render::{batching::NoAutomaticBatching, mesh::{Mesh, GpuBufferInfo}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, TrackedRenderPass, RenderCommandResult}, render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}, view::NoFrustumCulling}, 
+    asset::{Asset, Assets}, 
+    reflect::Reflect, ecs::system::{lifetimeless::SRes, Commands, Res, ResMut, SystemParamItem}
 };
 use wgpu::{vertex_attr_array, ShaderStages, PushConstantRange};
-use crate::util::specialized_material::{SpecializedDrawMaterial, SpecializedDrawPrepass};
-
-use super::{CORN_DATA_SIZE, CornInstanceBuffer};
+use crate::{ecs::corn::buffer::{CornInstanceBuffer, CORN_DATA_SIZE}, prelude::corn_model::CornMeshes, util::specialized_material::{SpecializedDrawMaterial, SpecializedDrawPrepass, SpecializedMaterialPlugin}};
 
 pub type CornMaterial = ExtendedMaterial<StandardMaterial, CornMaterialExtension>;
 
@@ -73,8 +72,8 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
             return RenderCommandResult::Failure;
         };
         pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
-        pass.set_vertex_buffer(1, corn_instance_buffer.sorted_buffer.as_ref().unwrap().slice(..));
-        let indirect_buffer = corn_instance_buffer.indirect_buffer.as_ref().unwrap();
+        pass.set_vertex_buffer(1, corn_instance_buffer.get_sorted_buffer().unwrap().slice(..));
+        let indirect_buffer = corn_instance_buffer.get_indirect_buffer().unwrap();
 
         let batch_range = item.batch_range();
         pass.set_push_constants(
@@ -89,16 +88,44 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
                 count: _,
             } => {
                 pass.set_index_buffer(buffer.slice(..), 0, *index_format);
-                pass.multi_draw_indexed_indirect(
-                    indirect_buffer, 
-                    0, 
-                    corn_instance_buffer.lod_count.clone()
-                );
+                for i in 0..corn_instance_buffer.lod_count{
+                    pass.draw_indexed_indirect(indirect_buffer, (i*20).into());
+                }
             }
             GpuBufferInfo::NonIndexed => {
-                pass.multi_draw_indirect(indirect_buffer, 0, corn_instance_buffer.lod_count.clone());
+                pass.multi_draw_indirect(indirect_buffer, 0, corn_instance_buffer.lod_count as u32);
             }
         }
         RenderCommandResult::Success
     }
 }
+
+pub fn corn_mesh_loaded(corn_meshes: Res<CornMeshes>) -> bool{
+    corn_meshes.loaded
+}
+/// Spawns a renderable corn stalk in the center of the screen which will act as our corn field
+/// Our extended material and specialized material plugin override the render logic to instance the stalk into our corn fields
+pub fn spawn_corn_anchor(
+    mut commands: Commands,
+    std_materials: Res<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<CornMaterial>>,
+    corn_meshes: Res<CornMeshes>
+){
+    if let Some(mat) = std_materials.get(corn_meshes.materials.get(&"CornLeaves".to_string()).unwrap().clone()){
+        commands.spawn((MaterialMeshBundle::<CornMaterial>{
+            mesh: corn_meshes.global_mesh.as_ref().unwrap().clone(),
+            //material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension::default()}),
+            material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension{}}),
+            ..Default::default()
+        }, NoFrustumCulling, NoAutomaticBatching{}));
+    }    
+}
+/// ### Adds the vote scan compact prepass functionality to the game
+pub struct CornRenderPlugin;
+impl Plugin for CornRenderPlugin{
+    fn build(&self, app: &mut App) {
+        app.add_plugins(SpecializedMaterialPlugin::<CornMaterial, CornDrawRender, CornDrawPrepass>::default())
+            .add_systems(Update, spawn_corn_anchor.run_if(corn_mesh_loaded.and_then(run_once())));
+    }
+}
+

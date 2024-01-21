@@ -10,12 +10,55 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::Maintain;
-use crate::ecs::corn_field::{CORN_DATA_SIZE, PerCornData, CornInstanceBuffer, RenderableCornFieldID};
 use super::{
-    RenderableCornField, 
-    operation_manager::CornBufferOperationCalculator, 
-    storage_manager::{CornBufferStorageManager, BufferRange, DeleteStaleSpaceEvent, ExpandSpaceEvent, DefragEvent, AllocSpaceEvent}
+    operation_manager::{CornBufferOperations, CornInitOp},
+    super::{buffer::{BufferRange, CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}, field::RenderableCornFieldID}
 };
+
+/// All functionality necessary for the operation executor to run buffer operations
+pub trait IntoOperationResources: Component + Sized{
+    /// This function is responsible for creating the necessary buffers for initialization of the field data on the gpu
+    /// The Buffers returned will be re passed into the get_init_bindgroups function in the same order
+    /// should return all buffers created for use in the init shaders
+    fn get_init_buffers(
+        data: CreateInitBufferStructures<Self>
+    ) -> Vec<(Buffer, Option<RenderableCornFieldID>)>;
+    /// This function is responsible for creating the necessary bindgroups and execution counts for initialization of the field data on the gpu
+    /// If the field's init function can be batched with other fields of the same type, then it should return a single (BindGroup, u64)
+    /// the u64 is the execution count of the shader, per bind group
+    fn get_init_bindgroups(
+        data: CreateInitBindgroupStructures<Self>
+    ) -> Vec<(BindGroup, u64)>;
+}
+/// Struct that holds the inputs to RenderableCornField.get_init_buffers()
+pub struct CreateInitBufferStructures<'a, T: IntoOperationResources>{
+    pub fields: Vec<(&'a T, BufferRange)>,
+    pub render_device: &'a RenderDevice
+}
+/// Struct that holds the inputs to RenderableCornField.get_init_bindgroups()
+pub struct CreateInitBindgroupStructures<'a, T: IntoOperationResources>{
+    pub fields: Vec<(&'a T, BufferRange)>,
+    pub render_device: &'a RenderDevice,
+    pub images: &'a RenderAssets<Image>,
+    pub layout: &'a BindGroupLayout,
+    pub operation_buffer: &'a Buffer,
+    pub buffers: &'a Vec<(Buffer, Option<RenderableCornFieldID>)>
+}
+
+/// Adds all functionality necessary for pipeline creation
+pub trait IntoCornPipeline: Component {
+    /// Returns the corn fields bind group layout used in its init shader
+    fn init_bind_group_descriptor<'a>() -> BindGroupLayoutDescriptor<'a>;
+    /// Returns the push constant ranges used in the init shader
+    fn init_push_constant_ranges() -> Vec<PushConstantRange> {vec![]}
+    /// Returns the path to the init shader
+    fn init_shader() -> String;
+    /// Returns the shaderdefs used by the init shader
+    fn init_shader_defs() -> Vec<ShaderDefVal> {vec![]}
+    /// Returns the init entrypoint
+    fn init_entry_point() -> String;
+}
+
 
 /*====================*
  *  Shader Resources  *
@@ -101,9 +144,9 @@ impl CornOperationResources{
     /// Runs during the prepare phase, creating the per frame buffers necessary to execute operations that dont change on a per field type basis
     pub fn prepare_common_buffers(
         mut resources: ResMut<CornOperationResources>,
-        operations: Res<CornBufferOperationCalculator>,
+        operations: Res<CornBufferOperations>,
         render_device: Res<RenderDevice>,
-        storage: Res<CornBufferStorageManager>
+        instance_buffer: Res<CornInstanceBuffer>
     ){
         // return early if the resources failed to do something (meaning enabled was set to false)
         if !resources.enabled {return;}
@@ -116,7 +159,7 @@ impl CornOperationResources{
                 mapped_at_creation: false 
             }));
             if operations.defrag{
-                let current_ranges: Vec<(RenderableCornFieldID, BufferRange)> = storage.ranges.to_owned().into_iter().collect();
+                let current_ranges: Vec<(RenderableCornFieldID, BufferRange)> = instance_buffer.ranges.to_owned().into_iter().collect();
                 let mut new_ranges: Vec<(RenderableCornFieldID, BufferRange)> = vec![];
                 // Holds execution count after for loop
                 let mut pointer: u64 = 0;
@@ -148,10 +191,10 @@ impl CornOperationResources{
             }
         }
         // Setup flag_stale resource
-        if !operations.new_stale_space.is_empty() {
-            resources.stale_resources.execution_count = operations.new_stale_space.len();
+        if !operations.post_init_state.stale_space.is_empty() {
+            resources.stale_resources.execution_count = operations.post_init_state.stale_space.len();
             let mut compute_ranges: Vec<ComputeStaleRange> = vec![];
-            for (start, end) in operations.new_stale_space.get_continuos_ranges(){
+            for (start, end) in operations.post_init_state.stale_space.get_continuos_ranges(){
                 compute_ranges.push(ComputeStaleRange{start: start as u32, length: (end-start) as u32, _padding: UVec2::default()});
             }
             resources.stale_resources.settings_buffer = Some(render_device.create_buffer_with_data(&BufferInitDescriptor { 
@@ -174,7 +217,7 @@ impl CornOperationResources{
     pub fn prepare_common_bind_group(
         mut resources: ResMut<CornOperationResources>,
         pipelines: Res<CornOperationPipelines>,
-        operations: Res<CornBufferOperationCalculator>,
+        operations: Res<CornBufferOperations>,
         render_device: Res<RenderDevice>,
         instance_buffer: Res<CornInstanceBuffer>
     ){
@@ -203,7 +246,7 @@ impl CornOperationResources{
             ));
         }
         // Setup flag_stale resource
-        if !operations.new_stale_space.is_empty() {
+        if !operations.post_init_state.stale_space.is_empty() {
             let stale_bind_group = [
                 BindGroupEntry{
                     binding: 0,
@@ -222,10 +265,9 @@ impl CornOperationResources{
         }
     }
     /// Runs once for each corn field type, creates the buffers used by the initialization shader
-    pub fn prepare_init_buffers<T: RenderableCornField>(
-        fields: Query<(&T, &RenderableCornFieldID)>,
+    pub fn prepare_init_buffers<T: IntoOperationResources + IntoCornPipeline>(
+        fields: Query<(&T, &CornInitOp)>,
         mut resources: ResMut<CornOperationResources>,
-        operations: Res<CornBufferOperationCalculator>,
         pipelines: Res<CornOperationPipelines>,
         render_device: Res<RenderDevice>
     ){
@@ -236,22 +278,19 @@ impl CornOperationResources{
             resources.enabled = false;
             return;
         }
-        let fields: Vec<(&T, BufferRange, RenderableCornFieldID, String)> = fields.into_iter().filter_map(|(field, id)| {
-            operations.init_ops.get(id).and_then(|(range, typename)| Some((field, range.clone(), id.clone(), typename.clone())))
-        }).collect();
-        if fields.is_empty(){
-            return;
-        }
-        let buffers = T::get_init_buffers(fields, render_device.as_ref());
+        let buffers = T::get_init_buffers(CreateInitBufferStructures{
+            fields: fields.into_iter().map(|(field, op)| (field, op.range.clone())).collect(), 
+            render_device: render_device.as_ref()
+        });
         resources.init_buffers.insert(type_name::<T>().to_string(), buffers);
     }
     /// Runs once for each type of corn field during the prepare phase. Creates the init resources needed for initialization
     /// Most of the logic is delegated to the corn field type, including creating the bind groups and settings buffers.
-    pub fn prepare_init_bindgroup<T: RenderableCornField>(
-        fields: Query<(&T, &RenderableCornFieldID)>,
+    pub fn prepare_init_bindgroup<T: IntoOperationResources + IntoCornPipeline>(
+        fields: Query<(&T, &CornInitOp)>,
         mut resources: ResMut<CornOperationResources>,
         images: Res<RenderAssets<Image>>,
-        operations: Res<CornBufferOperationCalculator>,
+        operations: Res<CornBufferOperations>,
         pipelines: Res<CornOperationPipelines>,
         render_device: Res<RenderDevice>,
         instance_buffer: Res<CornInstanceBuffer>
@@ -263,36 +302,29 @@ impl CornOperationResources{
             resources.enabled = false;
             return;
         }
-        let fields: Vec<(&T, BufferRange, RenderableCornFieldID, String)> = fields.into_iter().filter_map(|(field, id)| {
-            operations.init_ops.get(id).and_then(|(range, typename)| Some((field, range.clone(), id.clone(), typename.clone())))
-        }).collect();
-        if fields.is_empty(){return;}
-        
         let operation_buffer = if operations.expansion == 0 {
             instance_buffer.get_instance_buffer().unwrap()
         }else {resources.temporary_buffer.as_ref().unwrap()};
 
         let layout = pipelines.get_layout::<T>().unwrap();
 
-        let bindgroups = T::get_init_bindgroups(
-            fields, 
-            render_device.as_ref(),
-            images.as_ref(),
-            layout, 
+        let bindgroups = T::get_init_bindgroups( CreateInitBindgroupStructures{
+            fields: fields.into_iter().map(|(field, op)| (field, op.range.clone())).collect(),
+            render_device: render_device.as_ref(),
+            images: images.as_ref(),
+            layout,
             operation_buffer,
-            resources.init_buffers.get(&type_name::<T>().to_string()).unwrap()
-        );
+            buffers: resources.init_buffers.get(&type_name::<T>().to_string()).unwrap()
+        });
         resources.init_bindgroups.insert(type_name::<T>().to_string(), bindgroups);
     }
     /// Runs after the render phase but before cleanup, sending events to the storage manager containing the changed buffer state
     pub fn send_buffer_alteration_events(
-        mut delete_space_event: EventWriter<DeleteStaleSpaceEvent>,
-        mut expand_space_event: EventWriter<ExpandSpaceEvent>,
-        mut defrag_space_event: EventWriter<DefragEvent>,
-        mut alloc_space_event: EventWriter<AllocSpaceEvent>,
         node_success: Res<NodeSuccess>,
         resources: Res<CornOperationResources>,
-        operations: Res<CornBufferOperationCalculator>
+        operations: Res<CornBufferOperations>,
+        init_ops: Query<(&RenderableCornFieldID, &CornInitOp)>,
+        mut instance_buffer: ResMut<CornInstanceBuffer>
     ){
         if !resources.enabled {return;}
         if !*node_success.into_inner().value.lock().unwrap() {return;}
@@ -301,23 +333,17 @@ impl CornOperationResources{
             for (_, range) in resources.defrag_replaced_ranges.iter(){
                 end_of_data = end_of_data.max(range.end().unwrap_or(0));
             }
-            defrag_space_event.send(DefragEvent { 
-                ranges: resources.defrag_replaced_ranges.to_owned(), 
-                stale_range: BufferRange::default(), 
-                free_space: BufferRange::simple(&end_of_data, &operations.get_new_buffer_count())
-            });
+            instance_buffer.defrag(resources.defrag_replaced_ranges.clone(), BufferRange::default(), BufferRange::simple(&end_of_data, &operations.get_new_buffer_count()));
             return;
         }
         if operations.expansion > 0{
-            expand_space_event.send(ExpandSpaceEvent { length: operations.expansion });
+            instance_buffer.expand_space(operations.expansion);
         }
-        if !operations.new_stale_space.is_empty(){
-            delete_space_event.send(DeleteStaleSpaceEvent { range: operations.new_stale_space.to_owned() });
+        if !operations.post_init_state.stale_space.is_empty(){
+            instance_buffer.delete_stale_range(operations.post_init_state.stale_space.clone());
         }
-        if !operations.init_ops.is_empty(){
-            for (id, (range, _)) in operations.init_ops.iter(){
-                alloc_space_event.send(AllocSpaceEvent { field: id.to_owned(), range: range.to_owned() });
-            }
+        for (id, op) in init_ops.iter(){
+            instance_buffer.alloc_space(op.range.clone(), id.clone());
         }
     }
     /// Deletes per frame resources during the cleanup phase
@@ -378,8 +404,10 @@ impl CornOperationResources{
         .add_systems(Render, (
             Self::prepare_common_buffers.in_set(RenderSet::PrepareResources),
             Self::prepare_common_bind_group.in_set(RenderSet::PrepareBindGroups),
-            Self::send_buffer_alteration_events.before(RenderSet::Cleanup).after(RenderSet::Render),
-            (Self::cleanup, NodeSuccess::reset).in_set(RenderSet::Cleanup)
+            (
+                (Self::send_buffer_alteration_events, Self::cleanup).chain().before(CornInstanceBuffer::cleanup).before(CornInstanceBuffer::update_indirect_buffer),
+                NodeSuccess::reset
+            ).in_set(RenderSet::Cleanup)
         ));
     }
 }
@@ -498,7 +526,7 @@ impl FromWorld for CornOperationPipelines{
 }
 impl CornOperationPipelines{
     /// Runs once for each type of corn field, queueing up the compute init pipeline and bind group layout
-    pub fn queue_init_pipeline<T: RenderableCornField>(
+    pub fn queue_init_pipeline<T: IntoCornPipeline>(
         mut pipeline_res: ResMut<CornOperationPipelines>,
         pipeline_cache: Res<PipelineCache>,
         render_device: Res<RenderDevice>,
@@ -521,11 +549,11 @@ impl CornOperationPipelines{
         }
     }
     /// Checks if a pipeline for the type T has been queued yet
-    pub fn pipeline_queued<T: RenderableCornField>(&self) -> bool{
+    pub fn pipeline_queued<T: IntoCornPipeline>(&self) -> bool{
         self.pipelines.contains_key(type_name::<T>())
     }
     /// Returns bind group for a specific Corn Field Type
-    pub fn get_layout<T: RenderableCornField>(&self) -> Option<&BindGroupLayout>{
+    pub fn get_layout<T: IntoCornPipeline>(&self) -> Option<&BindGroupLayout>{
         self.bindgroups.get(&type_name::<T>().to_string())
     }
     /// Returns the system configuration for this resource
@@ -575,7 +603,7 @@ impl Node for CornBufferOperationsNode{
         let resources = world.resource::<CornOperationResources>();
         if !resources.enabled {return Ok(());}
 
-        let operations = world.resource::<CornBufferOperationCalculator>();
+        let operations = world.resource::<CornBufferOperations>();
         let pipelines = world.resource::<CornOperationPipelines>();
         let node_success = world.resource::<NodeSuccess>();
 
@@ -583,7 +611,7 @@ impl Node for CornBufferOperationsNode{
         // compile list of all needed pipelines
         let mut needed_pipeline_ids: HashMap<String, CachedComputePipelineId> = HashMap::new();
         if operations.defrag {needed_pipeline_ids.insert("Defrag".to_string(), pipelines.get_unchecked("Defrag"));}
-        if !operations.new_stale_space.is_empty() {needed_pipeline_ids.insert("Stale".to_string(), pipelines.get_unchecked("Stale"));}
+        if !operations.post_init_state.stale_space.is_empty() {needed_pipeline_ids.insert("Stale".to_string(), pipelines.get_unchecked("Stale"));}
         let mut critical_error = false;
         // add needed init pipelines
         resources.init_bindgroups.iter().for_each(|(typename, bindgroups)| {
@@ -635,7 +663,7 @@ impl Node for CornBufferOperationsNode{
             return Ok(());
         }
         //Flag stale data if needed
-        if !operations.new_stale_space.is_empty(){
+        if !operations.post_init_state.stale_space.is_empty(){
             let stale_pipeline = needed_pipelines.get(&"Stale".to_string()).unwrap();
             let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Flag Stale Pass".into())});
             compute_pass.set_pipeline(stale_pipeline);
@@ -655,7 +683,7 @@ impl Node for CornBufferOperationsNode{
             );
         }
         // Init if needed
-        if !operations.init_ops.is_empty(){
+        if operations.init_count > 0{
             let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Init Pass".into())});
             for (typename, bind_groups) in resources.init_bindgroups.iter(){
                 let init_pipeline = needed_pipelines.get(typename).unwrap();
@@ -690,8 +718,8 @@ impl Node for CornBufferOperationsNode{
  *===========*/
 
 /// Adds the Operation Executor functionality to the game, including resource creation and the node
-pub struct MasterCornOperationExecutionPlugin;
-impl Plugin for MasterCornOperationExecutionPlugin{
+pub struct CornOperationExecutionPlugin;
+impl Plugin for CornOperationExecutionPlugin{
     fn build(&self, app: &mut App) {
         app.sub_app_mut(RenderApp)
             .init_resource::<CornOperationResources>()
@@ -708,15 +736,15 @@ impl Plugin for MasterCornOperationExecutionPlugin{
 }
 
 /// Adds operation executor functionality to the game for each type of renderable corn field
-pub struct CornOperationExecutionPlugin<T: RenderableCornField>{
+pub struct CornFieldOperationExecutionPlugin<T: IntoOperationResources + IntoCornPipeline>{
     _marker: PhantomData<T>
 }
-impl<T: RenderableCornField> CornOperationExecutionPlugin<T>{
+impl<T: IntoOperationResources + IntoCornPipeline> CornFieldOperationExecutionPlugin<T>{
     pub fn new() -> Self {
-        CornOperationExecutionPlugin { _marker: PhantomData::<T> }
+        CornFieldOperationExecutionPlugin { _marker: PhantomData::<T> }
     }
 }
-impl<T: RenderableCornField> Plugin for CornOperationExecutionPlugin<T>{
+impl<T: IntoOperationResources + IntoCornPipeline> Plugin for CornFieldOperationExecutionPlugin<T>{
     fn build(&self, app: &mut App) {
         if let Ok(render_app) = app.get_sub_app_mut(RenderApp){
             render_app.add_systems(Render, (

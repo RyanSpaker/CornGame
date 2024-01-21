@@ -12,8 +12,7 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::{Maintain, QuerySetDescriptor, QuerySet};
-use crate::{ecs::{main_camera::MainCamera, corn_field::PerCornData}, prelude::corn_model::CornMeshes};
-use super::{CornInstanceBuffer, CORN_DATA_SIZE};
+use crate::{ecs::{corn::buffer::{CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}, main_camera::MainCamera}, prelude::corn_model::CornMeshes};
 
 const READBACK_ENABLED: bool = false;
 const TIMING_ENABLED: bool = false;
@@ -33,10 +32,6 @@ impl From<&ExtractedView> for FrustumValues{
         }
     }
 }
-
-/*
-    Resources: 
-*/
 
 /// Main app resource containing the distance cutoffs for each corn LOD
 #[derive(Resource, Default, Reflect)]
@@ -74,7 +69,7 @@ pub struct ScanPrepassResources{
     /// Total number of corn instances in the buffers
     instance_count: u64,
     /// Total number of corn lods to seperate by
-    lod_count: u32,
+    lod_count: u64,
     /// The id correlating to the instance buffer, used to know if the buffer has changed since we last checked
     buffer_id: u64,
     /// Buffer to hold the vote data for our corn instances
@@ -257,12 +252,12 @@ impl ScanPrepassResources{
         render_device: Res<RenderDevice>,
         pipeline: Res<CornBufferPrePassPipeline>,
     ){
-        if instance_buffer.id == resources.buffer_id || !resources.enabled {return;}
-        resources.buffer_id = instance_buffer.id;
+        if instance_buffer.time_id == resources.buffer_id || !resources.enabled {return;}
+        resources.buffer_id = instance_buffer.time_id;
         let bind_group = [
             BindGroupEntry{
                 binding: 0,
-                resource: BindingResource::Buffer(instance_buffer.data_buffer.as_ref().unwrap().as_entire_buffer_binding())
+                resource: BindingResource::Buffer(instance_buffer.get_instance_buffer().unwrap().as_entire_buffer_binding())
             },
             BindGroupEntry{
                 binding: 1,
@@ -278,11 +273,11 @@ impl ScanPrepassResources{
             },
             BindGroupEntry{
                 binding: 4,
-                resource: BindingResource::Buffer(instance_buffer.indirect_buffer.as_ref().unwrap().as_entire_buffer_binding())
+                resource: BindingResource::Buffer(instance_buffer.get_indirect_buffer().unwrap().as_entire_buffer_binding())
             },
             BindGroupEntry{
                 binding: 5,
-                resource: BindingResource::Buffer(instance_buffer.sorted_buffer.as_ref().unwrap().as_entire_buffer_binding())
+                resource: BindingResource::Buffer(instance_buffer.get_sorted_buffer().unwrap().as_entire_buffer_binding())
             }
         ];
         resources.bind_group = Some(render_device.create_bind_group( 
@@ -377,7 +372,7 @@ impl Node for CornBufferPrepassNode{
         let resources = world.resource::<ScanPrepassResources>();
         if !resources.enabled{return Ok(());}
         let lod_cutoffs = world.resource::<LodCutoffs>();
-        let lod_count: u32 = resources.lod_count;
+        let lod_count: u64 = resources.lod_count;
         //get our pipeline
         let pipeline_cache = world.resource::<PipelineCache>();
         let pipeline = world.resource::<CornBufferPrePassPipeline>();
@@ -460,23 +455,23 @@ impl Node for CornBufferPrepassNode{
 /// Pipeline for the Vote-Scan-Compact compute pass 
 #[derive(Resource)]
 pub struct CornBufferPrePassPipeline{
-    pub ids: HashMap<u32, [CachedComputePipelineId; 4]>,
+    pub ids: HashMap<u64, [CachedComputePipelineId; 4]>,
     pub bind_group_layout: BindGroupLayout,
     pub shader: Handle<Shader>
 }
 impl CornBufferPrePassPipeline{
-    pub fn get_pipeline_descriptors(&self, lod_count: u32) -> [ComputePipelineDescriptor; 4]{
+    pub fn get_pipeline_descriptors(&self, lod_count: u64) -> [ComputePipelineDescriptor; 4]{
         [
         ComputePipelineDescriptor{
             label: Some("Corn Vote_Scan Pipeline".into()),
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count+21))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+21))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![
-                ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count+1),
-                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count*5),
+                ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count as u32+1),
+                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count as u32*5),
             ],
             entry_point: "vote_scan".into()
         },
@@ -484,12 +479,12 @@ impl CornBufferPrePassPipeline{
             label: Some("Corn Sum 1 Pipeline".into()),
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count+21))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+21))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![
-                ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count+1),
-                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count*5),
+                ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count as u32+1),
+                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count as u32*5),
             ],
             entry_point: "group_scan_1".into()
         },
@@ -497,12 +492,12 @@ impl CornBufferPrePassPipeline{
             label: Some("Corn Sum 2 Pipeline".into()),
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count+21))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+21))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![
-                ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count+1),
-                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count*5),
+                ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count as u32+1),
+                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count as u32*5),
             ],
             entry_point: "group_scan_2".into()
         },
@@ -510,12 +505,12 @@ impl CornBufferPrePassPipeline{
             label: Some("Corn Compact Pipeline".into()),
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count+21))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+21))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![
-                ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count+1),
-                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count*5),
+                ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count as u32+1),
+                ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count as u32*5),
             ],
             entry_point: "compact".into()
         },
@@ -591,8 +586,8 @@ impl FromWorld for CornBufferPrePassPipeline {
 }
 
 /// ### Adds the vote scan compact prepass functionality to the game
-pub struct MasterCornPrepassPlugin;
-impl Plugin for MasterCornPrepassPlugin{
+pub struct CornPrepassPlugin;
+impl Plugin for CornPrepassPlugin{
     fn build(&self, app: &mut App) {
         app
             .register_type::<LodCutoffs>()
