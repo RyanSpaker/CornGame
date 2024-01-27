@@ -31,3 +31,12 @@ Another thing I am unclear on is how matchbox p2p works. The handshake server pa
 
 Direct connections scale quadratically with the number of players. At 4 players it isn't a problem. At 10 it might be.
 
+# entity serialization
+
+Another consideration is how everything gets bootstrapped, its easy in an example where everything is set up in advanced, but what about when entitys and their systems might be dynamic. Our options are basically in-band and out-of-band
+
+- out-of-band: (this is probably the normal way) The server or master client sends out instructions at the start of the match for what kind of match it is, and throughout the match when new entitys are created. The handler for these messages sets up the entities and makes sure ggrs starts of syncronized.
+
+- in-band: A more general and abstract method would be to write a generic entity sync system. Entities spawned a certain component would be serialized and spawned on all clients. 
+
+The difference is whether the messages passed talk about entities generically or some higher-level game state.

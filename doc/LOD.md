@@ -28,6 +28,8 @@ In fact we could even automate the number of angles used for the billboards. My 
 
 There is 2 kinds of billboarding, from what I can tell.
 1. a single billboard is used, based on view angle. Billboards always face the player.
+  - we could linearly interpolate between angles, but this might look worse due to blur.
+    there may be interpolations that don't blur, but they are probably computationally expensive
 2. 2 or 3 static perpendicular billboards (minecraft grass). (generally do not face the player)
 
 Both approaches could be tried. The later has nice intersection properties but is less efficient.
@@ -47,7 +49,32 @@ The algorithm:
 - use an algorithm for getting 3d info from many 2d angles, constrain to use a max number of faces. (this is the part we'd have to invent)
 - possibly use some kind of iterative error guided process using the LOD error function we defined.
 
+Another possiblity of automatic LOD models is to evaluate the error in the lighting condition the model will actually be used in. The benefit of this is obvious, though the downside is that it is not applicable for LOD models to be used in multible or unknown locations and rotations. The alternative is to compute a component of the error based on surface normals and skip lighting entirely. This works because each pixel in the fragment shader gets a surface normal.
+
 If actually implemented, we should open source it as bevy-autoLOD because it would make Unity look like fools.
+
+# Mipmaps
+
+Both billboards and textures should have mipmaps.
+
+# Infinite render distance
+
+We can go even further than billboards, by computing billboards for *groups of corn* or other objects.
+
+For non procedural objects the natural level of billboarding is the *scene* which would allow, say, a distant farmhouse+tractor to be rendered as a single billboard.
+The cuttoff between billboarding a scene vs its individual components would probably be related to anglar size, distance, and possibly intersecting objects.
+
+Another option is to group intersecting objects into one billboard, instead of doing it by scene. This helps because intersections are the main thing billboards get wrong. 
+
+One optimization that might help memory usage (at the cost of gpu) would be to only generate billboards when they are needed, and garbage collect them after the fact.
+The billboards would be rendered for only angles currently needed. As the players move, a background thread generates new the billboards before they are needed.
+In a sense we are reducing the framerate for far away objects that don't change very often. In the limit, the skybox itself is updated.
+
+I believe this can be accomplished in a performant way for "normal" objects/scenes spawned into the world. This could even be a default feature of the bevy engine.
+
+For corn, the natural unit of billboarding would need to be procedural (duh). Some options
+1. Subdivided grid (quadtree) with grid size decreasing at distance
+2. Rows (aligned perpendicular to line of sight)
 
 # Roadmap
 - [ ] Figure out how to create a seperate render context with access to the same meshes/materials/scenes as the rest of the game. 
@@ -62,3 +89,10 @@ If actually implemented, we should open source it as bevy-autoLOD because it wou
 - [ ] Figure out algo for constrained 2d -> 3d.
 - [ ] Implement poc raster based autoLOD
 - [ ] Integrate autoLOD into asset loading
+
+# Reference
+- Automatic LOD selection -- https://liu.diva-portal.org/smash/get/diva2:1155618/FULLTEXT01.pdf
+- Quadric-Based Polygonal Surface Simplification -- https://apps.dtic.mil/sti/tr/pdf/ADA366205.pdf
+- A Simple, Fast, and Effective Polygon Reduction Algorithm https://web.archive.org/web/20211128130640/http://pds26.egloos.com/pds/201402/12/11/gdmag.pdf
+- Octahedral Impostors -- https://shaderbits.com/blog/octahedral-impostors
+  - 6.8 MB per "imposter" which is like a fancy billboard.
