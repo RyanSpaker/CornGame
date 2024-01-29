@@ -21,6 +21,9 @@ fn main() {
                 ..default()
             }),
             ..default()
+        }).set(AssetPlugin{
+            mode: AssetMode::Processed,
+            ..Default::default()
         }),
         WorldInspectorPlugin::new(), 
         CornPlugin{}

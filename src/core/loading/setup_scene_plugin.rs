@@ -72,7 +72,7 @@ fn setup_scene(
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
         SimpleRectangularCornField::new(
-            Vec3::ZERO, Vec2::ONE*50.0, 
+            Vec3::ZERO, Vec2::ONE*500.0, 
             UVec2::new(1000, 1000), Vec2::new(0.9, 1.2), 0.2,
         )
     ));
