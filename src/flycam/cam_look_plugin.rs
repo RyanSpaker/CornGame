@@ -18,7 +18,7 @@ pub struct CamLookKeyBinds{
 impl Default for CamLookKeyBinds{
     fn default() -> Self {
         Self { 
-            toggle_grab_cursor: KeyCode::Grave 
+            toggle_grab_cursor: KeyCode::Backquote 
         }
     }
 }
@@ -41,7 +41,7 @@ impl<T> CamLookPlugin<T> where T: States + Copy{
 impl<T> Plugin for CamLookPlugin<T> where T: States + Copy{
     fn build(&self, app: &mut App) {
         app
-            .add_state::<CamLookState>()
+            .init_state::<CamLookState>()
             .init_resource::<CamLookConfig>()
             .init_resource::<CamLookKeyBinds>()
             .add_systems(Update, (
@@ -52,7 +52,7 @@ impl<T> Plugin for CamLookPlugin<T> where T: States + Copy{
 }
 
 fn toggle_capture_mouse(
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     keybinds: Res<CamLookKeyBinds>,
     mut window: Query<&mut Window, (With<PrimaryWindow>, Without<FlyCam>)>,
     cur_state: Res<State<CamLookState>>,

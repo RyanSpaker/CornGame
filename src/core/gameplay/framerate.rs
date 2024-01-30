@@ -4,7 +4,7 @@ pub fn update_fps(
     mut res: ResMut<FPS>,
     diagnostics: Res<DiagnosticsStore>
 ){
-    res.0 = diagnostics.get(bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS).unwrap().average().unwrap_or(0.0);
+    res.0 = diagnostics.get(&bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS).unwrap().average().unwrap_or(0.0);
 }
 
 #[derive(Reflect, Resource, Default)]

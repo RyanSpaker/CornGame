@@ -29,7 +29,7 @@ pub struct CornPlugin{}
 impl Plugin for CornPlugin{
     fn build(&self, app: &mut App) {
         app
-            .add_state::<CornGameState>()
+            .init_state::<CornGameState>()
             .init_resource::<LoadingTimer>()
             .add_systems(OnEnter(CornGameState::Init), init_game)
             .add_systems(OnExit(CornGameState::Loading), finish_loading)

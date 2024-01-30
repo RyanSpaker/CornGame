@@ -24,10 +24,10 @@ pub struct CamMoveKeybinds{
 impl Default for CamMoveKeybinds{
     fn default() -> Self {
         Self { 
-            move_forward: KeyCode::W, 
-            move_backward: KeyCode::S, 
-            move_left: KeyCode::A, 
-            move_right: KeyCode::D, 
+            move_forward: KeyCode::KeyW, 
+            move_backward: KeyCode::KeyS, 
+            move_left: KeyCode::KeyA, 
+            move_right: KeyCode::KeyD, 
             move_ascend: KeyCode::Space, 
             move_descend: KeyCode::ShiftLeft
         }
@@ -54,7 +54,7 @@ impl<T> Plugin for CamMovePlugin<T> where T: States + Copy{
 }
 
 fn cam_move(
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     keybinds: Res<CamMoveKeybinds>,
     config: Res<CamMoveConfig>,
     time: Res<Time>,

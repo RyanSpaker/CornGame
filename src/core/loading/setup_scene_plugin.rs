@@ -27,7 +27,7 @@ impl<T> SetupScenePlugin<T> where T: States + Copy{
 impl<T> Plugin for SetupScenePlugin<T> where T: States + Copy{
     fn build(&self, app: &mut App) {
         app
-            .add_state::<SetupState>()
+            .init_state::<SetupState>()
             .add_plugins(ExtractComponentPlugin::<DebugTag>::default())
             .add_systems(OnEnter(self.active_state), add_setup_scene_task)
             .add_systems(Update, (
@@ -78,21 +78,21 @@ fn setup_scene(
     ));
     //box
     commands.spawn((PbrBundle{
-        mesh: meshes.add(shape::Box::new(1.0, 1.0, 1.0).into()),
-        material: materials.add(Color::rgb(1.0, 1.0, 1.0).into()),
+        mesh: meshes.add(Mesh::from(shape::Box::new(1.0, 1.0, 1.0))),
+        material: materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0))),
         transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
         ..default()
     }, DebugTag{}));
     commands.spawn(PbrBundle{
-        mesh: meshes.add(shape::Box::new(1.0, 1.0, 1.0).into()),
-        material: materials.add(Color::rgb(1.0, 0.0, 0.0).into()),
+        mesh: meshes.add(Mesh::from(shape::Box::new(1.0, 1.0, 1.0))),
+        material: materials.add(StandardMaterial::from(Color::rgb(1.0, 0.0, 0.0))),
         transform: Transform::from_translation(Vec3::new(10.0, 0.5, 0.0)),
         ..default()
     });
     //ground
     commands.spawn(PbrBundle {
-        mesh: meshes.add(shape::Plane::from_size(1000.0).into()),
-        material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
+        mesh: meshes.add(Mesh::from(shape::Plane::from_size(1000.0))),
+        material: materials.add(StandardMaterial::from(Color::rgb(0.3, 0.5, 0.3))),
         ..default()
     });
     // light

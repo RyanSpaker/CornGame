@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use corn_game::prelude::*;
 /*
 
@@ -25,7 +24,6 @@ fn main() {
             mode: AssetMode::Processed,
             ..Default::default()
         }),
-        WorldInspectorPlugin::new(), 
         CornPlugin{}
     ));
     app.run();

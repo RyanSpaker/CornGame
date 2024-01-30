@@ -50,8 +50,8 @@ impl MaterialExtension for CornMaterialExtension{
 pub struct DrawCorn;
 impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
     type Param = (SRes<RenderAssets<Mesh>>, SRes<RenderMeshInstances>, SRes<CornInstanceBuffer>);
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = ();
+    type ViewQuery = ();
+    type ItemQuery = ();
     #[inline]
     fn render<'w>(
         item: &P,

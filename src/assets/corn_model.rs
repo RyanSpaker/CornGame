@@ -175,7 +175,7 @@ fn spawn_corn_combine_task(
     commands.spawn(CombineCornTask(task));
 }
 async fn corn_combine_task(meshes: Vec<Vec<(Mesh, usize)>>) -> (Mesh, Vec<(usize, Vec<usize>, usize)>){
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, bevy::render::render_asset::RenderAssetPersistencePolicy::Unload);
     let mut vertex_counts: Vec<(usize, Vec<usize>, usize)> = vec![];
 
     let mut positions: Vec<[f32; 3]> = Vec::new();

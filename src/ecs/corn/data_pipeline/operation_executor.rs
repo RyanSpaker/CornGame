@@ -436,38 +436,36 @@ impl FromWorld for CornOperationPipelines{
         let pipeline_cache = world.resource::<PipelineCache>();
 
         let defrag_bind_group = render_device.create_bind_group_layout(
-            &BindGroupLayoutDescriptor {
-                label: Some("Defrag Corn Buffer Bind Group".into()),
-                entries: &[
-                    BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Buffer { 
-                            ty: BufferBindingType::Storage { read_only: true }, 
-                            has_dynamic_offset: false, 
-                            min_binding_size: None },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Buffer { 
-                            ty: BufferBindingType::Storage { read_only: false }, 
-                            has_dynamic_offset: false, 
-                            min_binding_size: None },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: ShaderStages::COMPUTE,
-                        ty: BindingType::Buffer { 
-                            ty: BufferBindingType::Storage { read_only: true }, 
-                            has_dynamic_offset: false, 
-                            min_binding_size: None },
-                        count: None,
-                    }
-                ],
-            }
+            Some("Defrag Corn Buffer Bind Group".into()),
+            &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer { 
+                        ty: BufferBindingType::Storage { read_only: true }, 
+                        has_dynamic_offset: false, 
+                        min_binding_size: None },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer { 
+                        ty: BufferBindingType::Storage { read_only: false }, 
+                        has_dynamic_offset: false, 
+                        min_binding_size: None },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer { 
+                        ty: BufferBindingType::Storage { read_only: true }, 
+                        has_dynamic_offset: false, 
+                        min_binding_size: None },
+                    count: None,
+                }
+            ]
         );
         let defrag_shader: Handle<Shader> = asset_server.load("shaders/corn/defrag.wgsl");
         let defrag_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
@@ -479,9 +477,9 @@ impl FromWorld for CornOperationPipelines{
             entry_point: "defragment".into(),
         });
 
-        let stale_bind_group = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor{
-            label: Some("Flag Stale Corn Buffer Bind Group".into()),
-            entries: &[
+        let stale_bind_group = render_device.create_bind_group_layout(
+            Some("Flag Stale Corn Buffer Bind Group".into()),
+            &[
                 BindGroupLayoutEntry{
                     binding: 0,
                     visibility: ShaderStages::COMPUTE,
@@ -501,7 +499,7 @@ impl FromWorld for CornOperationPipelines{
                     count: None
                 }
             ]
-        });
+        );
         let stale_shader: Handle<Shader> = asset_server.load("shaders/corn/flag_stale.wgsl");
         let stale_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor{
             label: Some("Flag Stale Corn Pipeline".into()),
@@ -532,7 +530,8 @@ impl CornOperationPipelines{
         render_device: Res<RenderDevice>,
         asset_server: Res<AssetServer>
     ){
-        let bind_group_layout = render_device.create_bind_group_layout(&T::init_bind_group_descriptor());
+        let desc = T::init_bind_group_descriptor();
+        let bind_group_layout = render_device.create_bind_group_layout(desc.label, desc.entries);
         let typename = type_name::<T>().to_string();
         if pipeline_res.pipelines.get(&typename).is_none(){
             let init_shader: Handle<Shader> = asset_server.load(T::init_shader());
@@ -644,7 +643,7 @@ impl Node for CornBufferOperationsNode{
         //Defrag/Shrink if we need to
         if operations.defrag{
             let defrag_pipeline = needed_pipelines.get(&"Defrag".to_string()).unwrap();
-            let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Defragment Pass".into())});
+            let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Defragment Pass".into()), timestamp_writes: None});
             compute_pass.set_pipeline(defrag_pipeline);
             compute_pass.set_bind_group(0, resources.defrag_resources.bindgroup.as_ref().unwrap(), &[]);
             compute_pass.dispatch_workgroups((resources.defrag_resources.execution_count as f32 / 256.0).ceil() as u32, 1, 1);
@@ -665,7 +664,7 @@ impl Node for CornBufferOperationsNode{
         //Flag stale data if needed
         if !operations.post_init_state.stale_space.is_empty(){
             let stale_pipeline = needed_pipelines.get(&"Stale".to_string()).unwrap();
-            let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Flag Stale Pass".into())});
+            let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Flag Stale Pass".into()), timestamp_writes: None});
             compute_pass.set_pipeline(stale_pipeline);
             compute_pass.set_bind_group(0, resources.stale_resources.bindgroup.as_ref().unwrap(), &[]);
             compute_pass.dispatch_workgroups((resources.stale_resources.execution_count as f32 / 256.0).ceil() as u32, 1, 1);
@@ -684,7 +683,7 @@ impl Node for CornBufferOperationsNode{
         }
         // Init if needed
         if operations.init_count > 0{
-            let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Init Pass".into())});
+            let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Init Pass".into()), timestamp_writes: None});
             for (typename, bind_groups) in resources.init_bindgroups.iter(){
                 let init_pipeline = needed_pipelines.get(typename).unwrap();
                 compute_pass.set_pipeline(init_pipeline);

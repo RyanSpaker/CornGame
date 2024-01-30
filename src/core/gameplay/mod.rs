@@ -38,7 +38,7 @@ impl<T> Plugin for CornGamePlayPlugin<T> where T: States + Copy{
 }
 
 fn exit_state_on_key<T: States + Copy>(
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     exit_state: Res<GamePlayExitState::<T>>,
     mut next_state: ResMut<NextState<T>>
 ){

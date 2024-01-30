@@ -2,9 +2,10 @@ pub mod field;
 pub mod buffer;
 pub mod data_pipeline;
 pub mod render;
+pub mod asset;
 
 use bevy::prelude::*;
-use self::{buffer::CornBufferPlugin, data_pipeline::CornPipelinePlugin, field::CornFieldsPlugin, render::CornRenderPipelinePlugin};
+use self::{asset::CornAssetPlugin, buffer::CornBufferPlugin, data_pipeline::CornPipelinePlugin, field::CornFieldsPlugin, render::CornRenderPipelinePlugin};
 
 /// Plugin that adds all of the corn field component functionality to the game
 pub struct CornFieldComponentPlugin;
@@ -14,7 +15,8 @@ impl Plugin for CornFieldComponentPlugin {
             CornFieldsPlugin, 
             CornBufferPlugin,
             CornPipelinePlugin,
-            CornRenderPipelinePlugin
+            CornRenderPipelinePlugin,
+            CornAssetPlugin
         ));
     }
 }

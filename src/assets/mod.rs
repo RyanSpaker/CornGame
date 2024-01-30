@@ -9,6 +9,6 @@ impl Plugin for CornAssetPlugin{
     fn build(&self, app: &mut App) {
         app
             .add_plugins(ShaderIncludesPlugin{})
-            .add_state::<corn_model::CornLoadState>();
+            .init_state::<corn_model::CornLoadState>();
     }
 }

@@ -11,7 +11,7 @@ use bevy::{
     }, pbr::draw_3d_graph::node::SHADOW_PASS, core_pipeline::core_3d, utils::hashbrown::HashMap
 };
 use bytemuck::{Pod, Zeroable};
-use wgpu::{Maintain, QuerySetDescriptor, QuerySet};
+use wgpu::{Maintain, QuerySet, QuerySetDescriptor};
 use crate::{ecs::{corn::buffer::{CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}, main_camera::MainCamera}, prelude::corn_model::CornMeshes};
 
 const READBACK_ENABLED: bool = false;
@@ -378,7 +378,7 @@ impl Node for CornBufferPrepassNode{
         let pipeline = world.resource::<CornBufferPrePassPipeline>();
         // Setup compute pass
         let mut compute_pass = render_context.command_encoder().begin_compute_pass(
-            &ComputePassDescriptor { label: Some("Vote Scan Compact Pass") }
+            &ComputePassDescriptor { label: Some("Vote Scan Compact Pass"), timestamp_writes: None }
         );
         compute_pass.set_bind_group(0, resources.bind_group.as_ref().unwrap(), &[]);
         if TIMING_ENABLED{
@@ -520,9 +520,8 @@ impl CornBufferPrePassPipeline{
 impl FromWorld for CornBufferPrePassPipeline {
     fn from_world(world: &mut World) -> Self {
         let layout = world.resource::<RenderDevice>().create_bind_group_layout(
-        &BindGroupLayoutDescriptor {
-        label: Some("Corn Scan Prepass Bind Group Layout".into()),
-        entries: &[
+        Some("Corn Scan Prepass Bind Group Layout".into()),
+        &[
             BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::COMPUTE,
@@ -577,7 +576,7 @@ impl FromWorld for CornBufferPrePassPipeline {
                     min_binding_size: None },
                 count: None,
             }
-        ]});
+        ]);
         let shader = world
             .resource::<AssetServer>()
             .load("shaders/corn/vote_scan_compact.wgsl");

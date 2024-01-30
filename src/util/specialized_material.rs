@@ -5,6 +5,7 @@ use bevy::core_pipeline::deferred::{Opaque3dDeferred, AlphaMask3dDeferred};
 use bevy::core_pipeline::prepass::{NormalPrepass, DepthPrepass, MotionVectorPrepass, DeferredPrepass, Opaque3dPrepass, AlphaMask3dPrepass};
 use bevy::core_pipeline::tonemapping::{Tonemapping, DebandDither};
 use bevy::ecs::system::ReadOnlySystemParam;
+use bevy::pbr::environment_map::RenderViewEnvironmentMaps;
 use bevy::prelude::*;
 use bevy::render::camera::TemporalJitter;
 use bevy::render::view::{VisibleEntities, ExtractedView};
@@ -269,15 +270,13 @@ pub fn queue_material_meshes<M: Material, R>(
     render_materials: Res<RenderMaterials<M>>,
     mut render_mesh_instances: ResMut<RenderMeshInstances>,
     render_material_instances: Res<RenderMaterialInstances<M>>,
-    images: Res<RenderAssets<Image>>,
     mut views: Query<(
         &ExtractedView,
         &VisibleEntities,
         Option<&Tonemapping>,
         Option<&DebandDither>,
-        Option<&EnvironmentMapLight>,
         Option<&ShadowFilteringMethod>,
-        Option<&ScreenSpaceAmbientOcclusionSettings>,
+        Has<ScreenSpaceAmbientOcclusionSettings>,
         (
             Has<NormalPrepass>,
             Has<DepthPrepass>,
@@ -285,12 +284,13 @@ pub fn queue_material_meshes<M: Material, R>(
             Has<DeferredPrepass>,
         ),
         Option<&Camera3d>,
-        Option<&TemporalJitter>,
+        Has<TemporalJitter>,
         Option<&Projection>,
         &mut RenderPhase<Opaque3d>,
         &mut RenderPhase<AlphaMask3d>,
         &mut RenderPhase<Transmissive3d>,
         &mut RenderPhase<Transparent3d>,
+        Has<RenderViewEnvironmentMaps>,
     )>,
 ) where
     R: 'static,
@@ -301,7 +301,6 @@ pub fn queue_material_meshes<M: Material, R>(
         visible_entities,
         tonemapping,
         dither,
-        environment_map,
         shadow_filter_method,
         ssao,
         (normal_prepass, depth_prepass, motion_vector_prepass, deferred_prepass),
@@ -312,6 +311,7 @@ pub fn queue_material_meshes<M: Material, R>(
         mut alpha_mask_phase,
         mut transmissive_phase,
         mut transparent_phase,
+        has_environment_maps,
     ) in &mut views
     {
         let draw_opaque_pbr = opaque_draw_functions.read().id::<R>();
@@ -338,13 +338,11 @@ pub fn queue_material_meshes<M: Material, R>(
             view_key |= MeshPipelineKey::DEFERRED_PREPASS;
         }
 
-        if temporal_jitter.is_some() {
+        if temporal_jitter {
             view_key |= MeshPipelineKey::TEMPORAL_JITTER;
         }
 
-        let environment_map_loaded = environment_map.is_some_and(|map| map.is_loaded(&images));
-
-        if environment_map_loaded {
+        if has_environment_maps {
             view_key |= MeshPipelineKey::ENVIRONMENT_MAP;
         }
 
@@ -376,7 +374,7 @@ pub fn queue_material_meshes<M: Material, R>(
                 view_key |= MeshPipelineKey::DEBAND_DITHER;
             }
         }
-        if ssao.is_some() {
+        if ssao {
             view_key |= MeshPipelineKey::SCREEN_SPACE_AMBIENT_OCCLUSION;
         }
         if let Some(camera_3d) = camera_3d {
