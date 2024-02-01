@@ -22,6 +22,6 @@ Corn Maze game written in rust with the bevy engine
 
 ## POI
 - Specialized Material is a really annoying way to accomplish what i need for instanced rendering. I might want to write a program which converts bevy's built in shader files for PBR rendering, and converts them into simple methods rather than full vertex or fragment code, this would allow us to write true shader extensions, where our vertex or fragment shader is run before or after the built in code. This owuld require some fancy logic, and im not sure if it's even useful, but it could be nice.
-- The corn rendering pipeline is currently ignoring timestap writes, but these will probably be extremely useful to get working for performance information
-- The current asset system is asinine when it comes to GLTF, but the current branch of bevy im using at least makes my corn asset loader possible. In the future it would be smart to try and get bevy to fix some of the missing functionality so that it isnt so much of a pain
+- The corn rendering pipeline is currently ignoring timestap writes, but these will probably be extremely useful to get working for performance information so figuring those out is necessary
+- The current asset system is asinine when it comes to GLTF, but the current branch of bevy im using at least makes my corn asset loader possible. In the future it would be smart to try and get bevy to fix some of the missing functionality so that it isnt so much of a pain. 
 - The current game structure is really disorganized, and needs to be cleaned up

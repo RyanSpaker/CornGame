@@ -1,13 +1,7 @@
 use bevy::{
-    prelude::*, 
-    gltf::{Gltf, GltfMesh}, 
-    render::{
-        RenderApp, 
-        Extract, 
-        render_resource::{PrimitiveTopology, VertexFormat}, 
-        mesh::{Indices, VertexAttributeValues, MeshVertexAttribute}
-    }, 
-    tasks::{AsyncComputeTaskPool, Task}, utils::hashbrown::HashMap
+    gltf::{Gltf, GltfMesh}, prelude::*, render::{
+        mesh::{Indices, MeshVertexAttribute, VertexAttributeValues}, render_asset::RenderAssetUsages, render_resource::{PrimitiveTopology, VertexFormat}, Extract, RenderApp
+    }, tasks::{AsyncComputeTaskPool, Task}, utils::hashbrown::HashMap
 };
 use crate::core::loading::LoadingTaskCount;
 use futures_lite::future;
@@ -175,7 +169,7 @@ fn spawn_corn_combine_task(
     commands.spawn(CombineCornTask(task));
 }
 async fn corn_combine_task(meshes: Vec<Vec<(Mesh, usize)>>) -> (Mesh, Vec<(usize, Vec<usize>, usize)>){
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, bevy::render::render_asset::RenderAssetPersistencePolicy::Unload);
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
     let mut vertex_counts: Vec<(usize, Vec<usize>, usize)> = vec![];
 
     let mut positions: Vec<[f32; 3]> = Vec::new();

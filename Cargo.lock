@@ -169,9 +169,9 @@ dependencies = [
 
 [[package]]
 name = "android-activity"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39b801912a977c3fd52d80511fe1c0c8480c6f957f21ae2ce1b92ffe970cf4b9"
+checksum = "ee91c0c2905bae44f84bfa4e044536541df26b7703fd0888deeb9060fcc44289"
 dependencies = [
  "android-properties",
  "bitflags 2.4.2",
@@ -403,7 +403,7 @@ checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 [[package]]
 name = "bevy"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_dylib",
  "bevy_internal 0.12.0",
@@ -461,7 +461,7 @@ dependencies = [
 [[package]]
 name = "bevy_a11y"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "accesskit",
  "bevy_app 0.12.0",
@@ -484,7 +484,7 @@ dependencies = [
 [[package]]
 name = "bevy_animation"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_asset 0.12.0",
@@ -502,7 +502,7 @@ dependencies = [
 [[package]]
 name = "bevy_app"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_derive 0.12.0",
  "bevy_ecs 0.12.0",
@@ -533,7 +533,7 @@ dependencies = [
 [[package]]
 name = "bevy_asset"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "async-broadcast",
  "async-fs 2.1.0",
@@ -596,7 +596,7 @@ dependencies = [
 [[package]]
 name = "bevy_asset_macros"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_macro_utils 0.12.0",
  "proc-macro2",
@@ -619,7 +619,7 @@ dependencies = [
 [[package]]
 name = "bevy_audio"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_asset 0.12.0",
@@ -636,7 +636,7 @@ dependencies = [
 [[package]]
 name = "bevy_core"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_ecs 0.12.0",
@@ -665,7 +665,7 @@ dependencies = [
 [[package]]
 name = "bevy_core_pipeline"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_asset 0.12.0",
@@ -708,7 +708,7 @@ dependencies = [
 [[package]]
 name = "bevy_derive"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_macro_utils 0.12.0",
  "quote",
@@ -729,7 +729,7 @@ dependencies = [
 [[package]]
 name = "bevy_diagnostic"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_core 0.12.0",
@@ -759,7 +759,7 @@ dependencies = [
 [[package]]
 name = "bevy_dylib"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_internal 0.12.0",
 ]
@@ -767,7 +767,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "async-channel 2.1.1",
  "bevy_ecs_macros 0.12.0",
@@ -807,7 +807,7 @@ dependencies = [
 [[package]]
 name = "bevy_ecs_macros"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_macro_utils 0.12.0",
  "proc-macro2",
@@ -843,7 +843,7 @@ dependencies = [
 [[package]]
 name = "bevy_encase_derive"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_macro_utils 0.12.0",
  "encase_derive_impl 0.6.1",
@@ -862,7 +862,7 @@ dependencies = [
 [[package]]
 name = "bevy_gilrs"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_ecs 0.12.0",
@@ -877,7 +877,7 @@ dependencies = [
 [[package]]
 name = "bevy_gizmos"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_asset 0.12.0",
@@ -898,7 +898,7 @@ dependencies = [
 [[package]]
 name = "bevy_gizmos_macros"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_macro_utils 0.12.0",
  "proc-macro2",
@@ -909,7 +909,7 @@ dependencies = [
 [[package]]
 name = "bevy_gltf"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "base64 0.21.7",
  "bevy_animation",
@@ -938,7 +938,7 @@ dependencies = [
 [[package]]
 name = "bevy_hierarchy"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_core 0.12.0",
@@ -966,7 +966,7 @@ dependencies = [
 [[package]]
 name = "bevy_input"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_ecs 0.12.0",
@@ -994,7 +994,7 @@ dependencies = [
 [[package]]
 name = "bevy_internal"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_a11y 0.12.0",
  "bevy_animation",
@@ -1060,7 +1060,7 @@ dependencies = [
 [[package]]
 name = "bevy_log"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "android_log-sys",
  "bevy_app 0.12.0",
@@ -1091,7 +1091,7 @@ dependencies = [
 [[package]]
 name = "bevy_macro_utils"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1116,7 +1116,7 @@ dependencies = [
 [[package]]
 name = "bevy_math"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "glam 0.25.0",
  "serde",
@@ -1135,7 +1135,7 @@ dependencies = [
 [[package]]
 name = "bevy_mikktspace"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "glam 0.25.0",
 ]
@@ -1167,7 +1167,7 @@ dependencies = [
 [[package]]
 name = "bevy_pbr"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_asset 0.12.0",
@@ -1218,7 +1218,7 @@ dependencies = [
 [[package]]
 name = "bevy_ptr"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 
 [[package]]
 name = "bevy_ptr"
@@ -1229,7 +1229,7 @@ checksum = "c77ec20c8fafcdc196508ef5ccb4f0400a8d193cb61f7b14a36ed9a25ad423cf"
 [[package]]
 name = "bevy_reflect"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_math 0.12.0",
  "bevy_ptr 0.12.0",
@@ -1265,7 +1265,7 @@ dependencies = [
 [[package]]
 name = "bevy_reflect_derive"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_macro_utils 0.12.0",
  "proc-macro2",
@@ -1290,7 +1290,7 @@ dependencies = [
 [[package]]
 name = "bevy_render"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "async-channel 2.1.1",
  "bevy_app 0.12.0",
@@ -1378,7 +1378,7 @@ dependencies = [
 [[package]]
 name = "bevy_render_macros"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_macro_utils 0.12.0",
  "proc-macro2",
@@ -1401,7 +1401,7 @@ dependencies = [
 [[package]]
 name = "bevy_scene"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_asset 0.12.0",
@@ -1441,7 +1441,7 @@ dependencies = [
 [[package]]
 name = "bevy_sprite"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_asset 0.12.0",
@@ -1466,7 +1466,7 @@ dependencies = [
 [[package]]
 name = "bevy_tasks"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "async-channel 2.1.1",
  "async-executor",
@@ -1493,7 +1493,7 @@ dependencies = [
 [[package]]
 name = "bevy_text"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "ab_glyph",
  "bevy_app 0.12.0",
@@ -1514,7 +1514,7 @@ dependencies = [
 [[package]]
 name = "bevy_time"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_ecs 0.12.0",
@@ -1541,7 +1541,7 @@ dependencies = [
 [[package]]
 name = "bevy_transform"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_app 0.12.0",
  "bevy_ecs 0.12.0",
@@ -1568,7 +1568,7 @@ dependencies = [
 [[package]]
 name = "bevy_ui"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_a11y 0.12.0",
  "bevy_app 0.12.0",
@@ -1595,7 +1595,7 @@ dependencies = [
 [[package]]
 name = "bevy_utils"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "ahash",
  "bevy_utils_proc_macros 0.12.0",
@@ -1631,7 +1631,7 @@ dependencies = [
 [[package]]
 name = "bevy_utils_proc_macros"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1652,7 +1652,7 @@ dependencies = [
 [[package]]
 name = "bevy_window"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "bevy_a11y 0.12.0",
  "bevy_app 0.12.0",
@@ -1684,7 +1684,7 @@ dependencies = [
 [[package]]
 name = "bevy_winit"
 version = "0.12.0"
-source = "git+https://github.com/RyanSpaker/bevy.git?branch=main#d082863aecebbc3e35991d286ccaf1744037ddac"
+source = "git+https://github.com/RyanSpaker/bevy.git?branch=fix_transform#473160f5d7acb67b74f75cafe04989425ad5801c"
 dependencies = [
  "accesskit_winit 0.17.0",
  "approx",
@@ -2240,7 +2240,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e3d747f100290a1ca24b752186f61f6637e1deffe3bf6320de6fcb29510a307"
 dependencies = [
  "bitflags 2.4.2",
- "libloading 0.7.4",
+ "libloading 0.8.1",
  "winapi",
 ]
 
@@ -2279,7 +2279,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330c60081dcc4c72131f8eb70510f1ac07223e5d4163db481a04a0befcffa412"
 dependencies = [
- "libloading 0.7.4",
+ "libloading 0.8.1",
 ]
 
 [[package]]
@@ -2928,7 +2928,7 @@ dependencies = [
  "bitflags 2.4.2",
  "com",
  "libc",
- "libloading 0.7.4",
+ "libloading 0.8.1",
  "thiserror",
  "widestring",
  "winapi",
@@ -3017,9 +3017,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.2.0"
+version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf2a4f498956c7723dc280afc6a37d0dec50b39a29e232c6187ce4503703e8c2"
+checksum = "433de089bd45971eecf4668ee0ee8f4cec17db4f8bd8f7bc3197a6ce37aa7d9b"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.3",
@@ -3401,7 +3401,7 @@ dependencies = [
  "bitflags 2.4.2",
  "codespan-reporting",
  "hexf-parse",
- "indexmap 2.2.0",
+ "indexmap 2.2.1",
  "log",
  "num-traits",
  "pp-rs",
@@ -3441,7 +3441,7 @@ dependencies = [
  "bit-set",
  "codespan-reporting",
  "data-encoding",
- "indexmap 2.2.0",
+ "indexmap 2.2.1",
  "naga 0.19.0",
  "once_cell",
  "regex",
@@ -3633,7 +3633,7 @@ version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dcbff9bc912032c62bf65ef1d5aea88983b420f4f839db1e9b0c281a25c9c799"
 dependencies = [
- "proc-macro-crate",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
@@ -3645,7 +3645,7 @@ version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96667db765a921f7b295ffee8b60472b686a51d4f21c2ee4ffdb94c7013b65a6"
 dependencies = [
- "proc-macro-crate",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -3657,7 +3657,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "681030a937600a36906c185595136d26abfebb4aa9c65701cefcaf8578bb982b"
 dependencies = [
- "proc-macro-crate",
+ "proc-macro-crate 3.1.0",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -3875,7 +3875,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1d3afd2628e69da2be385eb6f2fd57c8ac7977ceeff6dc166ff1657b0e386a9"
 dependencies = [
  "fixedbitset",
- "indexmap 2.2.0",
+ "indexmap 2.2.1",
 ]
 
 [[package]]
@@ -3966,6 +3966,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro-crate"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d37c51ca738a55da99dc0c4a34860fd675453b8b36209178c2249bb13651284"
+dependencies = [
+ "toml_edit 0.21.0",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3976,9 +3985,9 @@ dependencies = [
 
 [[package]]
 name = "profiling"
-version = "1.0.13"
+version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d135ede8821cf6376eb7a64148901e1690b788c11ae94dc297ae917dbc91dc0e"
+checksum = "0f0f7f43585c34e4fdd7497d746bc32e14458cf11c69341cc0587b1d825dde42"
 
 [[package]]
 name = "quote"
@@ -4224,9 +4233,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.112"
+version = "1.0.113"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d1bd37ce2324cf3bf85e5a25f96eb4baf0d5aa6eba43e7ae8958870c4ec48ed"
+checksum = "69801b70b1c3dac963ecb03a364ba0ceda9cf60c71cfe475e99864759c8b8a79"
 dependencies = [
  "itoa",
  "ryu",
@@ -4466,7 +4475,7 @@ version = "0.19.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
 dependencies = [
- "indexmap 2.2.0",
+ "indexmap 2.2.1",
  "toml_datetime",
  "winnow",
 ]
@@ -4477,7 +4486,7 @@ version = "0.20.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70f427fce4d84c72b5b732388bf4a9f4531b53f74e2887e3ecb2481f68f66d81"
 dependencies = [
- "indexmap 2.2.0",
+ "indexmap 2.2.1",
  "toml_datetime",
  "winnow",
 ]
@@ -4488,7 +4497,7 @@ version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d34d383cd00a163b4a5b85053df514d45bc330f6de7737edfe0a93311d1eaa03"
 dependencies = [
- "indexmap 2.2.0",
+ "indexmap 2.2.1",
  "toml_datetime",
  "winnow",
 ]
@@ -4901,7 +4910,7 @@ dependencies = [
  "bitflags 2.4.2",
  "cfg_aliases",
  "codespan-reporting",
- "indexmap 2.2.0",
+ "indexmap 2.2.1",
  "log",
  "naga 0.19.0",
  "once_cell",
@@ -4981,7 +4990,7 @@ dependencies = [
  "js-sys",
  "khronos-egl 6.0.0",
  "libc",
- "libloading 0.7.4",
+ "libloading 0.8.1",
  "log",
  "metal 0.27.0",
  "naga 0.19.0",
@@ -5370,7 +5379,7 @@ version = "0.29.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c824f11941eeae66ec71111cc2674373c772f482b58939bb4066b642aa2ffcf"
 dependencies = [
- "android-activity 0.5.1",
+ "android-activity 0.5.2",
  "atomic-waker",
  "bitflags 2.4.2",
  "bytemuck",
