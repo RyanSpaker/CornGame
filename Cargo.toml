@@ -15,6 +15,7 @@ futures-lite = "2.2.0"
 bitflags = "2.4.2"
 wgpu = "0.19.1"
 gltf = "1.4.0"
+serde = "1.0.196"
 
 
 [profile.dev]

@@ -5,6 +5,8 @@ pub mod render;
 pub mod asset;
 
 use bevy::prelude::*;
+use crate::core::CornGameState;
+
 use self::{asset::CornAssetPlugin, buffer::CornBufferPlugin, data_pipeline::CornPipelinePlugin, field::CornFieldsPlugin, render::CornRenderPipelinePlugin};
 
 /// Plugin that adds all of the corn field component functionality to the game
@@ -16,7 +18,7 @@ impl Plugin for CornFieldComponentPlugin {
             CornBufferPlugin,
             CornPipelinePlugin,
             CornRenderPipelinePlugin,
-            CornAssetPlugin
+            CornAssetPlugin::new(CornGameState::Init)
         ));
     }
 }

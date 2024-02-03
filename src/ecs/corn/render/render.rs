@@ -6,7 +6,7 @@ use bevy::{
     reflect::Reflect, ecs::system::{lifetimeless::SRes, Commands, Res, ResMut, SystemParamItem}
 };
 use wgpu::{vertex_attr_array, ShaderStages, PushConstantRange};
-use crate::{ecs::corn::buffer::{CornInstanceBuffer, CORN_DATA_SIZE}, prelude::corn_model::CornMeshes, util::specialized_material::{SpecializedDrawMaterial, SpecializedDrawPrepass, SpecializedMaterialPlugin}};
+use crate::{ecs::corn::{asset::{CornAsset, CornModel}, buffer::{CornInstanceBuffer, CORN_DATA_SIZE}}, util::specialized_material::{SpecializedDrawMaterial, SpecializedDrawPrepass, SpecializedMaterialPlugin}};
 
 pub type CornMaterial = ExtendedMaterial<StandardMaterial, CornMaterialExtension>;
 
@@ -100,8 +100,8 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
     }
 }
 
-pub fn corn_mesh_loaded(corn_meshes: Res<CornMeshes>) -> bool{
-    corn_meshes.loaded
+pub fn corn_mesh_loaded(corn: Res<CornModel>) -> bool{
+    corn.loaded
 }
 /// Spawns a renderable corn stalk in the center of the screen which will act as our corn field
 /// Our extended material and specialized material plugin override the render logic to instance the stalk into our corn fields
@@ -109,11 +109,13 @@ pub fn spawn_corn_anchor(
     mut commands: Commands,
     std_materials: Res<Assets<StandardMaterial>>,
     mut materials: ResMut<Assets<CornMaterial>>,
-    corn_meshes: Res<CornMeshes>
+    corn: Res<CornModel>,
+    corn_asset: Res<Assets<CornAsset>>
 ){
+    let corn_meshes = corn_asset.get(corn.asset.clone()).unwrap();
     if let Some(mat) = std_materials.get(corn_meshes.materials.get(&"CornLeaves".to_string()).unwrap().clone()){
         commands.spawn((MaterialMeshBundle::<CornMaterial>{
-            mesh: corn_meshes.global_mesh.as_ref().unwrap().clone(),
+            mesh: corn_meshes.master_mesh.clone(),
             //material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension::default()}),
             material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension{}}),
             ..Default::default()

@@ -2164,6 +2164,7 @@ dependencies = [
  "futures-lite 2.2.0",
  "gltf",
  "rand",
+ "serde",
  "wgpu 0.19.1",
 ]
 

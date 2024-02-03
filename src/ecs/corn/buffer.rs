@@ -1,7 +1,7 @@
-use bevy::{prelude::*, render::{render_resource::*, renderer::RenderDevice, Render, RenderApp, RenderSet}, utils::hashbrown::HashMap};
+use bevy::{prelude::*, render::{render_asset::RenderAssets, render_resource::*, renderer::RenderDevice, Render, RenderApp, RenderSet}, utils::hashbrown::HashMap};
 use bytemuck::{Pod, Zeroable};
-use crate::{prelude::corn_model::CornMeshes, util::integer_set::{IntegerSet, SubOne}};
-use super::field::{state::{PreviousFrameCornFields, StaleCornFieldEvent}, RenderableCornFieldID};
+use crate::util::integer_set::{IntegerSet, SubOne};
+use super::{asset::{CornAsset, CornModel}, field::{state::{PreviousFrameCornFields, StaleCornFieldEvent}, RenderableCornFieldID}};
 
 /// Struct representing the Per Corn Stalk data on  the GPU
 #[derive(Clone, Copy, Pod, Zeroable, Debug, ShaderType)]
@@ -139,17 +139,19 @@ impl CornInstanceBuffer{
     pub fn update_indirect_buffer(
         mut instance_buffer: ResMut<Self>,
         render_device: Res<RenderDevice>,
-        corn_meshes: Res<CornMeshes>
+        corn: Res<CornModel>,
+        corn_model: Res<RenderAssets<CornAsset>>
     ){
         // Leave early if we have no corn data, the corn mesh isn't loaded yet, or if we already have a working indirect buffer
-        if instance_buffer.ranges.is_empty() || !corn_meshes.loaded || (instance_buffer.lod_count == corn_meshes.lod_count as u64 && instance_buffer.indirect_buffer.is_some()) {return;}
-        instance_buffer.lod_count = corn_meshes.lod_count as u64;
+        if instance_buffer.ranges.is_empty() || !corn.loaded || (instance_buffer.lod_count == corn.lod_count as u64 && instance_buffer.indirect_buffer.is_some()) {return;}
+        instance_buffer.lod_count = corn.lod_count as u64;
         instance_buffer.time_id += 1;
+        let corn_meshes = corn_model.get(corn.asset.clone()).unwrap();
         let data: Vec<u32> = (0..instance_buffer.lod_count).into_iter()
             .flat_map(|i| [
-                corn_meshes.vertex_counts[i as usize].2 as u32, 
+                corn_meshes.lod_data[i as usize].total_vertices as u32, 
                 0, 
-                corn_meshes.vertex_counts[i as usize].0 as u32, 
+                corn_meshes.lod_data[i as usize].start_vertex as u32, 
                 0, 
                 0
             ].into_iter()).collect();

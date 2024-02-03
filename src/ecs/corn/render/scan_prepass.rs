@@ -12,7 +12,7 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::{Maintain, QuerySet, QuerySetDescriptor};
-use crate::{ecs::{corn::buffer::{CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}, main_camera::MainCamera}, prelude::corn_model::CornMeshes};
+use crate::ecs::{corn::{asset::CornModel, buffer::{CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}}, main_camera::MainCamera};
 
 const READBACK_ENABLED: bool = false;
 const TIMING_ENABLED: bool = false;
@@ -39,7 +39,7 @@ impl From<&ExtractedView> for FrustumValues{
 pub struct LodCutoffs(pub Vec<f32>);
 impl LodCutoffs{
     //Makes sure lodcutoffs has the right number of lods
-    pub fn update_lod_cutoffs(mut lods: ResMut<LodCutoffs>, corn_mesh: Res<CornMeshes>){
+    pub fn update_lod_cutoffs(mut lods: ResMut<LodCutoffs>, corn_mesh: Res<CornModel>){
         if corn_mesh.loaded && corn_mesh.lod_count as usize != lods.0.len(){
             lods.0.resize(corn_mesh.lod_count as usize, 0.0);
         }
