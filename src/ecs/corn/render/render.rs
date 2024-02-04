@@ -109,11 +109,10 @@ pub fn corn_mesh_loaded(corn: Res<CornModel>) -> bool{
 /// Our extended material and specialized material plugin override the render logic to instance the stalk into our corn fields
 pub fn spawn_corn_anchor(
     mut commands: Commands,
-    mut std_materials: ResMut<Assets<StandardMaterial>>,
+    std_materials: Res<Assets<StandardMaterial>>,
     mut materials: ResMut<Assets<CornMaterial>>,
     corn: Res<CornModel>,
-    corn_asset: Res<Assets<CornAsset>>,
-    mut meshes: ResMut<Assets<Mesh>>
+    corn_asset: Res<Assets<CornAsset>>
 ){
     let corn_meshes = corn_asset.get(corn.asset.clone()).unwrap();
     if let Some(mat) = std_materials.get(corn_meshes.materials.get(&"CornLeaves".to_string()).unwrap().clone()){

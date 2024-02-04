@@ -2,9 +2,8 @@ use std::sync::{Arc, Mutex};
 use bevy::{
     core_pipeline::core_3d, prelude::*, render::{
         render_graph::{Node, RenderGraph, RenderGraphContext, RenderLabel}, render_resource::*, renderer::{RenderContext, RenderDevice, RenderQueue}, view::ExtractedView, Extract, Render, RenderApp, RenderSet
-    }, utils::hashbrown::HashMap
+    }, utils::hashbrown::HashMap, pbr::graph::LabelsPbr
 };
-use bevy::pbr::graph::LabelsPbr;
 use bytemuck::{Pod, Zeroable};
 use wgpu::{Maintain, QuerySet, QuerySetDescriptor};
 use crate::ecs::{corn::{asset::CornModel, buffer::{CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}}, main_camera::MainCamera};

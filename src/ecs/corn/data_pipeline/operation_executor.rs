@@ -8,7 +8,6 @@ use bevy::{
         render_graph::{Node, RenderGraphContext, RenderGraph, RenderLabel}, RenderApp, Render, RenderSet, render_asset::RenderAssets
     }
 };
-use bevy::pbr::graph::LabelsPbr;
 use bytemuck::{Pod, Zeroable};
 use wgpu::Maintain;
 use super::{
