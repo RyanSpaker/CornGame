@@ -23,56 +23,65 @@ pub struct CornAssetTransformer;
 impl CornAssetTransformer{
     /// Given a vector of lods, each a vector of Mesh Label, material index, Combine the meshes into a single master mesh, and track vertex information, returning both.
     async fn combine_corn_mesh(lods: Vec<Vec<(String, usize)>>, asset: &mut TransformedAsset<Gltf>) -> (Mesh, Vec<CornMeshLod>) {
-        let mut master_mesh = Mesh::new(wgpu::PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
+        let mut master_mesh = Mesh::new(wgpu::PrimitiveTopology::TriangleList, RenderAssetUsages::all());
         let mut vertex_counts: Vec<CornMeshLod> = vec![];
-    
+        // Setup Attribute Lists
         let mut positions: Vec<[f32; 3]> = Vec::new();
         let mut normal: Vec<[f32; 3]> = Vec::new();
         let mut uv: Vec<[f32; 2]> = Vec::new();
         let mut tangent: Vec<[f32; 4]> = Vec::new();
-    
-        let mut materials: Vec<u32> = Vec::new();
+        let mut materials: Vec<[u16; 2]> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
+
         let mut indices_offset: u32 = 0;
         for lod in lods.iter(){
             vertex_counts.push(CornMeshLod::from_start(indices.len()));
             for (mesh_label, mat) in lod.iter(){
                 let transformed = asset.get_labeled::<Mesh, str>(mesh_label.as_str()).unwrap();
                 let mesh = transformed.get();
-                if let Some(Indices::U16(mesh_indices)) = mesh.indices(){
-                    indices.extend(mesh_indices.iter().map(|index| *index as u32+indices_offset));
-                    if let Some(VertexAttributeValues::Float32x3(vertex_positions)) = 
-                        mesh.attribute(Mesh::ATTRIBUTE_POSITION)
-                    {
-                        positions.extend(vertex_positions);
-                        if let Some(VertexAttributeValues::Float32x3(normals)) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL){
-                            normal.extend(normals);
-                        }
-                        if let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0){
-                            uv.extend(uvs);
-                        }
-                        if let Some(VertexAttributeValues::Float32x4(tangents)) = mesh.attribute(Mesh::ATTRIBUTE_TANGENT){
-                            tangent.extend(tangents);
-                        }
-                        materials.extend([*mat as u32].repeat(vertex_positions.len()));
-                        indices_offset += vertex_positions.len() as u32;
-                    }
-                    vertex_counts.last_mut().map(|val| val.sub_mesh_data.push((mesh_indices.len(), *mat)));
+                match mesh.indices(){
+                    Some(Indices::U16(values)) => {
+                        indices.extend(values.iter().map(|ind| *ind as u32 + indices_offset));
+                        vertex_counts.last_mut().unwrap().sub_mesh_data.push((values.len(), *mat));
+                    },
+                    Some(Indices::U32(values)) => {
+                        indices.extend(values.iter().map(|ind| ind + indices_offset));
+                        vertex_counts.last_mut().unwrap().sub_mesh_data.push((values.len(), *mat));
+                    },
+                    None => {panic!("Corn Mesh had no Indices {:?}", mesh);}
+                }
+                match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+                    Some(VertexAttributeValues::Float32x3(values)) => {
+                        positions.extend(values); 
+                        materials.extend([[*mat as u16, 0u16]].repeat(values.len()));
+                        indices_offset += values.len() as u32;
+                    },
+                    _ => {panic!("Corn Mesh had no Position Attribute");}
+                }
+                if let Some(VertexAttributeValues::Float32x3(normals)) = mesh.attribute(Mesh::ATTRIBUTE_NORMAL){
+                    normal.extend(normals);
+                }
+                if let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0){
+                    uv.extend(uvs);
+                }
+                if let Some(VertexAttributeValues::Float32x4(tangents)) = mesh.attribute(Mesh::ATTRIBUTE_TANGENT){
+                    tangent.extend(tangents);
                 }
             }
             vertex_counts.last_mut().map(|val| {val.total_vertices = indices.len()-val.start_vertex; val});
         }
-    
+        let indices = if indices.iter().all(|index| *index <= u16::MAX as u32) {
+            Indices::U16(indices.into_iter().map(|i| i as u16).collect())
+        } else {Indices::U32(indices)};
+        master_mesh.set_indices(Some(indices));
         master_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         if normal.len() > 0{master_mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normal);}
         if uv.len() > 0{master_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uv);}
         if tangent.len() > 0{master_mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, tangent);}
         master_mesh.insert_attribute(
-            MeshVertexAttribute::new("Mesh_Index", 7, VertexFormat::Uint32), 
-            materials
+            MeshVertexAttribute::new("Mesh_Material_Index", 23895, VertexFormat::Uint16x2), 
+            VertexAttributeValues::Uint16x2(materials)
         );
-        master_mesh.set_indices(Some(Indices::U32(indices)));
-        
         (master_mesh, vertex_counts)
     }
 }

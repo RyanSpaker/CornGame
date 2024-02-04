@@ -31,7 +31,7 @@ pub async fn read_mesh<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, byte_c
         let (attr, values) = read_attribute(reader, byte_counter).await?;
         mesh.insert_attribute(attr, values);
     }
-
+    
     //Morph Targets ignored for now. Currently no way to get the Morph Target image handle, so until i need it or the functionality is added, it will remain ignored
 
     return Ok(mesh);
@@ -44,7 +44,12 @@ pub async fn write_attribute(writer: &mut bevy::asset::io::Writer, counter: &mut
     let mut mid = lower+(upper-lower)/2;
     loop{
         let cur_id = MeshVertexAttribute::new("", mid, wgpu::VertexFormat::Float32).id;
-        if *id == cur_id {break;}
+        if *id == cur_id {
+            break;
+        }else if upper - lower == 1{
+            mid = upper;
+            break;
+        }
         if cur_id > *id{
             upper = mid;
             mid = lower + (upper - lower)/2;
@@ -52,10 +57,7 @@ pub async fn write_attribute(writer: &mut bevy::asset::io::Writer, counter: &mut
             lower = mid;
             mid = lower+(upper-lower)/2;
         }
-        if upper - lower == 1{
-            mid = upper;
-            break;
-        }
+        
     }
     let saved_id: u128 = mid as u128;
     // name:
@@ -90,7 +92,7 @@ pub async fn read_attribute<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, c
         else if id == Mesh::ATTRIBUTE_TANGENT.id {Mesh::ATTRIBUTE_TANGENT}
         else if id == Mesh::ATTRIBUTE_UV_0.id {Mesh::ATTRIBUTE_UV_0}
         else if id == Mesh::ATTRIBUTE_UV_1.id {Mesh::ATTRIBUTE_UV_1}
-        else {MeshVertexAttribute{name: name.leak(), id, format}};
+        else {MeshVertexAttribute{name: name.clone().leak(), id, format}};
     let value_bytes = read_vector(reader, counter).await?;
     let values = vertex_values_from_fmt(attr.format, value_bytes);
     Ok((attr, values))

@@ -5,9 +5,10 @@ use bevy::{
     render::{
         render_resource::*, 
         renderer::{RenderDevice, RenderContext},
-        render_graph::{Node, RenderGraphContext, RenderGraph}, RenderApp, Render, RenderSet, render_asset::RenderAssets
+        render_graph::{Node, RenderGraphContext, RenderGraph, RenderLabel}, RenderApp, Render, RenderSet, render_asset::RenderAssets
     }
 };
+use bevy::pbr::graph::LabelsPbr;
 use bytemuck::{Pod, Zeroable};
 use wgpu::Maintain;
 use super::{
@@ -590,6 +591,9 @@ impl NodeSuccess{
     }
 }
 
+#[derive(Debug, Clone, Default, Hash, PartialEq, Eq, RenderLabel)]
+pub struct CornBufferOperationsStage;
+
 /// This is the render graph node which executes any buffer operation
 pub struct CornBufferOperationsNode;
 impl Node for CornBufferOperationsNode{
@@ -730,7 +734,7 @@ impl Plugin for CornOperationExecutionPlugin{
         app.sub_app_mut(RenderApp)
             .init_resource::<CornOperationPipelines>()
             .world.resource_mut::<RenderGraph>()
-                .add_node("CornBuffer Data Pipeline", CornBufferOperationsNode);
+                .add_node(CornBufferOperationsStage, CornBufferOperationsNode);
     }
 }
 

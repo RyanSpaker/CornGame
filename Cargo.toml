@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { git = "https://github.com/RyanSpaker/bevy.git", branch = "fix_transform", default-features = true, features=["dynamic_linking", "asset_processor"]}
+bevy = { git = "https://github.com/RyanSpaker/bevy.git", branch = "main", default-features = true, features=["dynamic_linking", "asset_processor"]}
 bevy-inspector-egui = "0.22.1"
 rand = "0.8.5"
 bytemuck = "1.14.1"

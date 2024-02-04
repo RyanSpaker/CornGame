@@ -36,26 +36,32 @@ struct Vertex {
     @location(1) uv: vec2<f32>,
 #endif
 
+#ifdef VERTEX_UVS_B
+    @location(2) uv_b: vec2<f32>,
+#endif
+
 #ifdef NORMAL_PREPASS_OR_DEFERRED_PREPASS
-    @location(2) normal: vec3<f32>,
+    @location(3) normal: vec3<f32>,
 #ifdef VERTEX_TANGENTS
-    @location(3) tangent: vec4<f32>,
+    @location(4) tangent: vec4<f32>,
 #endif
 #endif // NORMAL_PREPASS_OR_DEFERRED_PREPASS
 
 #ifdef SKINNED
-    @location(4) joint_indices: vec4<u32>,
-    @location(5) joint_weights: vec4<f32>,
+    @location(5) joint_indices: vec4<u32>,
+    @location(6) joint_weights: vec4<f32>,
 #endif
 
 #ifdef VERTEX_COLORS
-    @location(6) color: vec4<f32>,
+    @location(7) color: vec4<f32>,
 #endif
+
 #ifdef CORN_INSTANCED
     @location(8) offset_scale: vec4<f32>,
     @location(9) rotation: vec2<f32>,
     @location(10) id: vec2<u32>,
 #endif
+
 #ifdef MORPH_TARGETS
     @builtin(vertex_index) index: u32,
 #endif // MORPH_TARGETS
@@ -120,6 +126,10 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     out.uv = vertex.uv;
 #endif // VERTEX_UVS
 
+#ifdef VERTEX_UVS_B
+    out.uv_b = vertex.uv_b;
+#endif // VERTEX_UVS_B
+
 #ifdef NORMAL_PREPASS_OR_DEFERRED_PREPASS
 #ifdef SKINNED
     out.world_normal = skinning::skin_normals(model, vertex.normal);
@@ -170,12 +180,6 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
     // See https://github.com/gfx-rs/naga/issues/2416
     out.instance_index = get_instance_index(0u);
-#endif
-#ifdef BASE_INSTANCE_WORKAROUND
-    // Hack: this ensures the push constant is always used, which works around this issue:
-    // https://github.com/bevyengine/bevy/issues/10509
-    // This can be removed when wgpu 0.19 is released
-    out.position.x += min(f32(get_instance_index(0u)), 0.0);
 #endif
 
     return out;

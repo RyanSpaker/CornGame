@@ -1,5 +1,5 @@
 (
-    meta_format_version: "1.6",
+    meta_format_version: "1.9",
     asset: Process(
         processor: "bevy_asset::processor::process::LoadTransformAndSave<bevy_gltf::loader::GltfLoader, corn_game::ecs::corn::asset::processing::CornAssetTransformer, corn_game::ecs::corn::asset::processing::CornAssetSaver>",
         settings: (

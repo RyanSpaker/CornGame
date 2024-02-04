@@ -43,6 +43,7 @@ impl MaterialExtension for CornMaterialExtension{
         // TODO: The push constant could already be added by this point, in my testing it wasn't, but it could change dependening on context
         // I should probably have some sort of test to only add it if there isn't already a push constant added
         descriptor.push_constant_ranges.push(PushConstantRange{stages: ShaderStages::VERTEX, range: 0..4});
+        
         Ok(())
     }
 }
@@ -81,6 +82,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
             0,
             &(batch_range.start as i32).to_le_bytes(),
         );
+
         match &gpu_mesh.buffer_info {
             GpuBufferInfo::Indexed {
                 buffer,
@@ -107,22 +109,23 @@ pub fn corn_mesh_loaded(corn: Res<CornModel>) -> bool{
 /// Our extended material and specialized material plugin override the render logic to instance the stalk into our corn fields
 pub fn spawn_corn_anchor(
     mut commands: Commands,
-    std_materials: Res<Assets<StandardMaterial>>,
+    mut std_materials: ResMut<Assets<StandardMaterial>>,
     mut materials: ResMut<Assets<CornMaterial>>,
     corn: Res<CornModel>,
-    corn_asset: Res<Assets<CornAsset>>
+    corn_asset: Res<Assets<CornAsset>>,
+    mut meshes: ResMut<Assets<Mesh>>
 ){
     let corn_meshes = corn_asset.get(corn.asset.clone()).unwrap();
     if let Some(mat) = std_materials.get(corn_meshes.materials.get(&"CornLeaves".to_string()).unwrap().clone()){
         commands.spawn((MaterialMeshBundle::<CornMaterial>{
             mesh: corn_meshes.master_mesh.clone(),
-            //material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension::default()}),
-            material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension{}}),
-            ..Default::default()
+            material: materials.add(CornMaterial{base: mat.clone(), extension: CornMaterialExtension::default()}),
+            //material: std_materials.add(StandardMaterial::from(Color::RED)),
+            ..default()
         }, NoFrustumCulling, NoAutomaticBatching{}));
     }    
 }
-/// ### Adds the vote scan compact prepass functionality to the game
+/// ### Adds corn rendering functionality to the game
 pub struct CornRenderPlugin;
 impl Plugin for CornRenderPlugin{
     fn build(&self, app: &mut App) {

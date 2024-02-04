@@ -1,15 +1,10 @@
 use std::sync::{Arc, Mutex};
 use bevy::{
-    prelude::*, 
-    render::{
-        render_resource::*, 
-        renderer::{RenderDevice, RenderContext, RenderQueue}, 
-        RenderApp, 
-        RenderSet, 
-        Render, 
-        render_graph::{Node, RenderGraphContext, RenderGraph}, view::ExtractedView, Extract
-    }, pbr::draw_3d_graph::node::SHADOW_PASS, core_pipeline::core_3d, utils::hashbrown::HashMap
+    core_pipeline::core_3d, prelude::*, render::{
+        render_graph::{Node, RenderGraph, RenderGraphContext, RenderLabel}, render_resource::*, renderer::{RenderContext, RenderDevice, RenderQueue}, view::ExtractedView, Extract, Render, RenderApp, RenderSet
+    }, utils::hashbrown::HashMap
 };
+use bevy::pbr::graph::LabelsPbr;
 use bytemuck::{Pod, Zeroable};
 use wgpu::{Maintain, QuerySet, QuerySetDescriptor};
 use crate::ecs::{corn::{asset::CornModel, buffer::{CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}}, main_camera::MainCamera};
@@ -357,10 +352,13 @@ pub fn readback_buffer<T: std::fmt::Debug + Pod>(message: String, buffer: Buffer
     buffer.destroy();
 }
 
+#[derive(Debug, Clone, Default, Hash, PartialEq, Eq, RenderLabel)]
+pub struct CornBufferPrepass;
+
 /// ### Added to the rendergraph as an asynchronous step
 /// - run function is called by the render phase at some point
 /// - runs all vote-scan-compact compute passes
-pub struct CornBufferPrepassNode{}
+pub struct CornBufferPrepassNode;
 impl Node for CornBufferPrepassNode{
     fn run(
         &self,
@@ -451,7 +449,6 @@ impl Node for CornBufferPrepassNode{
         return Ok(());
     }
 }
-
 /// Pipeline for the Vote-Scan-Compact compute pass 
 #[derive(Resource)]
 pub struct CornBufferPrePassPipeline{
@@ -608,9 +605,9 @@ impl Plugin for CornPrepassPlugin{
         let mut binding = app.get_sub_app_mut(RenderApp).unwrap()
             .world.get_resource_mut::<RenderGraph>().unwrap();
         let graph = binding
-            .get_sub_graph_mut(core_3d::graph::NAME).unwrap();
-        graph.add_node("vote_scan_compact", CornBufferPrepassNode{});
-        graph.add_node_edge("vote_scan_compact", SHADOW_PASS);
+            .get_sub_graph_mut(core_3d::graph::SubGraph3d).unwrap();
+        graph.add_node(CornBufferPrepass, CornBufferPrepassNode);
+        graph.add_node_edge(CornBufferPrepass, LabelsPbr::ShadowPass);
     }
     fn finish(&self, app: &mut App) {
         app.sub_app_mut(RenderApp).init_resource::<CornBufferPrePassPipeline>();

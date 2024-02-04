@@ -1,20 +1,27 @@
-use std::marker::PhantomData;
-use std::hash::Hash;
-use bevy::core_pipeline::core_3d::{Transmissive3d, Transparent3d, Opaque3d, AlphaMask3d, ScreenSpaceTransmissionQuality};
-use bevy::core_pipeline::deferred::{Opaque3dDeferred, AlphaMask3dDeferred};
-use bevy::core_pipeline::prepass::{NormalPrepass, DepthPrepass, MotionVectorPrepass, DeferredPrepass, Opaque3dPrepass, AlphaMask3dPrepass};
-use bevy::core_pipeline::tonemapping::{Tonemapping, DebandDither};
-use bevy::ecs::system::ReadOnlySystemParam;
-use bevy::pbr::environment_map::RenderViewEnvironmentMaps;
-use bevy::prelude::*;
-use bevy::render::camera::TemporalJitter;
-use bevy::render::view::{VisibleEntities, ExtractedView};
-use bevy::render::{RenderApp, Render, RenderSet};
-use bevy::render::extract_instances::ExtractInstancesPlugin;
-use bevy::render::render_asset::{RenderAssets, prepare_assets};
-use bevy::render::render_phase::{DrawFunctions, AddRenderCommand, SetItemPipeline, RenderCommand, RenderPhase};
-use bevy::render::render_resource::{SpecializedMeshPipelines, PipelineCache, AsBindGroup};
-use bevy::pbr::*;
+use std::{marker::PhantomData, hash::Hash};
+use bevy::{
+    core_pipeline::{
+        core_3d::{Transmissive3d, Transparent3d, Opaque3d, AlphaMask3d, ScreenSpaceTransmissionQuality, Camera3d},
+        deferred::{Opaque3dDeferred, AlphaMask3dDeferred},
+        prepass::{NormalPrepass, DepthPrepass, MotionVectorPrepass, DeferredPrepass, Opaque3dPrepass, AlphaMask3dPrepass},
+        tonemapping::{Tonemapping, DebandDither}
+    },
+    ecs::{system::ReadOnlySystemParam, schedule::IntoSystemConfigs},
+    render::{
+        RenderApp, Render, RenderSet, ExtractSchedule,
+        camera::{TemporalJitter, Projection},
+        view::{VisibleEntities, ExtractedView, Msaa},
+        mesh::Mesh, texture::Image, extract_instances::ExtractInstancesPlugin,
+        render_asset::{RenderAssets, prepare_assets},
+        render_phase::{DrawFunctions, AddRenderCommand, SetItemPipeline, RenderCommand, RenderPhase},
+        render_resource::{SpecializedMeshPipelines, PipelineCache, AsBindGroup}
+    },
+    pbr::{environment_map::RenderViewEnvironmentMaps, *},
+    asset::{Asset, AssetApp, AssetId},
+    reflect::Reflect,
+    utils::tracing::error,
+    prelude::*
+};
 
 pub type CustomStandardMaterial = ExtendedMaterial<StandardMaterial, EmptyExtension>;
 
@@ -34,32 +41,32 @@ impl MaterialExtension for EmptyExtension{
 pub type DrawPrepass<M> = (
     SetItemPipeline,
     SetPrepassViewBindGroup<0>,
-    SetMaterialBindGroup<M, 1>,
-    SetMeshBindGroup<2>,
+    SetMeshBindGroup<1>,
+    SetMaterialBindGroup<M, 2>,
     DrawMesh,
 );
 
 pub type DrawMaterial<M> = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
-    SetMaterialBindGroup<M, 1>,
-    SetMeshBindGroup<2>,
+    SetMeshBindGroup<1>,
+    SetMaterialBindGroup<M, 2>,
     DrawMesh,
 );
 
 pub type SpecializedDrawPrepass<M, F> = (
     SetItemPipeline,
     SetPrepassViewBindGroup<0>,
-    SetMaterialBindGroup<M, 1>,
-    SetMeshBindGroup<2>,
+    SetMeshBindGroup<1>,
+    SetMaterialBindGroup<M, 2>,
     F,
 );
 
 pub type SpecializedDrawMaterial<M, F> = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
-    SetMaterialBindGroup<M, 1>,
-    SetMeshBindGroup<2>,
+    SetMeshBindGroup<1>,
+    SetMaterialBindGroup<M, 2>,
     F,
 );
 
@@ -122,7 +129,8 @@ where
                             .after(prepare_materials::<M>),
                         queue_material_meshes::<M, R>
                             .in_set(RenderSet::QueueMeshes)
-                            .after(prepare_materials::<M>),
+                            .after(prepare_materials::<M>)
+                            .ambiguous_with(queue_shadows::<M, P>)
                     ),
                 );
         }
@@ -131,7 +139,7 @@ where
         app.add_plugins(PrepassPipelinePlugin::<M>::default());
 
         if self.prepass_enabled {
-            app.add_plugins(SpecializedPrepassPlugin::<M, P>::default());
+            app.add_plugins(SpecializedPrepassPlugin::<M, P, R>::default());
         }
     }
 
@@ -410,6 +418,11 @@ pub fn queue_material_meshes<M: Material, R>(
             if mesh.morph_targets.is_some() {
                 mesh_key |= MeshPipelineKey::MORPH_TARGETS;
             }
+
+            if material.properties.reads_view_transmission_texture {
+                mesh_key |= MeshPipelineKey::READS_VIEW_TRANSMISSION_TEXTURE;
+            }
+
             mesh_key |= alpha_mode_pipeline_key(material.properties.alpha_mode);
 
             let pipeline_id = pipelines.specialize(
@@ -495,16 +508,17 @@ pub fn queue_material_meshes<M: Material, R>(
     }
 }
 
-pub struct SpecializedPrepassPlugin<M: Material, P>(PhantomData<(M, P)>);
+pub struct SpecializedPrepassPlugin<M: Material, P, R>(PhantomData<(M, P, R)>);
 
-impl<M: Material, P> Default for SpecializedPrepassPlugin<M, P> {
+impl<M: Material, P, R> Default for SpecializedPrepassPlugin<M, P, R> {
     fn default() -> Self {
         Self(Default::default())
     }
 }
 
-impl<M: Material, P> Plugin for SpecializedPrepassPlugin<M, P>
+impl<M: Material, P, R> Plugin for SpecializedPrepassPlugin<M, P, R>
 where
+    R: Send + Sync +  'static,
     P: Send + Sync + 'static + 
         RenderCommand<Opaque3dPrepass> + RenderCommand<Opaque3dDeferred> + 
         RenderCommand<AlphaMask3dPrepass> + RenderCommand<AlphaMask3dDeferred>,
@@ -529,7 +543,8 @@ where
                 Render,
                 queue_prepass_material_meshes::<M, P>
                     .in_set(RenderSet::QueueMeshes)
-                    .after(prepare_materials::<M>),
+                    .after(prepare_materials::<M>)
+                    .ambiguous_with(queue_material_meshes::<M, R>)
             );
     }
 }
