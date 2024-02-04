@@ -18,12 +18,24 @@ pub struct PerCornData{
     /// whether or not the corn piece should be rendered
     enabled: u32
 }
-/// A value representing the total number of bytes per corn stalk in the gpu buffer. equal to the size of PerCornData
+/// A value representing the total number of bytes per corn stalk in the gpu buffer. equal to the size of [`PerCornData`]
 pub const CORN_DATA_SIZE: u64 = 32;
 
-/// This type represents a range of positions on the instance buffer. uses a set of integers to do so
+/// This type represents a range of positions on the instance buffer. uses a [`IntegerSet`] of u64 to do so
 pub type BufferRange = IntegerSet<u64>;
 impl BufferRange{
+    /// This function calculates how much the domain would need to expand rightward in order to have a contiguos range of `length`.
+    /// 
+    /// This function is used to calculate how much a buffer would need to expand to fit a contigous range of `length`, assuming 
+    /// that this Range represents the buffers free space, and domain_end is the length of the buffer.
+    /// 
+    /// If this range already has a contiguous range of `length`, return 0, as no expansion is necessary.
+    /// 
+    /// If this range does not have a contigous range of `length`, and doesn't contain domain_end-1 (the last element in the domain). 
+    /// The function returns `length` as the domain needs to expand by length, adding the values (domain_end..domain_end + `length`) as the contigus range.
+    /// 
+    /// Finally, if the range does not have a contigous range of `length`, but does contain a range containing domain_end, then the expansion is domain_end - length_of_range, 
+    /// as the expanded space would concatenate to the mentioned range, and thus less expansion is necessary.
     pub fn calculate_continuos_expansion_requirment(&self, domain_end: u64, length: u64)->u64{
         if self.get_continuos(length.to_owned()).is_some() {return 0;}
         if self.end().unwrap_or(0) == domain_end{

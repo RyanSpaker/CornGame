@@ -11,7 +11,7 @@ use std::time::Duration;
 use bevy::{prelude::*, app::AppExit};
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
-use crate::{assets::CornAssetPlugin, ecs::CustomComponentRenderingPlugin};
+use crate::ecs::CornGameECSPlugin;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum CornGameState{
@@ -43,8 +43,7 @@ impl Plugin for CornPlugin{
                     CornGameState::Gameplay,
                     CornGameState::Exit
                 ),
-                CornAssetPlugin{},
-                CustomComponentRenderingPlugin{}
+                CornGameECSPlugin{}
             ));
     }
 }

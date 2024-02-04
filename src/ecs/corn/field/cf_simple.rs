@@ -194,7 +194,7 @@ impl IntoOperationResources for SimpleHexagonalCornField{
 }
 impl IntoCornPipeline for SimpleHexagonalCornField{
     fn init_shader() -> String {
-        "shaders/corn/simple_init.wgsl".to_string()
+        "shaders/corn/initialization/simple_init.wgsl".to_string()
     }
     fn init_entry_point() -> String {
         "simple_init".to_string()
@@ -347,7 +347,7 @@ impl IntoOperationResources for SimpleRectangularCornField{
 }
 impl IntoCornPipeline for SimpleRectangularCornField{
     fn init_shader() -> String {
-        "shaders/corn/simple_init.wgsl".to_string()
+        "shaders/corn/initialization/simple_init.wgsl".to_string()
     }
     fn init_entry_point() -> String {
         "simple_rect_init".to_string()

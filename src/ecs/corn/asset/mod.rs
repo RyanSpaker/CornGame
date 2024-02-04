@@ -10,6 +10,7 @@ use bevy::{
 use crate::util::asset_io::{read_each, read_u64, write_byte, write_each, write_u64, read_byte};
 use self::processing::*;
 
+/// Adds functionality to the app to Process and Load the Corn Model into the app
 pub struct CornAssetPlugin<T> where T: States + Copy{
     active_state: T
 }
@@ -36,11 +37,12 @@ impl<T> Plugin for CornAssetPlugin<T> where T: States + Copy{
                 .add_systems(ExtractSchedule, CornModel::clone_corn_resource);
     }
 }
-
+/// Loads the corn model from the assets folder. Runs when the app starts
 pub fn spawn_corn_asset(mut corn_res: ResMut<CornModel>, assets: Res<AssetServer>){
     corn_res.asset = assets.load("models/Corn.gltf");
 }
 
+/// Resource which holds some commonly accessed data about the corn Model, as well as a handle to the [`CornAsset`]
 #[derive(Default, Debug, Clone, Resource, Reflect)]
 pub struct CornModel{
     pub lod_count: usize,
@@ -62,6 +64,7 @@ impl CornModel{
     }
 }
 
+/// Asset which holds handles and info about the Corn Model
 #[derive(Default, Debug, Reflect, Asset, Clone)]
 pub struct CornAsset{
     pub master_mesh: Handle<Mesh>,
@@ -86,12 +89,15 @@ impl RenderAsset for CornAsset{
         Ok(self)
     }
 }
-
+/// Holds info about a specific corn lod
 #[derive(Default, Debug, Clone, Reflect)]
 pub struct CornMeshLod{
+    /// Index of the first vertex for this lod in the master corn mesh
     pub start_vertex: usize,
+    /// Total number of vertices in this lod
     pub total_vertices: usize,
-    /// Vertex Count, Material Index
+    /// For each sub_mesh, (Vertex Count, Material Index)
+    /// Unfortunalte material index is useless atm because materials are stored in a hashmap not a vector
     pub sub_mesh_data: Vec<(usize, usize)>,
 }
 impl CornMeshLod{

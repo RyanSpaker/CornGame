@@ -1,17 +1,23 @@
 use std::sync::{Arc, Mutex};
 use bevy::{
-    core_pipeline::core_3d, prelude::*, render::{
-        render_graph::{Node, RenderGraph, RenderGraphContext, RenderLabel}, render_resource::*, renderer::{RenderContext, RenderDevice, RenderQueue}, view::ExtractedView, Extract, Render, RenderApp, RenderSet
+    core_pipeline::core_3d, prelude::*,
+    render::{
+        render_graph::{Node, RenderGraph, RenderGraphContext, RenderLabel}, 
+        render_resource::*, 
+        renderer::{RenderContext, RenderDevice, RenderQueue}, 
+        view::ExtractedView, Extract, Render, RenderApp, RenderSet,
     }, utils::hashbrown::HashMap, pbr::graph::LabelsPbr
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::{Maintain, QuerySet, QuerySetDescriptor};
 use crate::ecs::{corn::{asset::CornModel, buffer::{CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}}, main_camera::MainCamera};
 
+/// whether to readback the buffers to the cpu for debugging purposes
 const READBACK_ENABLED: bool = false;
+/// whether to time the render steps for profiling info
 const TIMING_ENABLED: bool = false;
 
-/// Respresents frustum structure in compute shader sans lod distance cutoffs
+/// Respresents frustum structure in compute shader ignoring lod distance cutoffs
 #[derive(Clone, Copy, Pod, Zeroable, Debug, Default)]
 #[repr(C)]
 pub struct FrustumValues {
@@ -32,10 +38,11 @@ impl From<&ExtractedView> for FrustumValues{
 #[reflect(Resource)]
 pub struct LodCutoffs(pub Vec<f32>);
 impl LodCutoffs{
-    //Makes sure lodcutoffs has the right number of lods
+    //Makes sure lodcutoffs has the right number of lods, and use a predefined set of lods for up to 7 groupings
     pub fn update_lod_cutoffs(mut lods: ResMut<LodCutoffs>, corn_mesh: Res<CornModel>){
         if corn_mesh.loaded && corn_mesh.lod_count as usize != lods.0.len(){
-            lods.0.resize(corn_mesh.lod_count as usize, 0.0);
+            lods.0 = vec![5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 5000.];
+            lods.0.resize(corn_mesh.lod_count, 500.0);
         }
     }
     /// Runs during extract to copy lod cutoff data to the renderapp
@@ -351,8 +358,9 @@ pub fn readback_buffer<T: std::fmt::Debug + Pod>(message: String, buffer: Buffer
     buffer.destroy();
 }
 
+/// Label used for the CornBufferPrepassStage
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq, RenderLabel)]
-pub struct CornBufferPrepass;
+pub struct CornBufferPrepassStage;
 
 /// ### Added to the rendergraph as an asynchronous step
 /// - run function is called by the render phase at some point
@@ -575,7 +583,7 @@ impl FromWorld for CornBufferPrePassPipeline {
         ]);
         let shader = world
             .resource::<AssetServer>()
-            .load("shaders/corn/vote_scan_compact.wgsl");
+            .load("shaders/corn/render/vote_scan_compact.wgsl");
         return Self{ids: HashMap::default(), bind_group_layout: layout, shader};       
     }
 }
@@ -605,8 +613,8 @@ impl Plugin for CornPrepassPlugin{
             .world.get_resource_mut::<RenderGraph>().unwrap();
         let graph = binding
             .get_sub_graph_mut(core_3d::graph::SubGraph3d).unwrap();
-        graph.add_node(CornBufferPrepass, CornBufferPrepassNode);
-        graph.add_node_edge(CornBufferPrepass, LabelsPbr::ShadowPass);
+        graph.add_node(CornBufferPrepassStage, CornBufferPrepassNode);
+        graph.add_node_edge(CornBufferPrepassStage, LabelsPbr::ShadowPass);
     }
     fn finish(&self, app: &mut App) {
         app.sub_app_mut(RenderApp).init_resource::<CornBufferPrePassPipeline>();

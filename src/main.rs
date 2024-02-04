@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use corn_game::prelude::*;
+use corn_game::core::CornPlugin;
 /*
 
 Use grave key to lock mouse and enable free cam movement

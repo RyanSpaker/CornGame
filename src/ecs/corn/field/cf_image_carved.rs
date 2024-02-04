@@ -218,7 +218,7 @@ impl IntoOperationResources for ImageCarvedHexagonalCornField{
 }
 impl IntoCornPipeline for ImageCarvedHexagonalCornField{
     fn init_shader() -> String {
-        "shaders/corn/image_init.wgsl".to_string()
+        "shaders/corn/initialization/image_init.wgsl".to_string()
     }
     fn init_entry_point() -> String {
         "simple_image_hex_init".to_string()

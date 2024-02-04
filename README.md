@@ -25,3 +25,6 @@ Corn Maze game written in rust with the bevy engine
 - The corn rendering pipeline is currently ignoring timestap writes, but these will probably be extremely useful to get working for performance information so figuring those out is necessary
 - The current asset system is asinine when it comes to GLTF, but the current branch of bevy im using at least makes my corn asset loader possible. In the future it would be smart to try and get bevy to fix some of the missing functionality so that it isnt so much of a pain. 
 - The current game structure is really disorganized, and needs to be cleaned up
+
+
+# Code is going to be broken for a little bit until bevy 13 is released. bevy inspector egui needs to be updated, and rust analyzer is having a stroke for some reason on the current bevy branch.

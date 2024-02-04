@@ -10,6 +10,7 @@ use wgpu::VertexFormat;
 use super::{CornMeshLod, CornAsset};
 use crate::util::asset_io::{*, mesh_io::{save_mesh, read_mesh}, image_io::{save_image, read_image}, standard_material_io::{read_standard_material, save_standard_material}};
 
+/// Asset which holds the Corn model data to be saved to disk after being extracted from a [`Gltf`]
 #[derive(Debug, Clone, TypePath, Asset)]
 pub struct RawCornAsset{
     master_mesh: Mesh,
@@ -18,7 +19,7 @@ pub struct RawCornAsset{
     textures: Vec<(Image, String)>
 }
 
-
+/// Takes a [`Gltf`] Asset, extracts the corn model, and turns it into a [`RawCornAsset`] to be saved
 pub struct CornAssetTransformer;
 impl CornAssetTransformer{
     /// Given a vector of lods, each a vector of Mesh Label, material index, Combine the meshes into a single master mesh, and track vertex information, returning both.
@@ -230,6 +231,7 @@ impl AssetTransformer for CornAssetTransformer{
     }
 }
 
+/// Saves a [`RawCornAsset`] to disk
 pub struct CornAssetSaver;
 impl AssetSaver for CornAssetSaver{
     type Asset = RawCornAsset;
@@ -265,6 +267,7 @@ impl AssetSaver for CornAssetSaver{
     }
 }
 
+/// Reads a [`RawCornAsset`], and turns it into a [`CornAsset`]
 pub struct CornAssetLoader;
 impl AssetLoader for CornAssetLoader{
     type Asset = CornAsset;

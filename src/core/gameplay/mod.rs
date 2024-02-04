@@ -1,10 +1,6 @@
 pub mod framerate;
 
 use bevy::prelude::*;
-//use bevy::{core::FrameCount, render::view::NoFrustumCulling};
-//use rand::{thread_rng, Rng};
-//use crate::ecs::corn_field::corn_fields::simple_corn_field::{SimpleHexagonalCornField, SimpleRectangularCornField};
-use crate::flycam::{cam_look_plugin::CamLookPlugin, cam_move_plugin::CamMovePlugin};
 
 #[derive(Resource, Default)]
 pub struct GamePlayExitState<T>(T) where T: States + Copy;
@@ -22,18 +18,16 @@ impl<T> Plugin for CornGamePlayPlugin<T> where T: States + Copy{
     fn build(&self, app: &mut App) {
         app
             .insert_resource(GamePlayExitState(self.exit_state))
-            .init_resource::<CornDespawn>()
-            .add_plugins((
-                CamLookPlugin::<T>::new(self.active_state),
-                CamMovePlugin::<T>::new(self.active_state),
+            //.init_resource::<CornDespawn>()
+            .add_plugins(
                 framerate::PrintFPSPlugin
-            ))
+            )
             .add_systems(Update, (
                 exit_state_on_key::<T>,
                 spawn_corn
             ).run_if(in_state(self.active_state)));
-        let corn_mat = app.world.resource_mut::<Assets<StandardMaterial>>().add(StandardMaterial::default());
-        app.insert_resource(CornMaterials(corn_mat));
+        //let corn_mat = app.world.resource_mut::<Assets<StandardMaterial>>().add(StandardMaterial::default());
+        //app.insert_resource(CornMaterials(corn_mat));
     }
 }
 
@@ -47,16 +41,16 @@ fn exit_state_on_key<T: States + Copy>(
     }
 }
 
-#[derive(Resource, Default)]
-pub struct CornDespawn(Vec<Entity>);
+//#[derive(Resource, Default)]
+//pub struct CornDespawn(Vec<Entity>);
 
-#[derive(Resource, Default)]
-pub struct CornMaterials(Handle<StandardMaterial>);
-impl From<&Handle<StandardMaterial>> for CornMaterials{
-    fn from(value: &Handle<StandardMaterial>) -> Self {
-        Self(value.to_owned())
-    }
-}
+//#[derive(Resource, Default)]
+//pub struct CornMaterials(Handle<StandardMaterial>);
+//impl From<&Handle<StandardMaterial>> for CornMaterials{
+//    fn from(value: &Handle<StandardMaterial>) -> Self {
+//        Self(value.to_owned())
+//    }
+//}
 
 fn spawn_corn(
     //mut commands: Commands, frames: Res<FrameCount>, 

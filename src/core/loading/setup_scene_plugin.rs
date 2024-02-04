@@ -2,10 +2,10 @@ use std::f32::consts::PI;
 use bevy::prelude::*;
 use bevy::render::extract_component::ExtractComponentPlugin;
 use crate::core::loading::LoadingTaskCount;
+use crate::ecs::corn::asset::CornModel;
 use crate::ecs::corn::field::cf_simple::SimpleRectangularCornField;
 use crate::ecs::main_camera::MainCamera;
-use crate::flycam::FlyCam;
-use crate::prelude::corn_model::CornLoadState;
+use crate::ecs::flycam::FlyCam;
 use crate::util::DebugTag;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
@@ -32,12 +32,14 @@ impl<T> Plugin for SetupScenePlugin<T> where T: States + Copy{
             .add_systems(OnEnter(self.active_state), add_setup_scene_task)
             .add_systems(Update, (
                 setup_scene
-                    .run_if(in_state(CornLoadState::Loaded).and_then(run_once())),
+                    .run_if(corn_loaded.and_then(run_once())),
                 remove_setup_scene_task
                     .run_if(in_state(SetupState::Finished).and_then(run_once()))
             ).run_if(in_state(self.active_state)));
     }
 }
+
+fn corn_loaded(corn: Res<CornModel>) -> bool {corn.loaded}
 
 fn add_setup_scene_task(
     mut task_count: ResMut<LoadingTaskCount>,

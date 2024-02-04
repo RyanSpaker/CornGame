@@ -6,7 +6,6 @@
 pub mod setup_scene_plugin;
 
 use bevy::prelude::*;
-use crate::assets::corn_model::LoadCornPlugin;
 use setup_scene_plugin::SetupScenePlugin;
 
 #[derive(Resource, Default)]
@@ -32,10 +31,9 @@ impl<T> Plugin for LoadGamePlugin<T> where T: States + Copy{
             .add_systems(
                 Update, 
                 (schedule_exit_loading_state::<T>).run_if(in_state(self.active_state))
-            ).add_plugins((
-                LoadCornPlugin::<T>::new(self.active_state),
+            ).add_plugins(
                 SetupScenePlugin::<T>::new(self.active_state)
-            ));
+            );
     }
 }
 

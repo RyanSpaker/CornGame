@@ -467,7 +467,7 @@ impl FromWorld for CornOperationPipelines{
                 }
             ]
         );
-        let defrag_shader: Handle<Shader> = asset_server.load("shaders/corn/defrag.wgsl");
+        let defrag_shader: Handle<Shader> = asset_server.load("shaders/corn/buffer_operation/defrag.wgsl");
         let defrag_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
             label: Some("Defragment Corn Pipeline".into()),
             layout: vec![defrag_bind_group.clone()],
@@ -500,7 +500,7 @@ impl FromWorld for CornOperationPipelines{
                 }
             ]
         );
-        let stale_shader: Handle<Shader> = asset_server.load("shaders/corn/flag_stale.wgsl");
+        let stale_shader: Handle<Shader> = asset_server.load("shaders/corn/buffer_operation/flag_stale.wgsl");
         let stale_pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor{
             label: Some("Flag Stale Corn Pipeline".into()),
             layout: vec![stale_bind_group.clone()],
