@@ -1,0 +1,2 @@
+# Corn Todo:
+- Buffer is currently resource based, which probably can't change, but we should look into maybe making it a renderasset. It can't be an entity since entities are deleted from the RenderApp every frame, but a RenderAsset may work. That being said, I dont think there is much of a benefit.

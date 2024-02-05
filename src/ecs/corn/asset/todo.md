@@ -1,0 +1,4 @@
+## Corn Asset Processing TODO
+
+- `mesh_io.rs` currently ignores morph targets, which is fine for now, since the corn model doesnt have any rigging, but in the future this functionality should be added. It isn't possible right now since the morph target image of mesh isnt accessible in any way, but if that changes the extra code would be really simple. To be fair, idek if we want the true rigged corn model to be the same as the lod-combined mesh, as there will be so few of these "ultra-high lod" corn instances that it is probably better to handle them individually.
+- In order to allow for more complex Asset Preprocessing tasks, we need to get bevy to add support for preprocessing tasks to use the GPU, essentially make it so that `AssetTransformer` can get access to spawn async RenderStages.
