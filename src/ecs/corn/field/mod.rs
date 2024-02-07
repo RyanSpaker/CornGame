@@ -14,6 +14,11 @@ use state::{CornAssetState, MasterCornFieldStatePlugin};
 use self::state::CornFieldStatePlugin;
 use super::data_pipeline::{operation_executor::{IntoCornPipeline, IntoOperationResources}, operation_manager::IntoBufferOperation, CornFieldPipelinePlugin};
 
+pub mod prelude{
+    pub use super::cf_simple::{SimpleHexagonalCornField, SimpleRectangularCornField};
+    pub use super::cf_image_carved::ImageCarvedHexagonalCornField;
+}
+
 
 /// This trait represents all implementation specific corn field settings
 /// Impl this trait to create a type of corn field

@@ -1,4 +1,5 @@
 pub mod processing;
+pub mod voxel_auto_lod;
 
 use bevy::{
     asset::processor::LoadTransformAndSave, 
@@ -11,17 +12,11 @@ use crate::util::asset_io::{read_each, read_u64, write_byte, write_each, write_u
 use self::processing::*;
 
 /// Adds functionality to the app to Process and Load the Corn Model into the app
-pub struct CornAssetPlugin<T> where T: States + Copy{
-    active_state: T
-}
-impl<T> CornAssetPlugin<T> where T: States + Copy{
-    pub fn new(active_state: T) -> Self {
-        Self {active_state}
-    }
-}
-impl<T> Plugin for CornAssetPlugin<T> where T: States + Copy{
+pub struct CornAssetPlugin;
+impl Plugin for CornAssetPlugin{
     fn build(&self, app: &mut App) {
         app
+            //.add_plugins(auto_lod::AutoLodPlugin)
             .register_asset_processor::<LoadTransformAndSave<GltfLoader, CornAssetTransformer, CornAssetSaver>>(LoadTransformAndSave::new(CornAssetTransformer, CornAssetSaver))
             .register_asset_loader::<CornAssetLoader>(CornAssetLoader)
             .init_asset::<CornAsset>()
@@ -30,7 +25,7 @@ impl<T> Plugin for CornAssetPlugin<T> where T: States + Copy{
             .register_type::<CornModel>()
             .register_type::<CornAsset>()
             .register_type::<CornMeshLod>()
-            .add_systems(OnEnter(self.active_state), spawn_corn_asset)
+            .add_systems(Startup, spawn_corn_asset)
             .add_systems(Update, CornModel::enable_asset.run_if(on_event::<AssetEvent<CornAsset>>()))
             .sub_app_mut(RenderApp)
                 .init_resource::<CornModel>()

@@ -120,6 +120,9 @@ where
     OrElse::new(condition, condition_b, name.into())
 }
 
+pub fn enable_flycam(mut next_state: ResMut<NextState<FlyCamState>>){
+    next_state.set(FlyCamState::Unfocused);
+}
 /// Reads in input data, sending an event if there are inputs to process
 fn read_flycam_button_inputs(
     keyboard_input: Res<ButtonInput<KeyCode>>,

@@ -1,9 +1,7 @@
 # TODO:
-1. Make main.rs simpler, moving default_plugins into the corn module. main.rs should be used to only add our corn game plugin, and any other "debug" plugins whihc wouldnt be included in the final app. This way the plugin itself would essentially be the entire game, and any development code can be added in main.rs to make the seperation clear.
-2. The Plugin structure right now is really weird and makes no sense. This is entirely due to my current "App" structure being bad (the code in `core`). Core should be remade to be better, and the CornPlugin should be moved into lib.rs. Core should be only app-structure related, gameplay/loading seperation, menus and levels, scene loading. Any other functionality, like player movement, corn fields, gameplay elements, should all be put into their folder in ecs. Core is app-structure, and ECS is app elements.
-3. World Inspector plugin needs to be re-added upon the release of bevy 13 (and world-inspector's update to 13).
-4. Corn Rendering Optimizations (there's so many options).
-5. Corn Rendering Improvements (Better Colors, Color Maps or different materials for each sub-mesh, Better Shadows, Make it night time, Flashlight).
-6. Create some sort of "debug mode" for the corn game which can set up entirely different rendering options, like full brightness isntead of night. In the future, having an easy way of switching to a debug view of the scene will be very important.
-7. Profiling Information: We need a huge amount of profiling data to make decisions about how to optimize the game.
-8. Gameplay elements: Better Sample Scene, Actual Character Controller, Main Menu (I really like phasmophobia's interactive main menu)
+- World Inspector plugin needs to be re-added upon the release of bevy 13 (and world-inspector's update to 13).
+- Corn Rendering Optimizations (there's so many options).
+- Corn Rendering Improvements (Better Colors, Color Maps or different materials for each sub-mesh, Better Shadows, Make it night time, Flashlight).
+- Create some sort of "debug mode" for the corn game which can set up entirely different rendering options, like full brightness isntead of night. In the future, having an easy way of switching to a debug view of the scene will be very important.
+- Profiling Information: We need a huge amount of profiling data to make decisions about how to optimize the game.
+- Gameplay elements: Better Sample Scene, Actual Character Controller, Main Menu (I really like phasmophobia's interactive main menu)

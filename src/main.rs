@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use corn_game::core::CornPlugin;
+use corn_game::CornGame;
 /*
 
 Use grave key to lock mouse and enable free cam movement
@@ -13,18 +13,6 @@ There is also a resource called FPS which you can open to view the current FPS o
 */
 fn main() {
     let mut app = App::new();
-    app.add_plugins((
-        DefaultPlugins.set(WindowPlugin{
-            primary_window: Some(Window { 
-                present_mode: bevy::window::PresentMode::AutoVsync,
-                ..default()
-            }),
-            ..default()
-        }).set(AssetPlugin{
-            mode: AssetMode::Processed,
-            ..Default::default()
-        }),
-        CornPlugin{}
-    ));
+    app.add_plugins(CornGame);
     app.run();
 }

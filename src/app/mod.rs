@@ -7,11 +7,9 @@ pub mod gameplay;
 pub mod loading;
 
 use std::time::Duration;
-
 use bevy::{prelude::*, app::AppExit};
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
-use crate::ecs::CornGameECSPlugin;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum CornGameState{
@@ -25,8 +23,8 @@ pub enum CornGameState{
 #[derive(Default, Resource)]
 pub struct LoadingTimer(Duration);
 
-pub struct CornPlugin{}
-impl Plugin for CornPlugin{
+pub struct CornAppPlugin;
+impl Plugin for CornAppPlugin{
     fn build(&self, app: &mut App) {
         app
             .init_state::<CornGameState>()
@@ -42,8 +40,7 @@ impl Plugin for CornPlugin{
                 CornGamePlayPlugin::<CornGameState>::new(
                     CornGameState::Gameplay,
                     CornGameState::Exit
-                ),
-                CornGameECSPlugin{}
+                )
             ));
     }
 }
