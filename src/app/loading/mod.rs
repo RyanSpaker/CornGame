@@ -5,7 +5,7 @@
 */
 use std::f32::consts::PI;
 use bevy::prelude::*;
-use crate::ecs::{corn::field::prelude::*, flycam::FlyCam, main_camera::MainCamera};
+use crate::ecs::{corn::field::prelude::*, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
 
 #[derive(Resource, Default)]
 pub struct LoadingTaskCount(pub usize);
@@ -31,7 +31,8 @@ impl<T> Plugin for LoadGamePlugin<T> where T: States + Copy{
                 Update, 
                 (
                     schedule_exit_loading_state::<T>,
-                    setup_scene.run_if(run_once())
+                    setup_scene.run_if(run_once()),
+                    spawn_fps_text.run_if(run_once())
                 ).run_if(in_state(self.active_state))
             );
     }
@@ -67,7 +68,7 @@ fn setup_scene(
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
         SimpleHexagonalCornField::new(
-            Vec3::ZERO, Vec2::ONE*50.0, 
+            Vec3::ZERO, Vec2::ONE*500.0, 
             0.75, Vec2::new(0.9, 1.1), 0.2,
         )
     ));

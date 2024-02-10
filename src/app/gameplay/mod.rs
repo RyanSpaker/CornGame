@@ -1,6 +1,6 @@
-use bevy::{core::FrameCount, prelude::*};
+use bevy::prelude::*;
 
-use crate::ecs::{flycam::{enable_flycam, FlyCamPlugin, FlyCamState}, framerate::FPS};
+use crate::ecs::flycam::{enable_flycam, FlyCamPlugin, FlyCamState};
 
 #[derive(Resource, Default)]
 pub struct GamePlayExitState<T>(T) where T: States + Copy;
@@ -22,8 +22,7 @@ impl<T> Plugin for CornGamePlayPlugin<T> where T: States + Copy{
             ).insert_resource(GamePlayExitState(self.exit_state))
             .add_systems(OnEnter(self.active_state), enable_flycam)
             .add_systems(Update, (
-                exit_state_on_key::<T>,
-                print_fps
+                exit_state_on_key::<T>
             ).run_if(in_state(self.active_state)));
     }
 }
@@ -38,10 +37,3 @@ fn exit_state_on_key<T: States + Copy>(
     }
 }
 
-fn print_fps(query: Query<&FPS>, frame_count: Res<FrameCount>){
-    if frame_count.0%20 == 0{
-        if let Ok(fps) = query.get_single(){
-            bevy::log::info!("FPS: {}", fps.fps);
-        }
-    }
-}

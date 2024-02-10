@@ -5,12 +5,12 @@ pub mod framerate;
 
 use bevy::prelude::*;
 use self::{
-    corn::CornFieldComponentPlugin, main_camera::MainCameraPlugin
+    corn::CornFieldComponentPlugin, main_camera::MainCameraPlugin, framerate::FrameRatePlugin
 };
 
 pub struct CornGameECSPlugin;
 impl Plugin for CornGameECSPlugin{
     fn build(&self, app: &mut App) {
-        app.add_plugins((CornFieldComponentPlugin, MainCameraPlugin, framerate::PrintFPSPlugin));
+        app.add_plugins((CornFieldComponentPlugin, MainCameraPlugin, FrameRatePlugin));
     }
 }
