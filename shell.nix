@@ -24,7 +24,8 @@ mkShell rec {
     vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
 		lutris
     xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr # To use the x11 feature
-
+		libxkbcommon
+		
 		git
     openssh
     openssl.dev
