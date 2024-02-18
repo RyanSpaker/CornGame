@@ -530,22 +530,28 @@ impl CornOperationPipelines{
         render_device: Res<RenderDevice>,
         asset_server: Res<AssetServer>
     ){
+        let typename = type_name::<T>().to_string();
+        if pipeline_res.pipelines.contains_key(&typename){
+            if let CachedPipelineState::Err(PipelineCacheError::ShaderNotLoaded(_)) = pipeline_cache.get_compute_pipeline_state(pipeline_res.pipelines.get(&typename).unwrap().clone()){
+                let descriptor = pipeline_cache.get_compute_pipeline_descriptor(pipeline_res.pipelines.get(&typename).unwrap().clone());
+                let id = pipeline_cache.queue_compute_pipeline(descriptor.clone());
+                pipeline_res.pipelines.insert(typename, id);
+            }
+            return;
+        }
         let desc = T::init_bind_group_descriptor();
         let bind_group_layout = render_device.create_bind_group_layout(desc.label, desc.entries);
-        let typename = type_name::<T>().to_string();
-        if pipeline_res.pipelines.get(&typename).is_none(){
-            let init_shader: Handle<Shader> = asset_server.load(T::init_shader());
-            let id = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-                label: Some(("Initialize Corn Pipeline: ".to_string() + &typename).into()),
-                layout: vec![bind_group_layout.clone()],
-                push_constant_ranges: T::init_push_constant_ranges(),
-                shader: init_shader,
-                shader_defs: T::init_shader_defs(),
-                entry_point: T::init_entry_point().into(),
-            });
-            pipeline_res.pipelines.insert(typename.clone(), id);
-            pipeline_res.bindgroups.insert(typename, bind_group_layout);
-        }
+        let init_shader: Handle<Shader> = asset_server.load(T::init_shader());
+        let id = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+            label: Some(("Initialize Corn Pipeline: ".to_string() + &typename).into()),
+            layout: vec![bind_group_layout.clone()],
+            push_constant_ranges: T::init_push_constant_ranges(),
+            shader: init_shader.clone(),
+            shader_defs: T::init_shader_defs(),
+            entry_point: T::init_entry_point().into(),
+        });
+        pipeline_res.pipelines.insert(typename.clone(), id);
+        pipeline_res.bindgroups.insert(typename, bind_group_layout);
     }
     /// Checks if a pipeline for the type T has been queued yet
     pub fn pipeline_queued<T: IntoCornPipeline>(&self) -> bool{
@@ -558,7 +564,7 @@ impl CornOperationPipelines{
     /// Returns the system configuration for this resource
     pub fn add_systems(app: &mut App) {
         // Pipeline creation is put in prepare assets, no real reason except to make sure they are created before our operation resources functions
-        app.configure_sets(Render, QueuePipelineCreationSet.in_set(RenderSet::PrepareAssets).run_if(run_once()));
+        app.configure_sets(Render, QueuePipelineCreationSet.in_set(RenderSet::PrepareAssets));
     }
     /// Gets a pipeline using a str, if it exists
     pub fn get(&self, id: &str) -> Option<CachedComputePipelineId>{
@@ -625,11 +631,14 @@ impl Node for CornBufferOperationsNode{
                 }
             }
         });
+        
         // turn ids into actual pipelines
         let mut needed_pipelines = HashMap::new();
         needed_pipeline_ids.iter().for_each(|(typename, id)| {
             let pipeline = pipeline_cache.get_compute_pipeline(*id);
-            if pipeline.is_none() {critical_error = true;}
+            if pipeline.is_none() {
+                critical_error = true;
+            }
             else {
                 needed_pipelines.insert(typename.clone(), pipeline.unwrap());
             }

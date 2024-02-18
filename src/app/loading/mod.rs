@@ -53,7 +53,7 @@ fn setup_scene(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
     mut task_count: ResMut<LoadingTaskCount>,
-    _asset_server: Res<AssetServer>
+    asset_server: Res<AssetServer>
 ){
     //Spawn Camera
     commands.spawn((Camera3dBundle {
@@ -68,9 +68,10 @@ fn setup_scene(
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
-        SimpleRectangularCornField::new(
-            Vec3::ZERO, Vec2::ONE*50.0, 
-            UVec2::new(100, 100), Vec2::new(0.9, 1.1), 0.2
+        ImageCarvedHexagonalCornField::new(
+            Vec3::ZERO, Vec2::ONE*75.0, 
+            0.75, Vec2::new(0.9, 1.1), 0.2, 
+            asset_server.load("textures/maze.png")
         )
     ));
     //box

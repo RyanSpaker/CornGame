@@ -57,7 +57,6 @@ impl MaterialExtension for CornMaterialExtension{
         // TODO: The push constant could already be added by this point, in my testing it wasn't, but it could change dependening on context
         // I should probably have some sort of test to only add it if there isn't already a push constant added
         descriptor.push_constant_ranges.push(PushConstantRange{stages: ShaderStages::VERTEX, range: 0..4});
-        
         Ok(())
     }
 }
@@ -80,7 +79,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
         let meshes = meshes.into_inner();
         let mesh_instances = mesh_instances.into_inner();
         let corn_instance_buffer = corn_instance_buffer.into_inner();
-
+        
         let Some(mesh_instance) = mesh_instances.get(&item.entity()) else {
             return RenderCommandResult::Failure;
         };
@@ -90,7 +89,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
         pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
         pass.set_vertex_buffer(1, corn_instance_buffer.get_sorted_buffer().unwrap().slice(..));
         let indirect_buffer = corn_instance_buffer.get_indirect_buffer().unwrap();
-
+        
         let batch_range = item.batch_range();
         pass.set_push_constants(
             ShaderStages::VERTEX,
