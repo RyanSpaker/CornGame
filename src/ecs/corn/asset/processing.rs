@@ -74,7 +74,7 @@ impl CornAssetTransformer{
         let indices = if indices.iter().all(|index| *index <= u16::MAX as u32) {
             Indices::U16(indices.into_iter().map(|i| i as u16).collect())
         } else {Indices::U32(indices)};
-        master_mesh.set_indices(Some(indices));
+        master_mesh.insert_indices(indices);
         master_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
         if normal.len() > 0{master_mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normal);}
         if uv.len() > 0{master_mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uv);}

@@ -31,8 +31,8 @@ where
         + PartialOrd
         + Ord
         + Default
-        + Sub<Output = Self>
-        + Add<Output = Self>
+        + Sub<Output = T>
+        + Add<Output = T>
         + SubAssign
         + AddAssign
         + SubOne,
@@ -281,8 +281,7 @@ where
         }
         let mut count: T = T::default();
         for i in 0..self.endpoints.len() / 2 {
-            count =
-                count + (self.endpoints[i * 2 + 1].to_owned() - self.endpoints[i * 2].to_owned());
+            count +=  self.endpoints[i * 2 + 1].to_owned()- self.endpoints[i * 2].to_owned();
         }
         count
     }

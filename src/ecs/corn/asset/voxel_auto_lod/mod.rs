@@ -387,7 +387,7 @@ async fn voxel_auto_lod(mesh: Mesh, indice_limit: usize, voxel_size: f32) -> Mes
     let vertices = VertexAttributeValues::from(vertices);
 
     let mut mesh = Mesh::new(wgpu::PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
-    mesh.set_indices(Some(indices));
+    mesh.insert_indices(indices);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
     mesh.duplicate_vertices();
     mesh.compute_flat_normals();

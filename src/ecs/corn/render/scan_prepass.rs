@@ -6,7 +6,7 @@ use bevy::{
         render_resource::*, 
         renderer::{RenderContext, RenderDevice, RenderQueue}, 
         view::ExtractedView, Extract, Render, RenderApp, RenderSet,
-    }, utils::hashbrown::HashMap, pbr::graph::LabelsPbr
+    }, utils::hashbrown::HashMap
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::{Maintain, QuerySet, QuerySetDescriptor};
@@ -43,6 +43,7 @@ impl LodCutoffs{
         if corn_mesh.loaded && corn_mesh.lod_count as usize != lods.0.len(){
             lods.0 = vec![5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 5000.];
             lods.0.resize(corn_mesh.lod_count, 500.0);
+            println!("Lod: {}", lods.0.last().unwrap());
         }
     }
     /// Runs during extract to copy lod cutoff data to the renderapp
@@ -612,9 +613,9 @@ impl Plugin for CornPrepassPlugin{
         let mut binding = app.get_sub_app_mut(RenderApp).unwrap()
             .world.get_resource_mut::<RenderGraph>().unwrap();
         let graph = binding
-            .get_sub_graph_mut(core_3d::graph::SubGraph3d).unwrap();
+            .get_sub_graph_mut(core_3d::graph::Core3d).unwrap();
         graph.add_node(CornBufferPrepassStage, CornBufferPrepassNode);
-        graph.add_node_edge(CornBufferPrepassStage, LabelsPbr::ShadowPass);
+        graph.add_node_edge(CornBufferPrepassStage, bevy::pbr::graph::NodePbr::ShadowPass);
     }
     fn finish(&self, app: &mut App) {
         app.sub_app_mut(RenderApp).init_resource::<CornBufferPrePassPipeline>();

@@ -152,7 +152,7 @@ fn capture_mouse(
     if let Ok(mut window) = window.get_single_mut(){
         match window.cursor.grab_mode {
             CursorGrabMode::None => {
-                window.cursor.grab_mode = CursorGrabMode::Confined;
+                window.cursor.grab_mode = CursorGrabMode::Locked;
                 window.cursor.visible = false;
                 next_state.set(FlyCamState::Focused);
             },

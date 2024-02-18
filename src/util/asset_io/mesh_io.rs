@@ -25,7 +25,9 @@ pub async fn read_mesh<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, byte_c
     let asset_usage = RenderAssetUsages::from_bits_truncate(read_byte(reader, byte_counter).await?);
 
     let mut mesh = Mesh::new(primitive_topology, asset_usage);
-    mesh.set_indices(read_indices(reader, byte_counter).await?);
+    if let Some(indices) = read_indices(reader, byte_counter).await?{
+        mesh.insert_indices(indices);
+    }
     
     for _ in read_each(reader, byte_counter).await?{
         let (attr, values) = read_attribute(reader, byte_counter).await?;

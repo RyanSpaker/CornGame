@@ -72,7 +72,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
     fn render<'w>(
         item: &P,
         _view: (),
-        _item_query: (),
+        _item_query: Option<()>,
         (meshes, mesh_instances, corn_instance_buffer): SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {

@@ -4,7 +4,7 @@
     it also includes the initial scene setup
 */
 use std::f32::consts::PI;
-use bevy::prelude::*;
+use bevy::{prelude::*, render::mesh::PlaneMeshBuilder};
 use crate::ecs::{corn::field::prelude::*, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
 
 #[derive(Resource, Default)]
@@ -52,7 +52,8 @@ fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
-    mut task_count: ResMut<LoadingTaskCount>
+    mut task_count: ResMut<LoadingTaskCount>,
+    _asset_server: Res<AssetServer>
 ){
     //Spawn Camera
     commands.spawn((Camera3dBundle {
@@ -67,28 +68,33 @@ fn setup_scene(
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
-        SimpleHexagonalCornField::new(
-            Vec3::ZERO, Vec2::ONE*500.0, 
-            0.75, Vec2::new(0.9, 1.1), 0.2,
+        SimpleRectangularCornField::new(
+            Vec3::ZERO, Vec2::ONE*50.0, 
+            UVec2::new(100, 100), Vec2::new(0.9, 1.1), 0.2
         )
     ));
     //box
     commands.spawn(PbrBundle{
-        mesh: meshes.add(Mesh::from(shape::Box::new(1.0, 1.0, 1.0))),
+        mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
         material: materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0))),
         transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
         ..default()
     });
     commands.spawn(PbrBundle{
-        mesh: meshes.add(Mesh::from(shape::Box::new(1.0, 1.0, 1.0))),
+        mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
         material: materials.add(StandardMaterial::from(Color::rgb(1.0, 0.0, 0.0))),
         transform: Transform::from_translation(Vec3::new(10.0, 0.5, 0.0)),
         ..default()
     });
     //ground
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Plane::from_size(1000.0))),
-        material: materials.add(StandardMaterial::from(Color::rgb(0.3, 0.5, 0.3))),
+        mesh: meshes.add(PlaneMeshBuilder::new(Direction3d::Y, Vec2::ONE*5000.0)),
+        material: materials.add(StandardMaterial{
+            base_color: Color::rgb(0.27, 0.19, 0.11),
+            reflectance: 0.0,
+            metallic: 0.0,
+            ..Default::default()
+        }),
         ..default()
     });
     // light
