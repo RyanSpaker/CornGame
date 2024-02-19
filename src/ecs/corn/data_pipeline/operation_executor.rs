@@ -10,6 +10,8 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::Maintain;
+use crate::ecs::corn::field::RenderableCornField;
+
 use super::{
     operation_manager::{CornBufferOperations, CornInitOp},
     super::{buffer::{BufferRange, CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}, field::RenderableCornFieldID}
@@ -127,6 +129,8 @@ pub struct CornOperationResources{
     init_bindgroups: HashMap<String, Vec<(BindGroup, u64)>>,
     /// Holds all buffers used during a specific initialization operation
     init_buffers: HashMap<String, Vec<(Buffer, Option<RenderableCornFieldID>)>>,
+    /// Holds the init ops used for the frame. must be stored here as the entities holding InitOps are deleted during cleanup, and we need this info in cleanup
+    init_ops: Vec<(RenderableCornFieldID, BufferRange)>,
     /// Holds resources for a flag stale compute pass
     stale_resources: OperationSettings,
     /// Holds resources for a defrag compute pass
@@ -286,7 +290,7 @@ impl CornOperationResources{
     }
     /// Runs once for each type of corn field during the prepare phase. Creates the init resources needed for initialization
     /// Most of the logic is delegated to the corn field type, including creating the bind groups and settings buffers.
-    pub fn prepare_init_bindgroup<T: IntoOperationResources + IntoCornPipeline>(
+    pub fn prepare_init_bindgroup<T: RenderableCornField>(
         fields: Query<(&T, &CornInitOp)>,
         mut resources: ResMut<CornOperationResources>,
         images: Res<RenderAssets<Image>>,
@@ -309,7 +313,7 @@ impl CornOperationResources{
         let layout = pipelines.get_layout::<T>().unwrap();
 
         let bindgroups = T::get_init_bindgroups( CreateInitBindgroupStructures{
-            fields: fields.into_iter().map(|(field, op)| (field, op.range.clone())).collect(),
+            fields: fields.iter().map(|(field, op)| (field, op.range.clone())).collect(),
             render_device: render_device.as_ref(),
             images: images.as_ref(),
             layout,
@@ -317,17 +321,19 @@ impl CornOperationResources{
             buffers: resources.init_buffers.get(&type_name::<T>().to_string()).unwrap()
         });
         resources.init_bindgroups.insert(type_name::<T>().to_string(), bindgroups);
+        //Add init ops
+        resources.init_ops.extend(fields.into_iter().map(|(field, op)| (field.gen_id(), op.range.clone())));
     }
     /// Runs after the render phase but before cleanup, sending events to the storage manager containing the changed buffer state
     pub fn send_buffer_alteration_events(
         node_success: Res<NodeSuccess>,
         resources: Res<CornOperationResources>,
         operations: Res<CornBufferOperations>,
-        init_ops: Query<(&RenderableCornFieldID, &CornInitOp)>,
         mut instance_buffer: ResMut<CornInstanceBuffer>
     ){
         if !resources.enabled {return;}
-        if !*node_success.into_inner().value.lock().unwrap() {return;}
+        if !*node_success.value.lock().unwrap(){return;}
+
         if operations.defrag{
             let mut end_of_data: u64 = 0;
             for (_, range) in resources.defrag_replaced_ranges.iter(){
@@ -342,8 +348,8 @@ impl CornOperationResources{
         if !operations.post_init_state.stale_space.is_empty(){
             instance_buffer.delete_stale_range(operations.post_init_state.stale_space.clone());
         }
-        for (id, op) in init_ops.iter(){
-            instance_buffer.alloc_space(op.range.clone(), id.clone());
+        for (id, op) in resources.init_ops.iter(){
+            instance_buffer.alloc_space(op.clone(), id.clone());
         }
     }
     /// Deletes per frame resources during the cleanup phase
@@ -358,6 +364,7 @@ impl CornOperationResources{
         resources.defrag_replaced_ranges = vec![];
         resources.init_bindgroups.clear();
         resources.init_buffers.drain().for_each(|(_, buffers)| buffers.into_iter().for_each(|(buffer, _)| buffer.destroy()));
+        resources.init_ops.clear();
 
         if let Some(readback_buffer) = resources.readback_buffer.take(){
             let slice = readback_buffer.slice(..);
@@ -405,9 +412,9 @@ impl CornOperationResources{
             Self::prepare_common_buffers.in_set(RenderSet::PrepareResources),
             Self::prepare_common_bind_group.in_set(RenderSet::PrepareBindGroups),
             (
-                (Self::send_buffer_alteration_events, Self::cleanup).chain().before(CornInstanceBuffer::cleanup).before(CornInstanceBuffer::update_indirect_buffer),
-                NodeSuccess::reset
-            ).in_set(RenderSet::Cleanup)
+                Self::send_buffer_alteration_events.before(CornInstanceBuffer::update_indirect_buffer).before(CornInstanceBuffer::cleanup),
+                (Self::cleanup, NodeSuccess::reset).after(Self::send_buffer_alteration_events),
+            ).in_set(RenderSet::Cleanup),
         ));
     }
 }
@@ -590,9 +597,7 @@ impl NodeSuccess{
     /// Called during cleanup, reset the value to assume the node is unsuccessful, it is overwritten by the node if otherwise
     pub fn reset(res: Res<Self>) {
         let mut value = res.value.lock().unwrap();
-        if let Err(_) = value.set(Box::new(false)){
-            panic!("Couldn't Reset Node Success Mutex!");
-        }
+        *value = false;
     }
 }
 
@@ -613,7 +618,6 @@ impl Node for CornBufferOperationsNode{
 
         let operations = world.resource::<CornBufferOperations>();
         let pipelines = world.resource::<CornOperationPipelines>();
-        let node_success = world.resource::<NodeSuccess>();
 
         let pipeline_cache = world.resource::<PipelineCache>();
         // compile list of all needed pipelines
@@ -631,7 +635,7 @@ impl Node for CornBufferOperationsNode{
                 }
             }
         });
-        
+        if critical_error{return Ok(());}
         // turn ids into actual pipelines
         let mut needed_pipelines = HashMap::new();
         needed_pipeline_ids.iter().for_each(|(typename, id)| {
@@ -646,12 +650,9 @@ impl Node for CornBufferOperationsNode{
         // If there was an error getting our pipelines, return early, not updating node_success to be true
         if critical_error {return Ok(());}
         // Otherwise, run the shader code, and update the node success resource to be true
-        let mut mutex_guard = node_success.value.lock().unwrap();
-        if let Err(_) = mutex_guard.set(Box::new(true)) {
-            panic!("Couldn't Set Node Success Mutex to true!");
-        }
-        drop(mutex_guard);
 
+        // whether or not an operation was executed
+        let mut operated = false;
         //Defrag/Shrink if we need to
         if operations.defrag{
             let defrag_pipeline = needed_pipelines.get(&"Defrag".to_string()).unwrap();
@@ -659,50 +660,42 @@ impl Node for CornBufferOperationsNode{
             compute_pass.set_pipeline(defrag_pipeline);
             compute_pass.set_bind_group(0, resources.defrag_resources.bindgroup.as_ref().unwrap(), &[]);
             compute_pass.dispatch_workgroups((resources.defrag_resources.execution_count as f32 / 256.0).ceil() as u32, 1, 1);
-            //Readback if needed
-            if resources.readback_buffer.is_some(){
-                drop(compute_pass);
-                let operation_buffer = resources.temporary_buffer.as_ref().unwrap();
-                render_context.command_encoder().copy_buffer_to_buffer(
-                    &operation_buffer, 
-                    0, 
-                    resources.readback_buffer.as_ref().unwrap(), 
-                    0, 
-                    operation_buffer.size() as u64
-                );
+            operated = true;
+        }else{
+            //Flag stale data if needed
+            if !operations.post_init_state.stale_space.is_empty(){
+                let stale_pipeline = needed_pipelines.get(&"Stale".to_string()).unwrap();
+                let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Flag Stale Pass".into()), timestamp_writes: None});
+                compute_pass.set_pipeline(stale_pipeline);
+                compute_pass.set_bind_group(0, resources.stale_resources.bindgroup.as_ref().unwrap(), &[]);
+                compute_pass.dispatch_workgroups((resources.stale_resources.execution_count as f32 / 256.0).ceil() as u32, 1, 1);
+                operated = true;
             }
-            return Ok(());
-        }
-        //Flag stale data if needed
-        if !operations.post_init_state.stale_space.is_empty(){
-            let stale_pipeline = needed_pipelines.get(&"Stale".to_string()).unwrap();
-            let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Flag Stale Pass".into()), timestamp_writes: None});
-            compute_pass.set_pipeline(stale_pipeline);
-            compute_pass.set_bind_group(0, resources.stale_resources.bindgroup.as_ref().unwrap(), &[]);
-            compute_pass.dispatch_workgroups((resources.stale_resources.execution_count as f32 / 256.0).ceil() as u32, 1, 1);
-        }
 
-        let instance_buffer = world.resource::<CornInstanceBuffer>().get_instance_buffer();
-        //Expand if needed
-        if operations.expansion > 0 && instance_buffer.is_some(){
-            render_context.command_encoder().copy_buffer_to_buffer(
-                &instance_buffer.unwrap(), 
-                0, 
-                resources.temporary_buffer.as_ref().unwrap(), 
-                0, 
-                instance_buffer.unwrap().size() as u64
-            );
-        }
-        // Init if needed
-        if operations.init_count > 0{
-            let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Init Pass".into()), timestamp_writes: None});
-            for (typename, bind_groups) in resources.init_bindgroups.iter(){
-                let init_pipeline = needed_pipelines.get(typename).unwrap();
-                compute_pass.set_pipeline(init_pipeline);
-                for (bindgroup, total_corn) in bind_groups{
-                    compute_pass.set_bind_group(0, &bindgroup, &[]);
-                    compute_pass.dispatch_workgroups((*total_corn as f32 / 256.0).ceil() as u32, 1, 1);
+            let instance_buffer = world.resource::<CornInstanceBuffer>().get_instance_buffer();
+            //Expand if needed
+            if operations.expansion > 0 && instance_buffer.is_some(){
+                render_context.command_encoder().copy_buffer_to_buffer(
+                    &instance_buffer.unwrap(), 
+                    0, 
+                    resources.temporary_buffer.as_ref().unwrap(), 
+                    0, 
+                    instance_buffer.unwrap().size() as u64
+                );
+                operated = true;
+            }
+            // Init if needed
+            if operations.init_count > 0{
+                let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor{label: Some("Corn Init Pass".into()), timestamp_writes: None});
+                for (typename, bind_groups) in resources.init_bindgroups.iter(){
+                    let init_pipeline = needed_pipelines.get(typename).unwrap();
+                    compute_pass.set_pipeline(init_pipeline);
+                    for (bindgroup, total_corn) in bind_groups{
+                        compute_pass.set_bind_group(0, &bindgroup, &[]);
+                        compute_pass.dispatch_workgroups((*total_corn as f32 / 256.0).ceil() as u32, 1, 1);
+                    }
                 }
+                operated = true;
             }
         }
         //Read back if needed
@@ -710,7 +703,7 @@ impl Node for CornBufferOperationsNode{
             let operation_buffer = if resources.temporary_buffer.is_some() {
                 resources.temporary_buffer.as_ref().unwrap()
             } else {
-                instance_buffer.unwrap()
+                world.resource::<CornInstanceBuffer>().get_instance_buffer().unwrap()
             };
             render_context.command_encoder().copy_buffer_to_buffer(
                 &operation_buffer, 
@@ -720,6 +713,12 @@ impl Node for CornBufferOperationsNode{
                 operation_buffer.size() as u64
             );
         }
+        
+        if operated{
+            let mut mutex_guard = world.resource::<NodeSuccess>().value.lock().unwrap();
+            *mutex_guard = true;
+        }
+        
         return Ok(());
     }
 }
@@ -755,7 +754,7 @@ impl<T: IntoOperationResources + IntoCornPipeline> CornFieldOperationExecutionPl
         CornFieldOperationExecutionPlugin { _marker: PhantomData::<T> }
     }
 }
-impl<T: IntoOperationResources + IntoCornPipeline> Plugin for CornFieldOperationExecutionPlugin<T>{
+impl<T: RenderableCornField> Plugin for CornFieldOperationExecutionPlugin<T>{
     fn build(&self, app: &mut App) {
         if let Ok(render_app) = app.get_sub_app_mut(RenderApp){
             render_app.add_systems(Render, (
