@@ -1,2 +1,4 @@
 # Corn Todo:
-- Buffer is currently resource based, which probably can't change, but we should look into maybe making it a renderasset. It can't be an entity since entities are deleted from the RenderApp every frame, but a RenderAsset may work. That being said, I dont think there is much of a benefit.
+- Make sure corn field images are pixel perfect sampled in init shader ? maybe, maybe this isnt what we want
+- Allow corn fields to have multi step init methods.
+- Make the corn fields seperated into buffers of rectangles of width max_lod distance so that we only have to sort at most 9 of these buffers per frame.
