@@ -118,5 +118,6 @@ fn setup_scene(
         transform: Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, PI/4.0, -PI/4.0, 0.0)),
         ..default()
     });
+
     task_count.0 -= 1;
 }

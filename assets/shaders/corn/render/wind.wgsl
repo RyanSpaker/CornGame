@@ -6,7 +6,8 @@ fn wind(position: vec3<f32>, offset: vec4<f32>, time: f32) -> vec3<f32> {
     var idHash : f32 = randValue( u32(abs(offset.x * 10000 + offset.y * 100 + offset.z * 0.05f + 2)) );
     idHash = randValue( u32(idHash * 100000) );
 
-    var strength : f32 = cos(time / 5.2) / 2 + 0.5;
+    var strength : f32 = cos(time / 3.0) * cos(time / 5.2) / 2 + 0.5; //these two frequencies work well https://www.desmos.com/calculator/023vwitwiq
+    strength = pow(strength, 2.0);
     //strength = 0.1;
 
     let weakness = 1 - strength;

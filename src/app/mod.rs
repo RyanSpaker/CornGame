@@ -5,11 +5,15 @@
 
 pub mod gameplay;
 pub mod loading;
+pub mod audio;
 
 use std::time::Duration;
-use bevy::{prelude::*, app::AppExit};
+
+use bevy::{app::AppExit, prelude::*};
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
+
+use self::audio::MyAudioPlugin;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum CornGameState{
@@ -40,7 +44,8 @@ impl Plugin for CornAppPlugin{
                 CornGamePlayPlugin::<CornGameState>::new(
                     CornGameState::Gameplay,
                     CornGameState::Exit
-                )
+                ),
+                MyAudioPlugin
             ));
     }
 }
