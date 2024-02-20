@@ -4,7 +4,7 @@
     it also includes the initial scene setup
 */
 use std::f32::consts::PI;
-use bevy::{prelude::*, render::mesh::PlaneMeshBuilder};
+use bevy::{core_pipeline::{experimental::taa::TemporalAntiAliasBundle, fxaa::Fxaa}, prelude::*, render::mesh::PlaneMeshBuilder};
 use crate::ecs::{corn::field::prelude::*, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
 
 #[derive(Resource, Default)]
@@ -64,7 +64,7 @@ fn setup_scene(
             ..default()
         }),
         ..default()
-    }, FlyCam, MainCamera));
+    }, FlyCam, MainCamera, /* Fxaa::default() */));
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,

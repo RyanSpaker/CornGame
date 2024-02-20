@@ -41,7 +41,7 @@ fn calc_lod(position: u32) -> u32{
   var enabled: u32 = u32(
     step(bounds.x, 1.1)*
     step(-1.1, bounds.x)* 
-    step(0.0, bounds.z) > 0.0
+    step(0.0, bounds.z) > 0.0 || distance < cull_settings.lod_dists[0] // always render closest corn b/c shadows
   ) * instance_data[position].enabled;
   return select(LOD_COUNT-(1u), lod, bool(enabled));
 }

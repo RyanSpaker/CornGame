@@ -9,6 +9,10 @@
     view_transformations::position_world_to_clip
 }
 #import bevy_render::maths::affine_to_square
+#import corn_game::wind::wind
+
+#import bevy_render::globals::Globals
+@group(0) @binding(1) var<uniform> globals: Globals;
 
 var<push_constant> base_instance: i32;
 
@@ -112,7 +116,12 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     vertex.position.z = dot(vertex.rotation.xy, vertex.position.xz*vec2<f32>(-1.0, 1.0));
     vertex.position.x = temp_2;
 #endif
+
+    // apply wind
+    vertex.position = wind(vertex.position, vertex.offset_scale, globals.time);
+
     out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4(vertex.position, 1.0));
+
 #ifdef CORN_INSTANCED
     out.world_position += vec4<f32>(vertex.offset_scale.xyz, 0.0);
 #endif

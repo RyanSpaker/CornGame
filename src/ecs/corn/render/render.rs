@@ -7,7 +7,7 @@ use crate::{
 };
 use bevy::{
     asset::{Asset, Assets}, ecs::system::{lifetimeless::SRes, Commands, Res, ResMut, SystemParamItem}, pbr::{
-        ExtendedMaterial, MaterialExtension, MaterialMeshBundle, RenderMeshInstances, StandardMaterial
+        DirectionalLightShadowMap, ExtendedMaterial, MaterialExtension, MaterialMeshBundle, RenderMeshInstances, StandardMaterial
     }, prelude::*, reflect::Reflect, render::{
         batching::NoAutomaticBatching, globals::GlobalsUniform, mesh::{GpuBufferInfo, Mesh}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, render_resource::{AsBindGroup, AsBindGroupShaderType, ShaderDefVal, VertexBufferLayout}, view::NoFrustumCulling, Render, RenderSet
     }, scene::ron::de
@@ -208,5 +208,7 @@ impl Plugin for CornRenderPlugin {
                 Update,
                 spawn_corn_anchor.run_if(on_event::<AssetEvent<CornAsset>>()),
             );
+        //.insert_resource(DirectionalLightShadowMap { size: 4096 });
+        // TODO heirarchical shadow maps? antialiasing?
     }
 }

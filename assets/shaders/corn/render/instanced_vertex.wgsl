@@ -7,7 +7,7 @@
     view_transformations::position_world_to_clip,
 }
 #import bevy_render::maths::affine_to_square
-#import corn_game::utils::{randValue}
+#import corn_game::wind::{wind}
 
 // #import bevy_pbr::{
 //     mesh_view_bindings::globals
@@ -130,74 +130,10 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     vertex.position.x = temp_2;
 #endif
     
-    // WIND
-    /* acerola example */
-    var idHash : f32 = randValue( u32(abs(vertex.offset_scale.x * 10000 + vertex.offset_scale.y * 100 + vertex.offset_scale.z * 0.05f + 2)) );
-    idHash = randValue( u32(idHash * 100000) );
+    // apply wind
+    vertex.position = wind(vertex.position, vertex.offset_scale, push_constants.time);
 
-    /*
-    //(tex2Dlod(_WindTex, worldUV).r);
-    // current wind strength adjustment, biased 0-1
-    var strength : f32 = cos(push_constants.time / 5.2) / 2 + 0.5;
-
-    // wind amount biased 0 - 1
-    let speriod = 2.0;
-    let tperiod = 1.0;
-    let vertskew = 0.0; // I want the top to start moving before middle, TODO what is a good value
-
-    let wind : f32 = cos((vertex.offset_scale.x + vertex.offset_scale.y)/speriod + push_constants.time / tperiod + vertex.position.y * vertskew) / 2 + .5;
-
-    // calculate movement
-    let amount: f32 = 0.05 * mix(0.2, 1.0, strength);
-    let swayVariance : f32 = mix(0.5, 1.0, idHash); //randomize amount per cornstalk
-    let bias: f32 = mix(-0.5, 0.0, strength); // deflect symmetrically at 0 wind strength
-    var movement : f32 = (wind+bias) * swayVariance * vertex.position.y * vertex.position.y * strength;
-
-    var new_p: vec3<f32> = vertex.position;
-    new_p.x += movement;
-    //new_p.z += movement;
-
-    // calculate drop in y due to rotation
-    new_p.y *= sqrt(1 - pow(movement / vertex.position.y, 2.0));
-    new_p.y = mix(new_p.y, vertex.position.y, abs(vertex.position.x) / 10); // calculate position of leaves less *accurate* in order to get a stretch effect
-
-    //flutter
-    var flutter : f32 = cos(vertex.offset_scale.x + vertex.offset_scale.z + push_constants.time * 20 * (idHash+.5));
-    flutter *= wind * wind; // more flutter when wind is deflecting
-    flutter *= new_p.y * new_p.y; //more flutter at the top
-    flutter *= vertex.position.x * vertex.position.x; //more flutter in the leaves
-    flutter *= strength / 50; // use wind strength to modulate amount of flutter
-    new_p.y += flutter;
-    */
-
-    //(tex2Dlod(_WindTex, worldUV).r);
-    var strength : f32 = cos(push_constants.time / 5.2) / 2 + 0.5;
-    var wind : f32     = cos((vertex.offset_scale.x + vertex.offset_scale.y)/2 + push_constants.time) / 2 + 0.5;
-
-    var movement : f32 = wind + mix(-0.5, 0.1, strength); // use strength to modulate minimum deflection (at 0 strength, modulation is symmetric), total range is always 1
-    movement *= vertex.position.y * vertex.position.y; // more sway at top
-    movement *= mix(0.2, 1.2, strength) / 10; // use strength to modulate amount of deflection
-
-    let swayVariance : f32 = mix(0.5, 1.0, idHash);
-    movement *= swayVariance; // add some randomness per stalk
-
-    var new_p: vec3<f32> = vertex.position;
-    new_p.x -= movement; // I'm a little surprised this is negative
-    new_p.z -= movement;
-
-    // calculate drop in y due to rotation
-    new_p.y *= sqrt(1 - pow(movement / vertex.position.y, 2.0));
-    new_p.y = mix(new_p.y, vertex.position.y, abs(vertex.position.x) / 10); // calculate position of leaves less *accurate* in order to get a stretch effect
-    
-    //flutter
-    var flutter : f32 = cos(vertex.offset_scale.x + vertex.offset_scale.y + push_constants.time*20 * (idHash+.5));
-    flutter *= strength * wind * wind * 4;
-    flutter *= new_p.y * new_p.y * vertex.position.x * vertex.position.x / 100;
-    new_p.y += flutter;
-
-    //TODO normals (this requires matrix math that I'm not looking forward to doing in wgsl)
-
-    out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(new_p, 1.0));
+    out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
 
 #ifdef CORN_INSTANCED
     out.world_position += vec4<f32>(vertex.offset_scale.xyz, 0.0);
