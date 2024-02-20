@@ -123,6 +123,7 @@ where
     <R as RenderCommand::<Transmissive3d>>::Param: ReadOnlySystemParam,
     M::Data: PartialEq + Eq + Hash + Clone,
 {
+    /// see: https://github.com/bevyengine/bevy/blob/ac6a4ff386df78ed0e66dba70860c9d16da81bbe/crates/bevy_pbr/src/material.rs#L208-L209
     fn build(&self, app: &mut App) {
         app.add_plugins(MaterialPlugin::<M>::default());
         app.sub_app_mut(RenderApp)

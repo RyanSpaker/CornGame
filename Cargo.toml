@@ -6,11 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.13.0", default-features = true, features=["dynamic_linking", "asset_processor"]}
+bevy = { version = "0.13.0", default-features = true, features=["dynamic_linking", "asset_processor", "file_watcher", "embedded_watcher"]}
 rand = "0.8.5"
 bytemuck = "1.14.1"
 futures-lite = "2.2.0"
 wgpu = "0.19.1"
+#bevy_editor_pls = "0.7.0"
 
 
 [profile.dev]
@@ -18,3 +19,7 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[patch.crates-io]
+#bevy_editor_pls = { path = "../bevy_editor_pls/crates/bevy_editor_pls"}
+bevy = {path = "../bevy"}

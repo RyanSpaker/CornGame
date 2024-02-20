@@ -7,11 +7,24 @@
     view_transformations::position_world_to_clip,
 }
 #import bevy_render::maths::affine_to_square
+#import corn_game::utils::{randValue}
 
-var<push_constant> base_instance: i32;
+// #import bevy_pbr::{
+//     mesh_view_bindings::globals
+// }
+
+#import bevy_render::globals::Globals
+@group(2) @binding(100) var<uniform> time: f32;
+
+struct PushConstants {
+    base_instance: i32,
+    time: f32
+}
+
+var<push_constant> push_constants: PushConstants;
 
 fn get_instance_index(instance_index: u32) -> u32 {
-    return u32(base_instance) + instance_index;
+    return u32(push_constants.base_instance) + instance_index;
 }
 
 fn get_model_matrix(instance_index: u32) -> mat4x4<f32> {
@@ -116,10 +129,24 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     vertex.position.z = dot(vertex.rotation.xy, vertex.position.xz*vec2<f32>(-1.0, 1.0));
     vertex.position.x = temp_2;
 #endif
+    
+    // WIND
+    /* acerola example */
+    var idHash : f32 = randValue( u32(abs(vertex.position.x * 10000 + vertex.position.y * 100 + vertex.position.z * 0.05f + 2)) );
+    idHash = randValue( u32(idHash * 100000) );
+
+    let swayVariance : f32 = mix(0.8, 1.0, idHash);
+    //(tex2Dlod(_WindTex, worldUV).r);
+    var movement : f32 = cos(vertex.offset_scale.x + vertex.offset_scale.y + push_constants.time) + 1;
+    movement *= swayVariance * vertex.position.y * vertex.position.y / 10;
+    vertex.position.x += movement;
+
     out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
+
 #ifdef CORN_INSTANCED
     out.world_position += vec4<f32>(vertex.offset_scale.xyz, 0.0);
 #endif
+
     out.position = position_world_to_clip(out.world_position.xyz);
 #endif
 

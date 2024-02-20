@@ -25,8 +25,9 @@ impl Plugin for CornFieldComponentPlugin {
 /// Adds the corn_common shader to the app. This is necessary in order for our other shaders, who import structs from corn_common, to be compiled
 /// Bevy does not automatically recursively search for shader include files and load them, so we have to load them here
 fn load_corn_common_shader(mut res: ResMut<CornCommonShader>, assets: Res<AssetServer>){
-    res.0 = Some(assets.load::<Shader>("shaders/corn/corn_common.wgsl"));
+    res.0.push(assets.load::<Shader>("shaders/noise.wgsl"));
+    res.0.push(assets.load::<Shader>("shaders/corn/corn_common.wgsl"));
 }
 
 #[derive(Default, Resource)]
-pub struct CornCommonShader(pub Option<Handle<Shader>>);
+pub struct CornCommonShader(pub Vec<Handle<Shader>>);

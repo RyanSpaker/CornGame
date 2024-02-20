@@ -39,7 +39,10 @@ async fn read_extent3d<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counte
     Ok(Extent3d{width, height, depth_or_array_layers: depth})
 }
 
-pub fn encode_texture_format(val: &TextureFormat) -> u8{
+pub fn encode_texture_format(val: &TextureFormat) -> u8 {
+    /* Pretty sure this would also work.. Though you know Texture format is 12 bytes? I think for Astc
+    unsafe{ transmute::<TextureFormat, [u8;12]>(*val) }[0];*/
+
     match *val{
         TextureFormat::R8Unorm => 0,
         TextureFormat::R8Snorm => 1,
