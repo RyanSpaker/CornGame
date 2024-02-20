@@ -1,3 +1,4 @@
 /target
 /.vscode
 /imported_assets
+/assets/**/*.meta
