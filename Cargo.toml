@@ -12,7 +12,8 @@ bytemuck = "1.14.1"
 futures-lite = "2.2.0"
 wgpu = "0.19.1"
 #bevy_editor_pls = "0.7.0"
-
+bevy_rapier3d = "*"
+image = "0.24.8"
 
 [profile.dev]
 opt-level = 1

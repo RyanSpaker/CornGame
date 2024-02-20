@@ -46,7 +46,7 @@ fn simple_image_hex_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin
     let uv: vec2<f32> = (out.offset - instance_settings.origin_res_width.xyz).xz * instance_settings.random_settings.yz;
     let color: vec4<f32> = textureSampleLevel(path_texture, path_texture_sampler, uv, 0.0);
     out.enabled = 1u;
-    if color.r < 0.5 {
+    if color.r < 0.5 + randomFloat(gid.x+234u*id_count.x) / 2.0 {
         out.enabled = 0u;
     }
     // set the random scale of the corn stalk

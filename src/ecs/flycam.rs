@@ -15,6 +15,10 @@ use bevy::{
     window::{CursorGrabMode, PrimaryWindow, Window}
 };
 
+use crate::util::lerp;
+
+use super::corn::field::cf_image_carved::CornSensor;
+
 #[derive(Component, Debug, Default, Clone, Reflect)]
 pub struct FlyCam;
 
@@ -175,15 +179,34 @@ fn move_cam(
     mut mouse_events: EventReader<MouseMotion>,
     config: Res<FlyCamConfig>,
     time: Res<Time>,
-    mut query: Query<&mut Transform, With<FlyCam>>
+    mut query: Query<(&mut Transform, Option<&CornSensor>), With<FlyCam>>
 ){
     let move_events: Vec<&FlyCamMoveEvent> = move_events.read().collect();
     let mouse_events: Vec<&MouseMotion> = mouse_events.read().collect();
     let is_mouse = !mouse_events.is_empty(); let is_move = !move_events.is_empty();
     if !is_move && !is_mouse {return;}
     let total_mouse: Vec2 = mouse_events.into_iter().map(|event| event.delta).sum();
-    let total_move: Vec3 = move_events.into_iter().map(|event| event.0).sum::<Vec3>().normalize();
-    for mut transform in query.iter_mut(){
+    let mut total_move: Vec3 = move_events.into_iter().map(|event| event.0).sum::<Vec3>().normalize();
+    for (mut transform, in_corn) in query.iter_mut(){
+        
+        let is_in_corn = in_corn.cloned().unwrap_or_default().is_in_corn;
+
+        if transform.translation.y < 2.0 {
+            if is_in_corn != 0.0 {
+                let factor = lerp(1.0, 0.3, is_in_corn);
+                total_move.x *= factor;
+                total_move.z *= factor;
+            }
+            total_move.x /= 2.0;
+            total_move.z /= 2.0;
+        }
+
+        // less speed near ground
+        if total_move.y != 0.0 {
+            total_move.y *= transform.translation.y.abs() / 10.0;
+            total_move.y = total_move.y.abs().max(0.1) * total_move.y.signum();
+        }
+        
         let (mut yaw, mut pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
         if is_mouse {
             pitch -= (config.sensitivity*total_mouse.y).to_radians();

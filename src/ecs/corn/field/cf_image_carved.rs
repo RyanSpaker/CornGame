@@ -1,13 +1,24 @@
+use core::panic;
 use std::{collections::hash_map::DefaultHasher, hash::{Hasher, Hash}};
 use bevy::{
-    app::Update, asset::{Assets, Handle}, ecs::{component::Component, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::Image}
+    app::Update, asset::{Assets, Handle}, ecs::{component::Component, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::{Image, TextureFormatPixelInfo}}, transform::{components::{GlobalTransform, Transform}, TransformBundle}
 };
 use bytemuck::{Pod, Zeroable};
-use wgpu::{util::BufferInitDescriptor, SamplerBindingType};
+use wgpu::{core::device::global, util::BufferInitDescriptor, SamplerBindingType};
 use crate::ecs::corn::data_pipeline::{operation_executor::{CreateInitBindgroupStructures, CreateInitBufferStructures, IntoCornPipeline, IntoOperationResources}, operation_manager::IntoBufferOperation};
 use super::{
     cf_simple::SimpleHexagonalCornField, state::CornAssetState, RenderableCornField, RenderableCornFieldID
 };
+
+// trait Sampleable {
+//     fn sample(&self, uv : Vec2);
+// } 
+
+// impl Sampleable for Image {
+//     fn sample(&self, uv : Vec2) {
+//         self.data[]
+//     }
+// }
 
 #[derive(Clone, Copy, Pod, Zeroable, Debug)]
 #[repr(C)]
@@ -68,6 +79,11 @@ impl From::<(&ImageCarvedHexagonalCornField, SimpleCornFieldRange)> for SimpleCo
 /*
     Corn Fields:
 */
+
+#[derive(Clone, Component, Default, Debug, Reflect)]
+pub struct CornSensor{
+    pub is_in_corn: f32
+}
 
 /// This is a Corn Field with a path carved out based on a input image. Any corn stalks on a pixel with red are kept, corn on a pixel without red are discarded
 /// The corn is placed in a hexagonal pattern, making stright line patterns less common
@@ -148,6 +164,41 @@ impl ImageCarvedHexagonalCornField{
                 field.into_inner().image_ready = true;
             }
         }
+    }
+
+    /// Queries the Assets<Image> for whether or not a image is loaded, updated the image_ready bool if it is.
+    pub fn is_in_corn(
+        mut things : Query<(&mut CornSensor, &GlobalTransform)>,
+        fields: Query<&ImageCarvedHexagonalCornField>, 
+        images: Res<Assets<Image>>
+    ){
+        
+        //TODO, this only works because this is the only system which can emit corn collisions
+        for (mut thing, t) in things.iter_mut(){
+            thing.is_in_corn = 0.0;
+        }
+
+        for field in fields.iter(){
+            if let Some(image) = images.get(field.image.clone()){
+                let im = image.clone().try_into_dynamic().unwrap(); // XXX doing this every frame
+                //let px = image.texture_descriptor.format.pixel_size();
+
+                for (mut thing, t) in things.iter_mut(){
+                    let mut relative = t.translation() - field.get_origin();
+                    let u = relative.x / (field.half_extents.x * 2.0);
+                    let v = relative.z / (field.half_extents.y * 2.0); 
+                    // let i = px * ( px_v as u32 * image.width() + px_u as u32) as usize;
+
+                    // &image.data[i..(i+px)];
+                        
+                    let pixel = image::imageops::sample_bilinear(&im, u, v).unwrap();
+                    //dbg!(relative, u, v, pixel);
+
+                    thing.is_in_corn = pixel[0] as f32 / 255.0;
+                }
+            }
+        }
+        
     }
 }
 impl CornAssetState for ImageCarvedHexagonalCornField{
@@ -277,6 +328,6 @@ impl RenderableCornField for ImageCarvedHexagonalCornField{
         return hasher.finish().into();
     }
     fn add_functionality(app: &mut bevy::prelude::App) {
-        app.add_systems(Update, Self::update_image_state);
+        app.add_systems(Update, (Self::update_image_state, Self::is_in_corn));
     }
 }

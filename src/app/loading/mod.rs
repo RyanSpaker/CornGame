@@ -5,7 +5,9 @@
 */
 use std::f32::consts::PI;
 use bevy::{core_pipeline::{experimental::taa::TemporalAntiAliasBundle, fxaa::Fxaa}, prelude::*, render::mesh::PlaneMeshBuilder};
-use crate::ecs::{corn::field::prelude::*, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
+use crate::ecs::{corn::field::{cf_image_carved::CornSensor, prelude::*}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
+
+use super::gameplay::character_controller::CharacterController;
 
 #[derive(Resource, Default)]
 pub struct LoadingTaskCount(pub usize);
@@ -64,7 +66,8 @@ fn setup_scene(
             ..default()
         }),
         ..default()
-    }, FlyCam, MainCamera, /* Fxaa::default() */));
+    }, FlyCam, MainCamera, CornSensor::default() /* Fxaa::default() */));
+
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
@@ -72,7 +75,14 @@ fn setup_scene(
             Vec3::ZERO, Vec2::ONE*512.0, 
             0.75, Vec2::new(0.9, 1.1), 0.2, 
             asset_server.load("textures/Maze_Large.png")
-        )
+        ),
+
+        /*
+        ImageCarvedHexagonalCornField::new(
+            Vec3::ZERO, Vec2::ONE*75.0, 
+            0.75, Vec2::new(0.9, 1.1), 0.2, 
+            asset_server.load("textures/maze.png")
+        )*/
     ));
     //box
     commands.spawn(PbrBundle{

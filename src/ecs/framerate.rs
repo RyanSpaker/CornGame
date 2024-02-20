@@ -1,15 +1,10 @@
 use std::collections::VecDeque;
 
 use bevy::{
-    app::{Plugin, Update}, 
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, 
-    ecs::{component::Component, system::{Commands, Query, Res}}, 
-    prelude::default, 
-    reflect::Reflect, 
-    render::color::Color, 
-    text::{Text, TextSection, TextStyle}, 
-    ui::node_bundles::TextBundle,
+    app::{Plugin, Update}, diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, ecs::{component::Component, query::With, system::{Commands, Query, Res}}, prelude::default, reflect::Reflect, render::color::Color, text::{Text, TextSection, TextStyle}, transform::components::{GlobalTransform, Transform}, ui::node_bundles::TextBundle
 };
+
+use super::main_camera::MainCamera;
 
 pub fn update_fps(
     diagnostics: Res<DiagnosticsStore>,
@@ -23,7 +18,21 @@ pub fn update_fps(
         if item.mean > 50.0 {text.sections[0].style.color = Color::GREEN;}
         else if item.mean > 20.0 {text.sections[0].style.color = Color::ORANGE;}
         else {text.sections[0].style.color = Color::RED;}
+    }
+}
 
+#[derive(Component)]
+pub struct DiagPos;
+
+pub fn update_position(
+    mut query: Query<&mut Text, With<DiagPos>>,
+    camera: Query<(&Transform, &GlobalTransform), With<MainCamera>>
+){
+    if let Ok((t, gt)) = camera.get_single(){
+        for mut text in query.iter_mut(){
+            text.sections[8].value = format!("{}", t.translation);
+            text.sections[10].value = format!("{}", gt.translation());
+        }
     }
 }
 
@@ -33,7 +42,8 @@ impl Plugin for FrameRatePlugin{
         app
             .register_type::<FPSData>()
             .add_plugins(FrameTimeDiagnosticsPlugin)
-            .add_systems(Update, update_fps);
+            .add_systems(Update, update_fps)
+            .add_systems(Update, update_position);
     }
 }
 
@@ -46,7 +56,13 @@ pub fn spawn_fps_text(mut commands: Commands){
         TextSection::new("-", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
         TextSection::from_style(TextStyle{font_size: 15.0, color: Color::BLUE, ..default()}),
         TextSection::new("]", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
-    ]), FPSData::default()));
+
+        TextSection::new(" Local: ", TextStyle{font_size: 20.0, color: Color::GOLD, ..default()}),
+        TextSection::new("- ", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
+
+        TextSection::new(" Global: ", TextStyle{font_size: 20.0, color: Color::GOLD, ..default()}),
+        TextSection::new("- ", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
+    ]), FPSData::default(), DiagPos));
 }
 
 #[derive(Clone, Debug, Reflect, Component)]

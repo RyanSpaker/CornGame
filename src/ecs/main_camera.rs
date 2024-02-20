@@ -7,6 +7,6 @@ pub struct MainCameraPlugin;
 impl Plugin for MainCameraPlugin{
     fn build(&self, app: &mut App) {
         app.add_plugins(ExtractComponentPlugin::<MainCamera>::default());
-        app.add_plugins(TemporalAntiAliasPlugin);
+        //app.add_plugins(TemporalAntiAliasPlugin);
     }
 }

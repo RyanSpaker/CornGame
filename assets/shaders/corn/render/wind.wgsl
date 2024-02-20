@@ -7,11 +7,14 @@ fn wind(position: vec3<f32>, offset: vec4<f32>, time: f32) -> vec3<f32> {
     idHash = randValue( u32(idHash * 100000) );
 
     var strength : f32 = cos(time / 5.2) / 2 + 0.5;
-    var wind : f32     = cos((offset.x + offset.y)/2 + time) / 2 + 0.5;
+    //strength = 0.1;
+
+    let weakness = 1 - strength;
+    var wind : f32     = cos((offset.x + offset.y) / 2.0 + time  + (idHash * mix(0.0, 8.0, weakness*weakness))) / 2 + 0.5;
 
     var movement : f32 = wind + mix(-0.5, 0.1, strength); // use strength to modulate minimum deflection (at 0 strength, modulation is symmetric), total range is always 1
     movement *= position.y * position.y; // more sway at top
-    movement *= mix(0.2, 1.2, strength) / 10; // use strength to modulate amount of deflection
+    movement *= mix(0.2, 1.3, strength) / 10; // use strength to modulate amount of deflection
 
     let swayVariance : f32 = mix(0.5, 1.0, idHash);
     movement *= swayVariance; // add some randomness per stalk
