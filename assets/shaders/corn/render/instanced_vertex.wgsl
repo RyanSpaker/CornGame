@@ -132,13 +132,22 @@ fn vertex(vertex_no_morph: Vertex) -> VertexOutput {
     
     // WIND
     /* acerola example */
-    var idHash : f32 = randValue( u32(abs(vertex.position.x * 10000 + vertex.position.y * 100 + vertex.position.z * 0.05f + 2)) );
+    var idHash : f32 = randValue( u32(abs(vertex.offset_scale.x * 10000 + vertex.offset_scale.y * 100 + vertex.offset_scale.z * 0.05f + 2)) );
     idHash = randValue( u32(idHash * 100000) );
 
-    let swayVariance : f32 = mix(0.8, 1.0, idHash);
+    let swayVariance : f32 = mix(0.5, 1.0, idHash);
     //(tex2Dlod(_WindTex, worldUV).r);
-    var movement : f32 = cos(vertex.offset_scale.x + vertex.offset_scale.y + push_constants.time) + 1;
-    movement *= swayVariance * vertex.position.y * vertex.position.y / 10;
+    var strength : f32 = cos(push_constants.time / 5.2) + 1;
+    var wind : f32 = cos((vertex.offset_scale.x + vertex.offset_scale.y)/2 + push_constants.time) + 1;
+    var movement : f32 = -(wind - 1 + (strength/2)) * swayVariance * vertex.position.y * vertex.position.y / 20 * (strength/2+.2);
+
+    vertex.position.y *= mix(sqrt(1 - pow(movement / vertex.position.y, 2.0)), 1.0, abs(vertex.position.x) / 10);
+
+    //flutter
+    var flutter : f32 = strength * cos(vertex.offset_scale.x + vertex.offset_scale.y + push_constants.time*20*(idHash+.5)) * wind * wind /2;
+    flutter = vertex.position.y * vertex.position.y * vertex.position.x * vertex.position.x * flutter / 100;
+    vertex.position.y += flutter;
+
     vertex.position.x += movement;
 
     out.world_position = mesh_functions::mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
