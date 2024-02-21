@@ -103,8 +103,8 @@ impl ScanPrepassResources{
         pipeline_cache: Res<PipelineCache>,
         camera: Query<&ExtractedView, With<MainCamera>>
     ){
-        resources.enabled = instance_buffer.ready_to_render();
-        if !resources.enabled {return;}
+        resources.enabled = instance_buffer.ready_to_render() && !camera.is_empty();
+        if !resources.enabled{return;}
         resources.frustum_values = camera.single().into();
 
         if pipeline.ids.get(&instance_buffer.lod_count).is_none(){
@@ -391,11 +391,17 @@ impl Node for CornBufferPrepassNode{
             compute_pass.write_timestamp(resources.timing_query_set.as_ref().unwrap(), 0);
         }
         if let Some(pipelines) = pipeline.ids.get(&lod_count){
-            if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipelines[0]){
+            if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipelines[0]){ // Scan
                 compute_pass.set_pipeline(pipeline);
                 compute_pass.set_push_constants(0, bytemuck::cast_slice(&[resources.frustum_values]));
-                compute_pass.set_push_constants(80, bytemuck::cast_slice(lod_cutoffs.0.iter().map(|x| x*x).collect::<Vec<f32>>().as_slice()));
-                compute_pass.dispatch_workgroups((resources.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
+                compute_pass.set_push_constants(96, bytemuck::cast_slice(lod_cutoffs.0.iter().map(|x| x*x).collect::<Vec<f32>>().as_slice()));
+                let loops = ((resources.instance_count as f32 / 256.0).ceil() / 65535.0).ceil() as u32;
+                let mut needed_work = (resources.instance_count as f32 / 256.0).ceil() as u32;
+                for i in 0..loops{
+                    compute_pass.set_push_constants(80, bytemuck::cast_slice::<u32, u8>(&[i*65535, 0, 0, 0]));
+                    compute_pass.dispatch_workgroups(needed_work.min(65535), 1, 1);
+                    needed_work -= needed_work.min(65535);
+                }
             }
             if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipelines[1]){
                 compute_pass.set_pipeline(pipeline);
@@ -405,9 +411,15 @@ impl Node for CornBufferPrepassNode{
                 compute_pass.set_pipeline(pipeline);
                 compute_pass.dispatch_workgroups((resources.sum_sizes.1 as f32 / 256.0).ceil() as u32, 1, 1);
             }
-            if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipelines[3]){
+            if let Some(pipeline) = pipeline_cache.get_compute_pipeline(pipelines[3]){ // Combine
                 compute_pass.set_pipeline(pipeline);
-                compute_pass.dispatch_workgroups((resources.instance_count as f32 / 256.0).ceil() as u32, 1, 1);
+                let loops = ((resources.instance_count as f32 / 256.0).ceil() / 65535.0).ceil() as u32;
+                let mut needed_work = (resources.instance_count as f32 / 256.0).ceil() as u32;
+                for i in 0..loops{
+                    compute_pass.set_push_constants(80, bytemuck::cast_slice::<u32, u8>(&[i*65535, 0, 0, 0]));
+                    compute_pass.dispatch_workgroups(needed_work.min(65535), 1, 1);
+                    needed_work -= needed_work.min(65535);
+                }
             }
         }
         if TIMING_ENABLED{
@@ -471,7 +483,7 @@ impl CornBufferPrePassPipeline{
             label: Some("Corn Vote_Scan Pipeline".into()),
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+21))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+25))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![
@@ -484,7 +496,7 @@ impl CornBufferPrePassPipeline{
             label: Some("Corn Sum 1 Pipeline".into()),
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+21))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+25))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![
@@ -497,7 +509,7 @@ impl CornBufferPrePassPipeline{
             label: Some("Corn Sum 2 Pipeline".into()),
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+21))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+25))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![
@@ -510,7 +522,7 @@ impl CornBufferPrePassPipeline{
             label: Some("Corn Compact Pipeline".into()),
             layout: vec![self.bind_group_layout.clone()],
             push_constant_ranges: vec![
-                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+21))}
+                PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*(lod_count as u32+25))}
             ],
             shader: self.shader.clone(),
             shader_defs: vec![

@@ -1,4 +1,7 @@
-#import corn_game::corn::{PerCornData, CornSettings, Range, randomFloat}
+#import corn_game::{
+  corn::{PerCornData, CornSettings, Range, randomFloat},
+  utils::{randValue, randNext}
+}
 
 @group(0) @binding(0)
 var<storage, read_write> instance_data: array<PerCornData>;
@@ -39,11 +42,11 @@ fn simple_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workg
     // Add the field's origin position to the corn stalk position
     out.offset = instance_settings.origin_res_width.xyz + vec3<f32>(xz_offset.x, 0.0, xz_offset.y);
     // Add random offsets to the x and z position of the corn stalk
-    out.offset += vec3<f32>(randomFloat(gid.x+512u*id_count.x), 0.0, randomFloat(gid.x+768u*id_count.x))*instance_settings.random_settings.x;
+    out.offset += vec3<f32>(randValue(gid.x+512u*id_count.x), 0.5, randNext())*instance_settings.random_settings.x*2.0 - 1.0;
     // set the random scale of the corn stalk
-    out.scale = randomFloat(gid.x) * instance_settings.height_width_min.x + instance_settings.height_width_min.y;
+    out.scale = randNext() * instance_settings.height_width_min.x + instance_settings.height_width_min.y;
     // set the random rotation of the corn stalk
-    let theta = randomFloat(gid.x+256u*id_count.x)*6.2832;
+    let theta = randNext()*6.2832;
     out.rotation = vec2<f32>(sin(theta), cos(theta));
     // enable the corn stalk
     out.enabled = 1u;
@@ -87,14 +90,14 @@ fn simple_rect_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_
     out.offset = instance_settings.origin_res_width.xyz + vec3<f32>(xz_offset.x, 0.0, xz_offset.y);
     // Add random offsets to the x and z position of the corn stalk
     out.offset += vec3<f32>(
-      randomFloat(gid.x+512u*id_count.x)*instance_settings.random_settings.x, 
-      0.0, 
-      randomFloat(gid.x+768u*id_count.x)*instance_settings.random_settings.y
-    );
+      randValue(gid.x+512u*id_count.x)*instance_settings.random_settings.x, 
+      0.5, 
+      randNext()*instance_settings.random_settings.y
+    )*2.0 - 1.0;
     // set the random scale of the corn stalk
-    out.scale = randomFloat(gid.x) * instance_settings.height_width_min.x + instance_settings.height_width_min.y;
+    out.scale = randNext() * instance_settings.height_width_min.x + instance_settings.height_width_min.y;
     // set the random rotation of the corn stalk
-    let theta = randomFloat(gid.x+256u*id_count.x)*6.2832;
+    let theta = randNext()*6.2832;
     out.rotation = vec2<f32>(sin(theta), cos(theta));
     // enable the corn stalk
     out.enabled = 1u;

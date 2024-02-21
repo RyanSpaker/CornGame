@@ -7,10 +7,11 @@ use crate::{
 };
 use bevy::{
     asset::{Asset, Assets}, ecs::system::{lifetimeless::SRes, Commands, Res, ResMut, SystemParamItem}, pbr::{
-        DirectionalLightShadowMap, ExtendedMaterial, MaterialExtension, MaterialMeshBundle, RenderMeshInstances, StandardMaterial
+        ExtendedMaterial, MaterialExtension, MaterialMeshBundle, RenderMeshInstances, StandardMaterial
     }, prelude::*, reflect::Reflect, render::{
-        batching::NoAutomaticBatching, globals::GlobalsUniform, mesh::{GpuBufferInfo, Mesh}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, render_resource::{AsBindGroup, AsBindGroupShaderType, ShaderDefVal, VertexBufferLayout}, view::NoFrustumCulling, Render, RenderSet
-    }, scene::ron::de
+        batching::NoAutomaticBatching, mesh::{GpuBufferInfo, Mesh}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, 
+        render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}, view::NoFrustumCulling
+    }
 };
 use wgpu::{vertex_attr_array, PushConstantRange, ShaderStages};
 
@@ -64,7 +65,7 @@ impl MaterialExtension for CornMaterialExtension {
     }
 
     fn specialize(
-        pipeline: &bevy::pbr::MaterialExtensionPipeline,
+        _pipeline: &bevy::pbr::MaterialExtensionPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
         _layout: &bevy::render::mesh::MeshVertexBufferLayout,
         _key: bevy::pbr::MaterialExtensionKey<Self>,

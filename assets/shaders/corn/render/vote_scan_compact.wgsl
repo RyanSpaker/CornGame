@@ -22,6 +22,7 @@ var<storage, read_write> count_buffer: array<array<u32, LOD_COUNT>>;
 struct FrustumValues {
   mat: mat4x4<f32>,
   offset: vec4<f32>,
+  wid_offset: vec4<u32>,
   lod_dists: array<f32, LOD_COUNT>
 }
 var<push_constant> cull_settings: FrustumValues;
@@ -47,7 +48,9 @@ fn calc_lod(position: u32) -> u32{
 }
 
 @compute @workgroup_size(128, 1, 1)
-fn vote_scan(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
+fn vote_scan(@builtin(global_invocation_id) gid_simple: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid_simple: vec3<u32>) {
+  let wid: vec3<u32> = wid_simple + vec3<u32>(cull_settings.wid_offset.x, 0u, 0u);
+  let gid: vec3<u32> = gid_simple + vec3<u32>(cull_settings.wid_offset.x*128u, 0u, 0u);
   for(var j: u32 = 0u; j < LOD_COUNT; j++){
     count_buffer[wid.x][j] = 0u;
   }
@@ -218,7 +221,9 @@ fn group_scan_2(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_in
 var<storage,read_write> instance_index_buffer: array<PerCornData>;
 
 @compute @workgroup_size(128, 1, 1)
-fn compact(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
+fn compact(@builtin(global_invocation_id) gid_simple: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid_simple: vec3<u32>) {
+  let wid: vec3<u32> = wid_simple + vec3<u32>(cull_settings.wid_offset.x, 0u, 0u);
+  let gid: vec3<u32> = gid_simple + vec3<u32>(cull_settings.wid_offset.x*128u, 0u, 0u);
   if 2u*gid.x < arrayLength(&instance_data){
     let lod = vote_scan_buffer[2u*gid.x].x;
     if lod+1u < LOD_COUNT {

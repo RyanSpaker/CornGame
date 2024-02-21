@@ -1,10 +1,10 @@
 use core::panic;
 use std::{collections::hash_map::DefaultHasher, hash::{Hasher, Hash}};
 use bevy::{
-    app::Update, asset::{Assets, Handle}, ecs::{component::Component, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::{Image, TextureFormatPixelInfo}}, transform::{components::{GlobalTransform, Transform}, TransformBundle}
+    app::Update, asset::{Assets, Handle}, ecs::{component::Component, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::Image}, transform::components::GlobalTransform
 };
 use bytemuck::{Pod, Zeroable};
-use wgpu::{core::device::global, util::BufferInitDescriptor, SamplerBindingType};
+use wgpu::{util::BufferInitDescriptor, SamplerBindingType};
 use crate::ecs::corn::data_pipeline::{operation_executor::{CreateInitBindgroupStructures, CreateInitBufferStructures, IntoCornPipeline, IntoOperationResources}, operation_manager::IntoBufferOperation};
 use super::{
     cf_simple::SimpleHexagonalCornField, state::CornAssetState, RenderableCornField, RenderableCornFieldID
@@ -166,7 +166,7 @@ impl ImageCarvedHexagonalCornField{
         }
     }
 
-    /// Queries the Assets<Image> for whether or not a image is loaded, updated the image_ready bool if it is.
+    /// Determines if the player is in this corn field
     pub fn is_in_corn(
         mut things : Query<(&mut CornSensor, &GlobalTransform)>,
         fields: Query<&ImageCarvedHexagonalCornField>, 
@@ -174,7 +174,7 @@ impl ImageCarvedHexagonalCornField{
     ){
         
         //TODO, this only works because this is the only system which can emit corn collisions
-        for (mut thing, t) in things.iter_mut(){
+        for (mut thing, _) in things.iter_mut(){
             thing.is_in_corn = 0.0;
         }
 
@@ -184,7 +184,7 @@ impl ImageCarvedHexagonalCornField{
                 //let px = image.texture_descriptor.format.pixel_size();
 
                 for (mut thing, t) in things.iter_mut(){
-                    let mut relative = t.translation() - field.get_origin();
+                    let relative = t.translation() - field.get_origin();
                     let u = relative.x / (field.half_extents.x * 2.0);
                     let v = relative.z / (field.half_extents.y * 2.0); 
                     // let i = px * ( px_v as u32 * image.width() + px_u as u32) as usize;

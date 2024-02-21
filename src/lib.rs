@@ -1,6 +1,5 @@
 use app::CornAppPlugin;
 use bevy::prelude::*;
-use bevy_rapier3d::plugin::{NoUserData, RapierPhysicsPlugin};
 use ecs::CornGameECSPlugin;
 
 pub mod app;

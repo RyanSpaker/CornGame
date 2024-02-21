@@ -4,10 +4,8 @@
     it also includes the initial scene setup
 */
 use std::f32::consts::PI;
-use bevy::{core_pipeline::{experimental::taa::TemporalAntiAliasBundle, fxaa::Fxaa}, prelude::*, render::mesh::PlaneMeshBuilder};
+use bevy::{prelude::*, render::mesh::PlaneMeshBuilder};
 use crate::ecs::{corn::field::{cf_image_carved::CornSensor, prelude::*}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
-
-use super::gameplay::character_controller::CharacterController;
 
 #[derive(Resource, Default)]
 pub struct LoadingTaskCount(pub usize);

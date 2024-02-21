@@ -11,8 +11,7 @@ rand = "0.8.5"
 bytemuck = "1.14.1"
 futures-lite = "2.2.0"
 wgpu = "0.19.1"
-#bevy_editor_pls = "0.7.0"
-bevy_rapier3d = "*"
+bevy_rapier3d = "0.25.0"
 image = "0.24.8"
 
 [profile.dev]
@@ -20,7 +19,3 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
-
-[patch.crates-io]
-#bevy_editor_pls = { path = "../bevy_editor_pls/crates/bevy_editor_pls"}
-#bevy = {path = "../bevy"}

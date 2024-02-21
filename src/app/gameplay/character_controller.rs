@@ -2,15 +2,15 @@
 
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
-use bevy::{app::Plugin, ecs::{bundle::Bundle, component::Component, event::EventWriter, query::With, schedule::States, system::{Query, Res}}, math::Vec3, prelude::default, reflect::Reflect, time::Time, transform::components::Transform};
-use bevy_rapier3d::{control::KinematicCharacterController, dynamics::RigidBody, geometry::Collider, plugin::{NoUserData, RapierPhysicsPlugin}};
+use bevy::{app::Plugin, ecs::{bundle::Bundle, component::Component, query::With, system::{Query, Res}}, math::Vec3, reflect::Reflect, time::Time, transform::components::Transform};
+use bevy_rapier3d::{control::KinematicCharacterController, dynamics::RigidBody, geometry::Collider};
 
 use crate::ecs::flycam::FlyCamConfig;
 
 pub struct CharacterControllerPlugin;
 
 impl Plugin for CharacterControllerPlugin {
-    fn build(&self, app: &mut bevy::prelude::App) {
+    fn build(&self, _app: &mut bevy::prelude::App) {
         //app.add_plugins(RapierPhysicsPlugin::<NoUserData>::default());
         
     }
@@ -33,7 +33,7 @@ impl Default for CharacterControllerBundle {
 }
 
 /// Reads in input data, sending an event if there are inputs to process
-fn update(
+fn _update(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut mouse_events: EventReader<MouseMotion>,
     mut query: Query<&mut Transform, With<CharacterController>>,

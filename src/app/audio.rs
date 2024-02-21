@@ -1,5 +1,3 @@
-use std::{fs, ops::Range};
-
 use bevy::{audio::Volume, prelude::*};
 
 use crate::{
@@ -49,11 +47,11 @@ struct Footsteps {
 
     /// speed [on_path, in_corn]
     s: [f32;2],
-    s_lerp_seconds: f32,
+    _s_lerp_seconds: f32,
 
     /// volume [on_path, in_corn]
     v: [f32;2],
-    v_lerp_seconds: f32,
+    _v_lerp_seconds: f32,
 }
 
 impl Default for Footsteps {
@@ -62,9 +60,9 @@ impl Default for Footsteps {
             lerp: 0.0,
             lerp_speed: 0.0,
             s: [1.0,1.0],
-            s_lerp_seconds: 0.2,
+            _s_lerp_seconds: 0.2,
             v: [1.0,1.0],
-            v_lerp_seconds: 0.2,
+            _v_lerp_seconds: 0.2,
         }
     }
 }
