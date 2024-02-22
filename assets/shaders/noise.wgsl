@@ -1,7 +1,7 @@
 // Stolen from acerola https://github.com/GarrettGunnell/Grass/blob/main/Assets/Resources/Random.cginc
 // NOTE: there is also https://github.com/bevyengine/bevy/blob/ac6a4ff386df78ed0e66dba70860c9d16da81bbe/crates/bevy_pbr/src/render/utils.wgsl#L20
 
-#define_import_path corn_game::utils
+#define_import_path corn_game::utils::random
 
 var<private> rng_state: u32;
 

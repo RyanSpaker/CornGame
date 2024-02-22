@@ -596,7 +596,7 @@ impl FromWorld for CornBufferPrePassPipeline {
         ]);
         let shader = world
             .resource::<AssetServer>()
-            .load("shaders/corn/render/vote_scan_compact.wgsl");
+            .load("shaders/corn/buffer_operation/vote_scan_compact.wgsl");
         return Self{ids: HashMap::default(), bind_group_layout: layout, shader};       
     }
 }

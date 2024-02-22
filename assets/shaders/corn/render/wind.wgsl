@@ -1,8 +1,11 @@
-#define_import_path corn_game::wind
-#import corn_game::utils::{randValue}
+#define_import_path corn_game::rendering::wind
+#import corn_game::{utils::random::randValue, rendering::vertex_io::CornData}
 
-fn wind(position: vec3<f32>, offset: vec4<f32>, time: f32) -> vec3<f32> {
+fn apply_wind(vertex_in: CornData, time: f32) -> CornData {
     /* acerola example */
+    let position = vertex_in.position;
+    let offset = vertex_in.offset;
+
     var idHash : f32 = randValue( u32(abs(offset.x * 10000 + offset.y * 100 + offset.z * 0.05f + 2)) );
     idHash = randValue( u32(idHash * 100000) );
 
@@ -34,5 +37,6 @@ fn wind(position: vec3<f32>, offset: vec4<f32>, time: f32) -> vec3<f32> {
     flutter *= new_p.y * new_p.y * position.x * position.x / 100;
     new_p.y += flutter;
 
-    return new_p;
+    var vertex = vertex_in; vertex.position = new_p;
+    return vertex;
 }

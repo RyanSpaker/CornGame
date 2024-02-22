@@ -26,8 +26,11 @@ impl Plugin for CornFieldComponentPlugin {
 /// Bevy does not automatically recursively search for shader include files and load them, so we have to load them here
 fn load_corn_common_shader(mut res: ResMut<CornCommonShader>, assets: Res<AssetServer>){
     res.0.push(assets.load::<Shader>("shaders/noise.wgsl"));
-    res.0.push(assets.load::<Shader>("shaders/corn/render/wind.wgsl"));
     res.0.push(assets.load::<Shader>("shaders/corn/corn_common.wgsl"));
+    res.0.push(assets.load::<Shader>("shaders/bevy/prepass_vertex.wgsl"));
+    res.0.push(assets.load::<Shader>("shaders/bevy/standard_vertex.wgsl"));
+    res.0.push(assets.load::<Shader>("shaders/corn/render/wind.wgsl"));
+    res.0.push(assets.load::<Shader>("shaders/corn/render/vertex_io.wgsl"));
 }
 
 #[derive(Default, Resource)]
