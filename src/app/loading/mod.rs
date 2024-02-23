@@ -69,18 +69,17 @@ fn setup_scene(
     //Spawn Rest of Scene
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
-        ImageCarvedHexagonalCornField::new(
+        /*ImageCarvedHexagonalCornField::new(
             Vec3::ZERO, Vec2::ONE*512.0, 
             0.75, Vec2::new(0.9, 1.1), 0.2, 
             asset_server.load("textures/Maze_Large.png")
-        ),
-
-        /*
+        ),*/
+        
         ImageCarvedHexagonalCornField::new(
             Vec3::ZERO, Vec2::ONE*75.0, 
             0.75, Vec2::new(0.9, 1.1), 0.2, 
             asset_server.load("textures/maze.png")
-        )*/
+        )
     ));
     //box
     commands.spawn(PbrBundle{
