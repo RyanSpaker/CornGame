@@ -1,9 +1,4 @@
-#import corn_game::rendering::{wind::apply_wind, vertex_io::{CornVertex, CornData, extract_data, to_standard_input}}
-#if PREPASS == true
-	#import bevy_pbr::{prepass_vertex::standard_vertex, prepass_io::{Vertex, VertexOutput}}
-#else
-	#import bevy_pbr::{standard_vertex::standard_vertex, forward_io::{Vertex, VertexOutput}}
-#endif
+#import corn_game::rendering::{wind::apply_wind_acerola, vertex_io::{CornVertex, CornData, CornVertexOutput, extract_data, to_standard_input, to_corn_output, pbr_vertex}}
 
 struct PushConstants {
     base_instance: u32,
@@ -24,16 +19,18 @@ fn rotate_scale_corn(vertex_in: CornData) -> CornData {
     vertex.tangent = vec4<f32>(rotation_matrix*vertex.tangent.xyz, vertex.tangent.w);
 	return vertex;
 }
-// This is where our Instanced Renderng alterations happen. We extract the relevant values into CornData, offset rotate scale, and then turn that into a standard material vertex before returning.
-fn corn_vertex(vertex: CornVertex) -> Vertex{
+// This is where our Instanced Renderng alterations happen. We extract the relevant values into CornData, offset rotate scale, apply_wind, and then turn that into a standard material vertex before returning.
+fn corn_vertex(vertex: CornVertex) -> CornData{
 	var data: CornData = extract_data(vertex);
 	data = rotate_scale_corn(data);
-	data = apply_wind(data, push_constants.time);
+	data = apply_wind_acerola(data, push_constants.time);
 	data.position += data.offset;
-    return to_standard_input(data, vertex, push_constants.base_instance);
+    return data;
 }
 // vertex program, sends vertex into our code, then the result of that into bevy's default vertex shader
 @vertex
-fn vertex(vertex: CornVertex) -> VertexOutput {
-	return standard_vertex(corn_vertex(vertex));
+fn vertex(vertex: CornVertex) -> CornVertexOutput {
+	let data = corn_vertex(vertex);
+	let standard_material_out = pbr_vertex(to_standard_input(data, vertex, push_constants.base_instance));
+	return to_corn_output(data, vertex, standard_material_out);
 }

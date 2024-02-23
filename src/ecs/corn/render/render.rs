@@ -7,7 +7,7 @@ use crate::{
 };
 use bevy::{
     asset::{Asset, Assets}, ecs::system::{lifetimeless::SRes, Commands, Res, ResMut, SystemParamItem}, pbr::{
-        ExtendedMaterial, MaterialExtension, MaterialMeshBundle, MeshPipelineKey, RenderMeshInstances, StandardMaterial
+        ExtendedMaterial, MaterialExtension, MaterialMeshBundle, RenderMeshInstances, StandardMaterial
     }, prelude::*, reflect::Reflect, render::{
         batching::NoAutomaticBatching, mesh::{GpuBufferInfo, Mesh}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, 
         render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}, view::NoFrustumCulling
@@ -23,7 +23,12 @@ use wgpu::{vertex_attr_array, PushConstantRange, ShaderStages};
 /// In order to actually draw the corn, we spawn a single Corn stalk with the master corn mesh in the middle of the scene. When the app tries to render this object
 /// our custom draw commands are called, which obtain the corn instance buffer, and draw our corn instanced.
 
-pub const INSTANCED_VERTEX_SHADER: &str = "shaders/corn/render/vertex.wgsl";
+pub const DEBUG_RENDER_MODE: bool = true;
+
+pub mod shaders{
+    pub const INSTANCED_VERTEX_SHADER: &str = "shaders/corn/render/vertex.wgsl";
+    pub const INSTANCED_FRAGMENT_SHADER: &str = "shaders/corn/render/fragment.wgsl";
+}
 
 /// The material type of the corn anchor asset
 pub type CornMaterial = ExtendedMaterial<StandardMaterial, CornMaterialExtension>;
@@ -40,35 +45,36 @@ pub struct CornMaterialExtension{}
 
 impl MaterialExtension for CornMaterialExtension {
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        INSTANCED_VERTEX_SHADER.into()
+        shaders::INSTANCED_VERTEX_SHADER.into()
     }
     fn prepass_vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        INSTANCED_VERTEX_SHADER.into()
+        shaders::INSTANCED_VERTEX_SHADER.into()
     }
     fn deferred_vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        INSTANCED_VERTEX_SHADER.into()
+        shaders::INSTANCED_VERTEX_SHADER.into()
+    }
+    fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
+        shaders::INSTANCED_FRAGMENT_SHADER.into()
+    }
+    fn deferred_fragment_shader() -> bevy::render::render_resource::ShaderRef {
+        shaders::INSTANCED_FRAGMENT_SHADER.into()
     }
 
     fn specialize(
         _pipeline: &bevy::pbr::MaterialExtensionPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
         _layout: &bevy::render::mesh::MeshVertexBufferLayout,
-        key: bevy::pbr::MaterialExtensionKey<Self>,
+        _key: bevy::pbr::MaterialExtensionKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
-        if 
-            key.mesh_key.contains(MeshPipelineKey::DEPTH_PREPASS) || 
-            key.mesh_key.contains(MeshPipelineKey::NORMAL_PREPASS) || 
-            key.mesh_key.contains(MeshPipelineKey::MOTION_VECTOR_PREPASS) || 
-            key.mesh_key.contains(MeshPipelineKey::DEFERRED_PREPASS)
-        {
-            descriptor.vertex.shader_defs.push(ShaderDefVal::Bool("PREPASS".to_string(), true));
-        }else{
-            descriptor.vertex.shader_defs.push(ShaderDefVal::Bool("PREPASS".to_string(), false));
-        }
         descriptor
             .vertex
             .shader_defs
             .push(ShaderDefVal::Bool("CORN_INSTANCED".to_string(), true));
+        if let Some(fragment) = descriptor.fragment.as_mut(){
+            if DEBUG_RENDER_MODE{
+                fragment.shader_defs.push(ShaderDefVal::Bool("CORN_INSTANCED".to_string(), true));
+            }
+        }
         descriptor.vertex.buffers.push(VertexBufferLayout {
             array_stride: CORN_DATA_SIZE,
             step_mode: wgpu::VertexStepMode::Instance,

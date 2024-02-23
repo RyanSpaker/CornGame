@@ -1,3 +1,4 @@
+pub mod shader_imports;
 /*
     Handles the Loading of the game,
     This includes the reading of the corn asset file
@@ -27,6 +28,7 @@ impl<T> Plugin for LoadGamePlugin<T> where T: States + Copy{
         app
             .insert_resource(LoadingTaskCount(1))
             .insert_resource(LoadingExitState::<T>(self.exit_state))
+            .add_plugins(shader_imports::ShaderImportPlugin)
             .add_systems(
                 Update, 
                 (

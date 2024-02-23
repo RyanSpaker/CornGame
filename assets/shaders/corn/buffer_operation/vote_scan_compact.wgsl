@@ -229,6 +229,7 @@ fn compact(@builtin(global_invocation_id) gid_simple: vec3<u32>, @builtin(local_
     if lod+1u < LOD_COUNT {
       let offset = vote_scan_buffer[2u*gid.x].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
       instance_index_buffer[offset] = instance_data[gid.x*2u];
+      instance_index_buffer[offset].uuid = lod;
     }
   }
   if 2u*gid.x+1u < arrayLength(&instance_data){
@@ -236,6 +237,7 @@ fn compact(@builtin(global_invocation_id) gid_simple: vec3<u32>, @builtin(local_
     if lod+1u < LOD_COUNT {
       let offset = vote_scan_buffer[2u*gid.x+1u].y+count_buffer[gid.x>>7u][lod] + count_buffer2[gid.x>>15u][lod] + indirect_buffer[lod*5u+4u];
       instance_index_buffer[offset] = instance_data[gid.x*2u+1u];
+      instance_index_buffer[offset].uuid = lod;
     }
   }
 }
