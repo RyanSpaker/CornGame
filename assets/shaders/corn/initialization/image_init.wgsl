@@ -57,7 +57,7 @@ fn simple_image_hex_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin
     // set the random rotation of the corn stalk
     let theta = randNext()*6.2832;
     out.rotation = vec2<f32>(sin(theta), cos(theta));
-    out.uuid = 1u;
+    out.uuid = 3u;
     instance_data[index.z] = out;
   }
 }

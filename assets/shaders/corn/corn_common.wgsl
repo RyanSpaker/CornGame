@@ -4,7 +4,7 @@ struct PerCornData {
   offset: vec3<f32>,
   scale: f32,
   rotation: vec2<f32>,
-  //currently empty: could be used to flag certain per corn field data later
+  //currently empty: could be used to flag certain per corn field data later. Debug mode uses it as a lod level indicator
   uuid: u32,
   enabled: u32
 }
