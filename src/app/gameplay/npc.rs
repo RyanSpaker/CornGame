@@ -40,6 +40,9 @@ impl TrackerBrain {
             }else{
                 vel.linvel = Vec3::ZERO;
             }
+            if t.translation.y >= 2.0 {
+                vel.linvel.y = - 1.0;
+            }
 
             let target_rot = t.looking_at(player.translation, Vec3::Y).rotation;
             let angle = target_rot.angle_between(t.rotation);
