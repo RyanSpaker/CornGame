@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 pub mod character_controller;
+pub mod npc;
 
 use crate::ecs::flycam::{enable_flycam, FlyCamPlugin, FlyCamState};
 

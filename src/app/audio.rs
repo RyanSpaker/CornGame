@@ -67,6 +67,9 @@ impl Default for Footsteps {
     }
 }
 
+#[derive(Component)]
+pub struct Spooky;
+
 fn play_footsteps(
     time: Res<Time>,
     move_events: EventReader<FlyCamMoveEvent>,
@@ -101,12 +104,15 @@ fn play_footsteps(
     }
 }
 
+
+
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         AudioBundle {
             source: asset_server.load("sounds/wind.ogg"),
             settings: PlaybackSettings{
                 mode: bevy::audio::PlaybackMode::Loop,
+                volume: Volume::new(0.0),
                 ..Default::default()
             }
         },
@@ -117,7 +123,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         AudioBundle {
             source: asset_server.load("sounds/wind_rustle.ogg"),
             settings: PlaybackSettings{
-                mode: bevy::audio::PlaybackMode::Loop,
+                mode: bevy::audio::PlaybackMode::Once,
                 volume: Volume::new(0.1),
                 ..Default::default()
             }
@@ -139,6 +145,19 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             v: [0.2,1.0],
             ..Default::default()
         },    
+    ));
+
+    commands.spawn((
+        AudioBundle {
+            source: asset_server.load("sounds/spooky.ogg"),
+            settings: PlaybackSettings{
+                mode: bevy::audio::PlaybackMode::Once,
+                volume: Volume::new(0.1),
+                paused: true,
+                ..Default::default()
+            }
+        },
+        Spooky
     ));
 
     // commands.spawn((

@@ -191,10 +191,10 @@ impl ImageCarvedHexagonalCornField{
 
                     // &image.data[i..(i+px)];
                         
-                    let pixel = image::imageops::sample_bilinear(&im, u, v).unwrap();
-                    //dbg!(relative, u, v, pixel);
-
-                    thing.is_in_corn = pixel[0] as f32 / 255.0;
+                    if let Some(pixel) = image::imageops::sample_bilinear(&im, u, v){
+                        //dbg!(relative, u, v, pixel);
+                        thing.is_in_corn += pixel[0] as f32 / 255.0;
+                    }
                 }
             }
         }

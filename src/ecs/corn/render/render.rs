@@ -23,7 +23,7 @@ use wgpu::{vertex_attr_array, PushConstantRange, ShaderStages};
 /// In order to actually draw the corn, we spawn a single Corn stalk with the master corn mesh in the middle of the scene. When the app tries to render this object
 /// our custom draw commands are called, which obtain the corn instance buffer, and draw our corn instanced.
 
-pub const DEBUG_RENDER_MODE: bool = true;
+pub const DEBUG_RENDER_MODE: bool = false;
 
 pub mod shaders{
     pub const INSTANCED_VERTEX_SHADER: &str = "shaders/corn/render/vertex.wgsl";

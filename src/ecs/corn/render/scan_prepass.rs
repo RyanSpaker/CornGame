@@ -41,7 +41,7 @@ impl LodCutoffs{
     //Makes sure lodcutoffs has the right number of lods, and use a predefined set of lods for up to 7 groupings
     pub fn update_lod_cutoffs(mut lods: ResMut<LodCutoffs>, corn_mesh: Res<CornModel>){
         if corn_mesh.loaded && corn_mesh.lod_count as usize != lods.0.len(){
-            lods.0 = vec![5.0, 10.0, 20.0, 30.0, 40.0, 50.];
+            lods.0 = vec![10.0, 20.0, 30.0, 40.0, 50.0, 150.];
             lods.0.resize(corn_mesh.lod_count, 500.0);
             println!("Max Lod: {}", lods.0.last().unwrap());
         }

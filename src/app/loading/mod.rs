@@ -5,8 +5,12 @@ pub mod shader_imports;
     it also includes the initial scene setup
 */
 use std::f32::consts::PI;
+
+use bevy_rapier3d::prelude::*;
 use bevy::{prelude::*, render::mesh::PlaneMeshBuilder};
 use crate::ecs::{corn::field::{cf_image_carved::CornSensor, prelude::*}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
+
+use super::gameplay::npc::{NpcPlugin, TrackerBrain, TrackerTarget};
 
 #[derive(Resource, Default)]
 pub struct LoadingTaskCount(pub usize);
@@ -28,7 +32,7 @@ impl<T> Plugin for LoadGamePlugin<T> where T: States + Copy{
         app
             .insert_resource(LoadingTaskCount(1))
             .insert_resource(LoadingExitState::<T>(self.exit_state))
-            .add_plugins(shader_imports::ShaderImportPlugin)
+            .add_plugins((shader_imports::ShaderImportPlugin, NpcPlugin))
             .add_systems(
                 Update, 
                 (
@@ -66,7 +70,7 @@ fn setup_scene(
             ..default()
         }),
         ..default()
-    }, FlyCam, MainCamera, CornSensor::default() /* Fxaa::default() */));
+    }, FlyCam, MainCamera, TrackerTarget, Collider::ball(0.2), ActiveCollisionTypes::all(), CornSensor::default() /* Fxaa::default() */));
 
     //Spawn Rest of Scene
     commands.spawn((
@@ -84,13 +88,37 @@ fn setup_scene(
             asset_server.load("textures/maze.png")
         )*/
     ));
+
+    commands.spawn((
+        SpatialBundle::INHERITED_IDENTITY,
+        ImageCarvedHexagonalCornField::new(
+            Vec3::new(1000.0, 0.0, 0.0), Vec2::ONE*150.0, 
+            0.75, Vec2::new(0.9, 1.1), 0.2, 
+            asset_server.load("textures/circle.png")
+        ),
+
+        /*
+        ImageCarvedHexagonalCornField::new(
+            Vec3::ZERO, Vec2::ONE*75.0, 
+            0.75, Vec2::new(0.9, 1.1), 0.2, 
+            asset_server.load("textures/maze.png")
+        )*/
+    ));
     //box
     commands.spawn(PbrBundle{
         mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
         material: materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0))),
         transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
         ..default()
-    });
+    }).insert((
+        TrackerBrain,
+        RigidBody::KinematicVelocityBased,
+        Velocity::default(),
+        Collider::cuboid(1.0, 1.0, 1.0),
+        ActiveEvents::COLLISION_EVENTS,
+        CollidingEntities::default(),
+    ));
+
     commands.spawn(PbrBundle{
         mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
         material: materials.add(StandardMaterial::from(Color::rgb(1.0, 0.0, 0.0))),

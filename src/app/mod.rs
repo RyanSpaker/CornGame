@@ -10,6 +10,7 @@ pub mod audio;
 use std::time::Duration;
 
 use bevy::{app::AppExit, prelude::*};
+use bevy_rapier3d::plugin::{NoUserData, RapierPhysicsPlugin};
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
 
@@ -31,6 +32,7 @@ pub struct CornAppPlugin;
 impl Plugin for CornAppPlugin{
     fn build(&self, app: &mut App) {
         app
+            .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
             .init_state::<CornGameState>()
             .init_resource::<LoadingTimer>()
             .add_systems(OnEnter(CornGameState::Init), init_game)
