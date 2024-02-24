@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use crate::{
     ecs::corn::{
         asset::{CornAsset, CornModel}, buffer::{CornInstanceBuffer, CORN_DATA_SIZE}
@@ -9,11 +11,11 @@ use bevy::{
     asset::{Asset, Assets}, ecs::system::{lifetimeless::SRes, Commands, Res, ResMut, SystemParamItem}, pbr::{
         ExtendedMaterial, MaterialExtension, MaterialMeshBundle, RenderMeshInstances, StandardMaterial
     }, prelude::*, reflect::Reflect, render::{
-        batching::NoAutomaticBatching, mesh::{GpuBufferInfo, Mesh}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, 
+        batching::NoAutomaticBatching, mesh::{GpuBufferInfo, Mesh, PlaneMeshBuilder}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, 
         render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}, view::NoFrustumCulling
-    }
+    }, scene::ron::extensions
 };
-use wgpu::{vertex_attr_array, PushConstantRange, ShaderStages};
+use wgpu::{util::DrawIndexedIndirectArgs, vertex_attr_array, PushConstantRange, ShaderStages};
 
 /// Corn rendering uses a Special Material which expands upon the `StandardMaterial` adding instancing support.
 /// We add this material to the app with a special Material Plugin called `SpecializedMaterialPlugin`, which allows us to override the Draw commands used by the Material.
@@ -23,7 +25,7 @@ use wgpu::{vertex_attr_array, PushConstantRange, ShaderStages};
 /// In order to actually draw the corn, we spawn a single Corn stalk with the master corn mesh in the middle of the scene. When the app tries to render this object
 /// our custom draw commands are called, which obtain the corn instance buffer, and draw our corn instanced.
 
-pub const DEBUG_RENDER_MODE: bool = true;
+pub const DEBUG_RENDER_MODE: bool = true; //TODO change dynamically in resource
 
 pub mod shaders{
     pub const INSTANCED_VERTEX_SHADER: &str = "shaders/corn/render/vertex.wgsl";
@@ -144,7 +146,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
             } => {
                 pass.set_index_buffer(buffer.slice(..), 0, *index_format);
                 for i in 0..corn_instance_buffer.lod_count {
-                    pass.draw_indexed_indirect(indirect_buffer, (i * 20).into());
+                    pass.draw_indexed_indirect(indirect_buffer, i * size_of::<DrawIndexedIndirectArgs>() as u64);
                 }
             }
             GpuBufferInfo::NonIndexed => {
@@ -161,6 +163,10 @@ pub fn spawn_corn_anchor(
     mut commands: Commands,
     std_materials: Res<Assets<StandardMaterial>>,
     mut materials: ResMut<Assets<CornMaterial>>,
+
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials_n: ResMut<Assets<NormalRandomMaterial>>,
+
     corn: Res<CornModel>,
     corn_asset: Res<Assets<CornAsset>>,
     mut events: EventReader<AssetEvent<CornAsset>>,
@@ -192,6 +198,25 @@ pub fn spawn_corn_anchor(
             NoFrustumCulling,
             NoAutomaticBatching {},
         ));
+
+        // The idea here is to render a flat texture beyond the max corn LOD with random normals. Since this emulates what the corn field looks like in the limit.
+        // It is not working very well though.
+        // let mat = StandardMaterial{
+        //     alpha_mode: AlphaMode::Mask(0.5),
+        //     ..mat.clone()
+        // };
+        // commands.spawn(
+        //     MaterialMeshBundle::<NormalRandomMaterial> {
+        //         mesh: meshes.add(PlaneMeshBuilder::new(Direction3d::Y, Vec2::ONE*512.0)),
+        //         material: materials_n.add(NormalRandomMaterial{
+        //             base: mat,
+        //             extension: NormalRandomMaterialEx::default(),
+        //         }),
+        //         //material: std_materials.add(StandardMaterial::from(Color::RED)),
+        //         transform: Transform { translation: Vec3 { x: 0.0, y: 0.1, z: 0.0 }, ..Default::default() },
+        //         ..default()
+        //     }
+        // );
     }
 }
 ///Adds corn rendering functionality to the game
@@ -209,5 +234,17 @@ impl Plugin for CornRenderPlugin {
             );
         //.insert_resource(DirectionalLightShadowMap { size: 4096 });
         // TODO heirarchical shadow maps? antialiasing?
+
+        app.add_plugins(MaterialPlugin::<NormalRandomMaterial>::default());
+    }
+}
+
+pub type NormalRandomMaterial = ExtendedMaterial<StandardMaterial, NormalRandomMaterialEx>;
+#[derive(Default, Clone, AsBindGroup, Asset, Reflect)]
+struct NormalRandomMaterialEx{}
+
+impl MaterialExtension for NormalRandomMaterialEx {
+    fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
+        "shaders/corn/render/randomnormals.wgsl".into()
     }
 }
