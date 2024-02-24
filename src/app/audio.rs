@@ -23,7 +23,7 @@ fn wind_volume(time: Res<Time>, settings: Query<(&mut AudioSink, &PlaybackSettin
             // delay rustle
             t -= 2.0;
             min_vol = 0.0;
-            power = 3.0;
+            power = 2.0;
         }
 
         // wind pattern: https://www.desmos.com/calculator/023vwitwiq
@@ -124,7 +124,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             source: asset_server.load("sounds/wind_rustle.ogg"),
             settings: PlaybackSettings{
                 mode: bevy::audio::PlaybackMode::Once,
-                volume: Volume::new(0.1),
+                volume: Volume::new(0.15),
                 ..Default::default()
             }
         },
@@ -151,8 +151,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         AudioBundle {
             source: asset_server.load("sounds/spooky.ogg"),
             settings: PlaybackSettings{
-                mode: bevy::audio::PlaybackMode::Once,
-                volume: Volume::new(0.1),
+                mode: bevy::audio::PlaybackMode::Loop,
+                volume: Volume::new(0.04),
                 paused: true,
                 ..Default::default()
             }

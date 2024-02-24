@@ -1,3 +1,5 @@
+use std::default;
+
 use crate::{
     ecs::corn::{
         asset::{CornAsset, CornModel}, buffer::{CornInstanceBuffer, CORN_DATA_SIZE}
@@ -29,6 +31,17 @@ pub mod shaders{
     pub const INSTANCED_VERTEX_SHADER: &str = "shaders/corn/render/vertex.wgsl";
     pub const INSTANCED_FRAGMENT_SHADER: &str = "shaders/corn/render/fragment.wgsl";
 }
+
+pub type GhostMaterial = ExtendedMaterial<StandardMaterial, ShadowMaterialExtension>;
+#[derive(Default, Clone, AsBindGroup, Asset, Reflect)]
+pub struct ShadowMaterialExtension{}
+impl MaterialExtension for ShadowMaterialExtension {
+    fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
+        "shaders/corn/render/nofragment.wgsl".into()
+    }
+    //TODO should I set defered as well?
+}
+
 
 /// The material type of the corn anchor asset
 pub type CornMaterial = ExtendedMaterial<StandardMaterial, CornMaterialExtension>;
@@ -194,10 +207,12 @@ pub fn spawn_corn_anchor(
         ));
     }
 }
+
 ///Adds corn rendering functionality to the game
 pub struct CornRenderPlugin;
 impl Plugin for CornRenderPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(MaterialPlugin::<GhostMaterial>::default());
         app.add_plugins(SpecializedMaterialPlugin::<
             CornMaterial,
             CornDrawRender,

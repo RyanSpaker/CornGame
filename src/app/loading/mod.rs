@@ -8,9 +8,9 @@ use std::f32::consts::PI;
 
 use bevy_rapier3d::prelude::*;
 use bevy::{prelude::*, render::mesh::PlaneMeshBuilder};
-use crate::ecs::{corn::field::{cf_image_carved::CornSensor, prelude::*}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
+use crate::ecs::{corn::{field::{cf_image_carved::CornSensor, prelude::*}, render::render::GhostMaterial}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
 
-use super::gameplay::npc::{NpcPlugin, TrackerBrain, TrackerTarget};
+use super::gameplay::npc::{NpcPlugin, Player, TrackerBrain, TrackerTarget};
 
 #[derive(Resource, Default)]
 pub struct LoadingTaskCount(pub usize);
@@ -63,14 +63,14 @@ fn setup_scene(
 ){
     //Spawn Camera
     commands.spawn((Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 2.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        transform: Transform::from_xyz(0.0, 1.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         projection: Projection::Perspective(PerspectiveProjection{
             near: 0.1,
             far: 200.0,
             ..default()
         }),
         ..default()
-    }, FlyCam, MainCamera, TrackerTarget, Collider::ball(0.2), ActiveCollisionTypes::all(), CornSensor::default() /* Fxaa::default() */));
+    }, FlyCam, MainCamera, Player, TrackerTarget, Collider::ball(0.2), ActiveCollisionTypes::all(), CornSensor::default() /* Fxaa::default() */));
 
     //Spawn Rest of Scene
     commands.spawn((
@@ -105,9 +105,12 @@ fn setup_scene(
         )*/
     ));
     //box
-    commands.spawn(PbrBundle{
+    commands.spawn(MaterialMeshBundle{
         mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
-        material: materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0))),
+        material: asset_server.add(GhostMaterial{
+            base: StandardMaterial::default(),
+            extension: Default::default()
+        }),
         transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
         ..default()
     }).insert((
