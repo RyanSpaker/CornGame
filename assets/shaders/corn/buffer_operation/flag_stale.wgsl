@@ -1,4 +1,4 @@
-#import corn_game::corn_types::{PerCornData, StaleRange}
+#import corn_game::corn::{PerCornData, StaleRange}
 
 @group(0) @binding(0)
 var<storage, read_write> data_buffer: array<PerCornData>;

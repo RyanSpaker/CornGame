@@ -1,13 +1,12 @@
-#define_import_path corn_game::rendering::wind
-#import corn_game::{utils::random::randValue, rendering::vertex_io::CornData}
+#define_import_path corn_game::corn::wind
+#import corn_game::{utils::random::{hash, to_float}, corn::vertex_io::CornData}
 
 
 fn apply_wind_acerola(vertex_in: CornData, time: f32) -> CornData {
-    /* acerola example */
+    // Acerola Example
     let offset = vertex_in.offset;
     let position = vertex_in.position;
-    var idHash : f32 = randValue( u32(abs(offset.x * 10000 + offset.y * 100 + offset.z * 0.05 + 2)) );
-    idHash = randValue( u32(idHash * 100000) );
+    var idHash : f32 = to_float(hash(hash(bitcast<u32>(abs(offset.x * 10000 + offset.y * 100 + offset.z * 0.05 + 2)))*100000u));
 
     var strength : f32 = cos(time / 3.0) * cos(time / 5.2) / 2 + 0.5; //these two frequencies work well https://www.desmos.com/calculator/023vwitwiq
     strength *= strength;

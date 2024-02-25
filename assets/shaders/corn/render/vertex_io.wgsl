@@ -1,10 +1,10 @@
-#define_import_path corn_game::rendering::vertex_io
+#define_import_path corn_game::corn::vertex_io
 
-/*
-	This File creates different functions used to convert between instanced corn vertex structs and standard material vertex structs
-	This file handles all of the differences between prepass and regular vertex shader code using shaderdefs, 
-	so by importing these types other shaders can completely ignore the problem and everything will just work.
-*/
+
+//	This File creates different functions used to convert between instanced corn vertex structs and standard material vertex structs
+//	This file handles all of the differences between prepass and regular vertex shader code using shaderdefs, 
+//	so by importing these types other shaders can completely ignore the problem and everything will just work.
+
 
 #ifdef PREPASS_PIPELINE
 	#import bevy_pbr::{prepass_io::{Vertex, VertexOutput}, prepass_vertex::standard_vertex}

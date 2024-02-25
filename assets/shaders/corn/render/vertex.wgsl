@@ -1,4 +1,4 @@
-#import corn_game::rendering::{wind::apply_wind_acerola, vertex_io::{CornVertex, CornData, CornVertexOutput, extract_data, to_standard_input, to_corn_output, pbr_vertex}}
+#import corn_game::corn::{wind::apply_wind_acerola, vertex_io::{CornVertex, CornData, CornVertexOutput, extract_data, to_standard_input, to_corn_output, pbr_vertex}}
 
 struct PushConstants {
     base_instance: u32,

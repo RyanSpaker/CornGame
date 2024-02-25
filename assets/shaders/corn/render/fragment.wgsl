@@ -1,5 +1,5 @@
 #import bevy_pbr::fragment::pbr_fragment
-#import corn_game::rendering::vertex_io::{to_vertex_output, CornVertexOutput}
+#import corn_game::corn::vertex_io::{to_vertex_output, CornVertexOutput}
 #ifdef PREPASS_PIPELINE
 #import bevy_pbr::prepass_io::FragmentOutput
 #else

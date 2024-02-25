@@ -1,15 +1,15 @@
 #define_import_path bevy_pbr::prepass_vertex
 
 #import bevy_pbr::{
-    prepass_bindings,
-    mesh_view_bindings::{view, previous_view_proj},
-    mesh_functions,
-    skinning,
-    morph,
-    prepass_io::{Vertex, VertexOutput},
+    prepass_bindings, 
+    mesh_view_bindings::{view, previous_view_proj}, 
+    mesh_functions, 
+    skinning, 
+    morph, 
+    prepass_io::{Vertex, VertexOutput}
 }
 #ifdef DEFERRED_PREPASS
-#import bevy_pbr::rgb9e5
+    #import bevy_pbr::rgb9e5
 #endif
 
 #ifdef MORPH_TARGETS
@@ -22,12 +22,12 @@ fn morph_vertex(vertex_in: Vertex) -> Vertex {
             continue;
         }
         vertex.position += weight * morph::morph(vertex.index, morph::position_offset, i);
-    #ifdef VERTEX_NORMALS
-        vertex.normal += weight * morph::morph(vertex.index, morph::normal_offset, i);
-    #endif
-    #ifdef VERTEX_TANGENTS
-        vertex.tangent += vec4(weight * morph::morph(vertex.index, morph::tangent_offset, i), 0.0);
-    #endif
+        #ifdef VERTEX_NORMALS
+            vertex.normal += weight * morph::morph(vertex.index, morph::normal_offset, i);
+        #endif
+        #ifdef VERTEX_TANGENTS
+            vertex.tangent += vec4(weight * morph::morph(vertex.index, morph::tangent_offset, i), 0.0);
+        #endif
     }
     return vertex;
 }

@@ -1,4 +1,4 @@
-#import corn_game::corn_types::PerCornData
+#import corn_game::corn::PerCornData
 
 #ifdef OVERRIDE_LOD_COUNT
 const LOD_COUNT = #{OVERRIDE_LOD_COUNT}u;

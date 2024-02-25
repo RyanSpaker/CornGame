@@ -18,12 +18,12 @@ fn morph_vertex(vertex_in: Vertex) -> Vertex {
             continue;
         }
         vertex.position += weight * morph::morph(vertex.index, bevy_pbr::morph::position_offset, i);
-    #ifdef VERTEX_NORMALS
-        vertex.normal += weight * morph::morph(vertex.index, bevy_pbr::morph::normal_offset, i);
-    #endif
-    #ifdef VERTEX_TANGENTS
-        vertex.tangent += vec4(weight * morph::morph(vertex.index, bevy_pbr::morph::tangent_offset, i), 0.0);
-    #endif
+        #ifdef VERTEX_NORMALS
+            vertex.normal += weight * morph::morph(vertex.index, bevy_pbr::morph::normal_offset, i);
+        #endif
+        #ifdef VERTEX_TANGENTS
+            vertex.tangent += vec4(weight * morph::morph(vertex.index, bevy_pbr::morph::tangent_offset, i), 0.0);
+        #endif
     }
     return vertex;
 }

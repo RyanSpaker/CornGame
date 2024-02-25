@@ -72,8 +72,8 @@ fn setup_scene(
     commands.spawn((
         SpatialBundle::INHERITED_IDENTITY,
         ImageCarvedHexagonalCornField::new(
-            Vec3::ZERO, Vec2::ONE*512.0, 
-            0.75, Vec2::new(0.9, 1.1), 0.2, 
+            Vec3::ZERO, Vec2::ONE*500.0, 
+            1.0, Vec2::new(0.9, 1.1), 0.2, 
             asset_server.load("textures/Maze_Large.png")
         ),
 

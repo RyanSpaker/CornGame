@@ -1,4 +1,4 @@
-#define_import_path corn_game::corn_types
+#define_import_path corn_game::corn
 
 struct PerCornData {
   offset: vec3<f32>,
