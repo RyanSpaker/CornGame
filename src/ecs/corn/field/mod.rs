@@ -8,9 +8,11 @@ use bevy::{
     reflect::GetTypeRegistration,
     render::{Extract, RenderApp}
 };
+use bevy_gltf_components::GltfComponentsSet;
 use cf_image_carved::ImageCarvedHexagonalCornField;
 use cf_simple::{SimpleHexagonalCornField, SimpleRectangularCornField};
 use state::{CornAssetState, MasterCornFieldStatePlugin};
+use wgpu::core::device::resource;
 use self::state::CornFieldStatePlugin;
 use super::data_pipeline::{operation_executor::{IntoCornPipeline, IntoOperationResources}, operation_manager::IntoBufferOperation, CornFieldPipelinePlugin};
 
@@ -83,6 +85,48 @@ impl<T: RenderableCornField> Plugin for RenderableCornFieldPlugin<T>{
     }
 }
 
+#[derive(Component, Reflect, Default, Debug)]
+#[reflect(Component)]
+/// test component for loading cornfields from blender
+pub struct CornTestGltf;
+
+fn init_gltf_cornfield(
+    corn: Query<(Entity, &CornTestGltf, &Children,  &GlobalTransform), Without<ImageCarvedHexagonalCornField>>,
+    mut children: Query<(&Handle<StandardMaterial>, &mut Visibility)>,
+    a_materials: Res<Assets<StandardMaterial>>,
+    mut commands: Commands
+){
+    for (id, _corn, child, transform) in corn.iter() {
+        let (h_mat, mut visible) = children.get_mut(*child.first().unwrap()).unwrap();
+
+        // hide the reference plane
+        *visible = Visibility::Hidden;
+
+        let Some(material) = a_materials.get(h_mat) else { break };
+        let h_image = material.base_color_texture.clone().unwrap();
+
+        // NOTE: we use the transform of corn object. 
+        // This means that you CANNOT apply the transform in blender
+        // we fully assume the plane of the model is 1x1
+        // NOTE: rotation not supported yet.
+        // TODO: actually use the mesh in corn render.
+        // TODO: should use global transform
+
+        let transform = transform.compute_transform();
+        let center = transform.translation + Vec3::new(0.0, 0.0, 0.0); 
+
+        let half_extents = transform.scale.xz();
+        dbg!(half_extents, center);
+
+        commands.entity(id).insert(
+            ImageCarvedHexagonalCornField::new(
+                center, half_extents, 
+                0.75, Vec2::new(1.6, 1.8), 0.2, 
+                h_image,
+            )
+        );
+    }
+}
 
 pub struct CornFieldsPlugin;
 impl Plugin for CornFieldsPlugin{
@@ -93,5 +137,9 @@ impl Plugin for CornFieldsPlugin{
             RenderableCornFieldPlugin::<ImageCarvedHexagonalCornField>::new(),
             MasterCornFieldStatePlugin
         ));
+
+        app.add_systems(Update, init_gltf_cornfield.after(GltfComponentsSet::Injection) );
+
+        app.register_type::<CornTestGltf>(); // needed for loading from gltf
     }
 }

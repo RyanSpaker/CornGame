@@ -7,11 +7,19 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.13.0", default-features = true, features=["dynamic_linking", "asset_processor", "file_watcher", "embedded_watcher"]}
+bevy_gltf_components = { version = "0.5"} #components in gltf
+
+bevy_rapier3d = "0.25.0" #physics
+
+bevy_replicon = "0.24.1" #networking
+bevy_replicon_renet = "0.1.0" #transport
+
+bevy_editor_pls = "0.8.1"
+
 rand = "0.8.5"
 bytemuck = "1.14.1"
 futures-lite = "2.2.0"
 wgpu = "0.19.1"
-bevy_rapier3d = "0.25.0"
 image = "0.24.8"
 
 [profile.dev]

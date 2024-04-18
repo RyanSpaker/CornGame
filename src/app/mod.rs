@@ -6,10 +6,12 @@
 pub mod gameplay;
 pub mod loading;
 pub mod audio;
+pub mod network;
 
 use std::time::Duration;
 
 use bevy::{app::AppExit, prelude::*};
+use bevy_gltf_components::ComponentsFromGltfPlugin;
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
 
@@ -30,7 +32,8 @@ pub struct LoadingTimer(Duration);
 pub struct CornAppPlugin;
 impl Plugin for CornAppPlugin{
     fn build(&self, app: &mut App) {
-        app
+        app            
+            .add_plugins(ComponentsFromGltfPlugin::default())
             .init_state::<CornGameState>()
             .init_resource::<LoadingTimer>()
             .add_systems(OnEnter(CornGameState::Init), init_game)
@@ -46,7 +49,8 @@ impl Plugin for CornAppPlugin{
                     CornGameState::Exit
                 ),
                 MyAudioPlugin
-            ));
+            ))
+            .add_plugins(network::CornNetworkingPlugin);
     }
 }
 

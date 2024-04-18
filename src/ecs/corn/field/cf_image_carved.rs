@@ -1,7 +1,7 @@
 use core::panic;
-use std::{collections::hash_map::DefaultHasher, hash::{Hasher, Hash}};
+use std::{collections::hash_map::DefaultHasher, default, hash::{Hash, Hasher}};
 use bevy::{
-    app::Update, asset::{Assets, Handle}, ecs::{component::Component, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::Image}, transform::components::GlobalTransform
+    app::Update, asset::{Assets, Handle}, ecs::{component::Component, reflect::ReflectComponent, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::Image}, transform::components::GlobalTransform
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::{util::BufferInitDescriptor, SamplerBindingType};
@@ -84,6 +84,7 @@ impl From::<(&ImageCarvedHexagonalCornField, SimpleCornFieldRange)> for SimpleCo
 pub struct CornSensor{
     pub is_in_corn: f32
 }
+
 
 /// This is a Corn Field with a path carved out based on a input image. Any corn stalks on a pixel with red are kept, corn on a pixel without red are discarded
 /// The corn is placed in a hexagonal pattern, making stright line patterns less common
@@ -191,16 +192,20 @@ impl ImageCarvedHexagonalCornField{
 
                     // &image.data[i..(i+px)];
                         
-                    let pixel = image::imageops::sample_bilinear(&im, u, v).unwrap();
-                    //dbg!(relative, u, v, pixel);
-
-                    thing.is_in_corn = pixel[0] as f32 / 255.0;
+                    match image::imageops::sample_bilinear(&im, u, v) {
+                        Some(pixel) => {
+                            thing.is_in_corn = pixel[0] as f32 / 255.0
+                        }
+                        None => {
+                            thing.is_in_corn = 0.0;
+                        }
+                    };
                 }
             }
         }
-        
     }
 }
+
 impl CornAssetState for ImageCarvedHexagonalCornField{
     fn assets_ready(&self) -> bool {
         return self.image_ready;

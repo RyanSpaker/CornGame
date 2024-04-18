@@ -12,11 +12,11 @@ There is also a resource called FPS which you can open to view the current FPS o
 
 */
 
-//use bevy_editor_pls::prelude::*;
+use bevy_editor_pls::prelude::*;
 
 fn main() {
     let mut app = App::new();
     app.add_plugins(CornGame);
-    // app.add_plugins(EditorPlugin::default());
+    app.add_plugins(EditorPlugin::default());
     app.run();
 }
