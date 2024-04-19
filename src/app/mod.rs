@@ -7,6 +7,7 @@ pub mod gameplay;
 pub mod loading;
 pub mod audio;
 pub mod network;
+pub mod ui;
 
 use std::time::Duration;
 
@@ -50,7 +51,7 @@ impl Plugin for CornAppPlugin{
                 ),
                 MyAudioPlugin
             ))
-            .add_plugins(network::CornNetworkingPlugin);
+            .add_plugins((network::CornNetworkingPlugin, ui::MenuPlugin));
     }
 }
 

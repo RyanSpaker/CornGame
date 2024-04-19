@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use bevy::{
-    app::{Plugin, Update}, diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, ecs::{component::Component, query::With, system::{Commands, Query, Res}}, prelude::default, reflect::Reflect, render::color::Color, text::{Text, TextSection, TextStyle}, transform::components::{GlobalTransform, Transform}, ui::node_bundles::TextBundle
+    app::{Plugin, Update}, diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, ecs::{component::Component, query::With, system::{Commands, Query, Res}}, prelude::default, reflect::Reflect, render::color::Color, text::{Text, TextSection, TextStyle}, transform::components::{GlobalTransform, Transform}, ui::{node_bundles::TextBundle, PositionType, Style, Val}
 };
 
 use super::main_camera::MainCamera;
@@ -62,7 +62,14 @@ pub fn spawn_fps_text(mut commands: Commands){
 
         TextSection::new(" Global: ", TextStyle{font_size: 20.0, color: Color::GOLD, ..default()}),
         TextSection::new("- ", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
-    ]), FPSData::default(), DiagPos));
+    ]), FPSData::default(), DiagPos))
+    .insert(
+        Style{
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(5.0),
+            right: Val::Px(5.0),            
+            ..default()
+        });
 }
 
 #[derive(Clone, Debug, Reflect, Component)]

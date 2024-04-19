@@ -1,6 +1,6 @@
 #import corn_game::{
   corn::{PerCornData, CornSettings, Range},
-  utils::{randValue, randNext}
+  utils::{randValue, randNext, initRand}
 }
 
 @group(0) @binding(0)
@@ -43,8 +43,16 @@ fn simple_image_hex_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin
     let xz_offset = pos*instance_settings.step;
     // Add the field's origin position to the corn stalk position
     out.offset = instance_settings.origin_res_width.xyz + vec3<f32>(xz_offset.x, 0.0, xz_offset.y);
+
     // Add random offsets to the x and z position of the corn stalk
-    out.offset += vec3<f32>(randValue(gid.x+512u*id_count.x), 0.5, randNext())*instance_settings.random_settings.x*2.0-1.0;
+    initRand(gid.x+512u*id_count.x);
+    // XXX changed this not sure it is right
+    out.offset += instance_settings.random_settings.x * vec3<f32>(
+      mix(-1.0, 1.0, randNext()), 
+      0.0, 
+      mix(-1.0, 1.0, randNext())
+    );
+
     // cutout corn that is in the path
     let uv: vec2<f32> = (out.offset - instance_settings.origin_res_width.xyz).xz * instance_settings.random_settings.yz;
     let color: vec4<f32> = textureSampleLevel(path_texture, path_texture_sampler, uv, 0.0);

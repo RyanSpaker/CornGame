@@ -117,7 +117,7 @@ fn setup_scene(
         scene: my_gltf,
         transform: Transform::from_xyz(2.0, 0.0, -5.0),
         ..Default::default()
-    });//.insert(crate::ecs::corn::field::CornTestGltf);
+    });
 
     task_count.0 -= 1;
 }
