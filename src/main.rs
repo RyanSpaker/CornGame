@@ -11,6 +11,7 @@ You need to manually set the values to something logical (i usually do 5, 10, 25
 There is also a resource called FPS which you can open to view the current FPS of the application
 
 */
+
 fn main() {
     let mut app = App::new();
     app.add_plugins(CornGame);

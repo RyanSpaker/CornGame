@@ -5,6 +5,8 @@
 */
 use std::f32::consts::PI;
 use bevy::{prelude::*, render::mesh::PlaneMeshBuilder};
+use bevy_replicon::core::replication_rules::Replication;
+use serde::{Deserialize, Serialize};
 use crate::ecs::{corn::{asset::processing::CornAssetTransformer, field::{cf_image_carved::CornSensor, prelude::*}}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
 
 #[derive(Resource, Default)]
@@ -64,7 +66,7 @@ fn setup_scene(
             ..default()
         }),
         ..default()
-    }, FlyCam, MainCamera, CornSensor::default() /* Fxaa::default() */));
+    }, FlyCam, MainCamera, CornSensor::default()));
 
     //Spawn Rest of Scene
     // commands.spawn((
@@ -76,13 +78,6 @@ fn setup_scene(
     //         asset_server.load("textures/maze.png")
     //     )
     // ));
-    // //box
-    // commands.spawn(PbrBundle{
-    //     mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
-    //     material: materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0))),
-    //     transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
-    //     ..default()
-    // });
     // commands.spawn(PbrBundle{
     //     mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
     //     material: materials.add(StandardMaterial::from(Color::rgb(1.0, 0.0, 0.0))),
@@ -115,9 +110,34 @@ fn setup_scene(
     let my_gltf = asset_server.load("scenes/cornmenu_min.glb#Scene0");
     commands.spawn(SceneBundle {
         scene: my_gltf,
-        transform: Transform::from_xyz(2.0, 0.0, -5.0),
+        //transform: Transform::from_xyz(2.0, 0.0, -5.0), TODO play with this to test relative vs global coords in corn renderer are correct
         ..Default::default()
     });
 
+    commands.spawn(TestBox);
+
     task_count.0 -= 1;
+}
+
+#[derive(Component, Serialize, Deserialize)]
+pub struct TestBox;
+impl TestBox {
+    pub fn spawn(
+        query: Query<(Entity, &Self), Added<Self>>,
+        mut meshes: ResMut<Assets<Mesh>>,
+        mut materials: ResMut<Assets<StandardMaterial>>,
+        mut commands: Commands
+    ){
+        for (id, _) in query.iter() {
+            commands.entity(id).insert((
+                PbrBundle{
+                    mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
+                    material: materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0))),
+                    transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
+                    ..default()
+                },
+                Replication
+            ));
+        }
+    }
 }

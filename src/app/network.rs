@@ -72,13 +72,239 @@
 /// - server side spawns 2 cubes, one for each player
 /// - both control with arrow keys.
 
-use bevy::prelude::*;
-use bevy_replicon::prelude::*;
-use bevy_replicon_renet::RepliconRenetPlugins;
+use std::{
+    error::Error,
+    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+    time::SystemTime,
+};
+
+use bevy::{ecs::{entity, event}, prelude::*, transform::commands};
+use bevy_replicon::{client::{client_mapper::ServerEntityMap, ServerEntityTicks}, prelude::*};
+use bevy_replicon_renet::{
+    renet::{
+        transport::{
+            ClientAuthentication, NetcodeClientTransport, NetcodeServerTransport,
+            ServerAuthentication, ServerConfig,
+        },
+        ConnectionConfig, RenetClient, RenetServer,
+    },
+    RenetChannelsExt, RepliconRenetPlugins,
+};
+use clap::Parser;
+use serde::{Deserialize, Serialize};
+
+use crate::ecs::main_camera::MainCamera;
+
+use super::loading::TestBox;
+
+// #[derive(Component, Serialize, Deserialize)]
+// pub struct Blueprint<M>(M);
+
+// we need the ability to replicate objects in a scene file
+// the only option is to either replicated every part of the whole scene
+// or use regular scene loading on the client and then somehow merge/sync/cleanup the entities replicated from the server and cleaned up from the client.
+// 
+// idea, use name compenent, merge server components into the loaded ones, send server mapping for client's entity id, somehow delete / cleanup the old entity.
 
 pub struct CornNetworkingPlugin;
 impl Plugin for CornNetworkingPlugin{
     fn build(&self, app: &mut App) {
+        app.init_resource::<Cli>();
         app.add_plugins((RepliconPlugins, RepliconRenetPlugins));
+        app.replicate::<Transform>();
+        app.replicate::<TestBox>();
+        app.replicate::<Name>();
+
+        app.add_systems(Startup, read_cli.map(Result::unwrap));
+        app.add_systems(Update, (super::loading::TestBox::spawn).after(ClientSet::Receive));
+        app.add_systems(Update, name_sync_test.after(ClientSet::Receive).run_if(has_authority.map(|b|!b)));
+        //app.add_systems(Update, scene_add_repl_test.after(ClientSet::Receive).run_if(has_authority));
+        
+        app.add_client_event::<UpdateMapping>(ChannelKind::Ordered)
+            .add_systems(Update, handle_update_mapping.run_if(has_authority));
+
+        app.add_server_event::<DestroyOld>(ChannelKind::Ordered)
+            .add_systems(Update, handle_delete_old);  
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Event, Serialize)]
+struct UpdateMapping(Entity, Entity); /*new, old*/
+
+#[derive(Clone, Copy, Debug, Deserialize, Event, Serialize)]
+struct DestroyOld(Entity);
+
+fn handle_update_mapping(
+    mut rx: EventReader<FromClient<UpdateMapping>>,
+    mut entity_map: ResMut<ClientEntityMap>,
+    mut tx: EventWriter<ToClients<DestroyOld>>
+) {
+    for FromClient { client_id, event } in rx.read() {
+        let server_entity = event.1; // You can insert more components, they will be sent to the client's entity correctly.
+
+        entity_map.insert(
+            *client_id,
+            ClientMapping {
+                server_entity,
+                client_entity: event.0,
+            },
+        );
+
+        //tx.send(DestroyOld(event.1));
+    }
+}
+
+/// delete the replicated entity after it gets remapped
+fn handle_delete_old(
+    mut commands: Commands,
+    mut bullet_events: EventReader<DestroyOld>,
+) {
+    for event in bullet_events.read() {
+        commands.entity(event.0).despawn();
+    }
+}
+
+/// name sync
+/// TODO maybe don't require replication on query
+fn name_sync_test(
+    query: Query<(Entity, &Name), Added<Name>>,
+    all: Query<(Entity, &Name)>,
+    mut mapper: ResMut<ServerEntityMap>,
+    mut dumb: ResMut<ServerEntityTicks>,
+    mut commands: Commands
+){
+    for new in query.iter() {
+        if let Some(old) = all.iter().find(|v|v.1 == new.1 && v.0 != new.0){
+            let old_is_repl = mapper.to_server().get(&old.0).cloned();
+            let new_is_repl = mapper.to_server().get(&new.0).cloned();
+
+            dbg!(old, new, old_is_repl, new_is_repl);
+
+            #[allow(clippy::unnecessary_unwrap)] 
+            if old_is_repl.is_some() && new_is_repl.is_none() {
+                // gameobject replicated *before* client scene-loader spawns it
+                mapper.force_insert(old_is_repl.unwrap(), new.0);
+                let a = dumb.remove(&old.0).unwrap();
+                dumb.insert(new.0, a);
+
+                commands.entity(new.0).insert(Replication);
+                commands.entity(old.0).despawn();
+            }
+
+            #[allow(clippy::unnecessary_unwrap)] 
+            if new_is_repl.is_some() && old_is_repl.is_none(){
+                // gameobject replicated *after* client scene-loader spawns it
+                mapper.force_insert(new_is_repl.unwrap(), old.0);
+                let a = dumb.remove(&new.0).unwrap();
+                dumb.insert(old.0, a);
+
+                commands.entity(old.0).insert(Replication);
+                commands.entity(new.0).despawn();
+            }
+        }
+    }
+}
+
+/// hacky test to add replication to all objects in scene (except meshes, in order to avoid a weird name overlap)
+/// TODO need to use something other than name for this.
+pub fn scene_add_repl_test(
+    query: Query<(Entity, &Name), (With<Transform>, Without<Handle<Mesh>>, Without<Replication>, Added<Name>, Without<Camera> )>,
+    mut commands: Commands
+){
+    for (id,name) in query.iter() {
+        if name.as_ref() == "Plane"{
+            dbg!(name);
+            commands.entity(id).insert(Replication);
+        }
+    }
+}
+
+const PORT: u16 = 5000;
+const PROTOCOL_ID: u64 = 0;
+
+#[derive(Parser, PartialEq, Resource)]
+enum Cli {
+    Server {
+        #[arg(short, long, default_value_t = PORT)]
+        port: u16,
+    },
+    Client {
+        #[arg(short, long, default_value_t = Ipv4Addr::LOCALHOST.into())]
+        ip: IpAddr,
+
+        #[arg(short, long, default_value_t = PORT)]
+        port: u16,
+    },
+}
+
+impl Default for Cli {
+    fn default() -> Self {
+        Self::parse()
+    }
+}
+
+fn read_cli(
+    mut commands: Commands,
+    cli: Res<Cli>,
+    channels: Res<RepliconChannels>,
+) -> Result<(), Box<dyn Error>> {
+    match *cli {
+        Cli::Server { port } => {
+            let server_channels_config = channels.get_server_configs();
+            let client_channels_config = channels.get_client_configs();
+
+            let server = RenetServer::new(ConnectionConfig {
+                server_channels_config,
+                client_channels_config,
+                ..Default::default()
+            });
+
+            let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
+            let public_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
+            let socket = UdpSocket::bind(public_addr)?;
+            let server_config = ServerConfig {
+                current_time,
+                max_clients: 10,
+                protocol_id: PROTOCOL_ID,
+                authentication: ServerAuthentication::Unsecure,
+                public_addresses: vec![public_addr],
+            };
+            let transport = NetcodeServerTransport::new(server_config, socket)?;
+
+            commands.insert_resource(server);
+            commands.insert_resource(transport);
+            // commands.spawn(PlayerBundle::new(
+            //     ClientId::SERVER,
+            //     Vec2::ZERO,
+            //     Color::GREEN,
+            // ));
+        }
+        Cli::Client { port, ip } => {
+            let server_channels_config = channels.get_server_configs();
+            let client_channels_config = channels.get_client_configs();
+
+            let client = RenetClient::new(ConnectionConfig {
+                server_channels_config,
+                client_channels_config,
+                ..Default::default()
+            });
+
+            let current_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?;
+            let client_id = current_time.as_millis() as u64;
+            let server_addr = SocketAddr::new(ip, port);
+            let socket = UdpSocket::bind((ip, 0))?;
+            let authentication = ClientAuthentication::Unsecure {
+                client_id,
+                protocol_id: PROTOCOL_ID,
+                server_addr,
+                user_data: None,
+            };
+            let transport = NetcodeClientTransport::new(current_time, authentication, socket)?;
+
+            commands.insert_resource(client);
+            commands.insert_resource(transport);
+        }
+    }
+
+    Ok(())
 }

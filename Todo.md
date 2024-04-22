@@ -24,3 +24,6 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 Encountered a panic in exclusive system `bevy_gltf_components::process_gltfs::add_components_from_gltf_extras`!
 Encountered a panic in system `bevy_app::main_schedule::Main::run_main`!
 ```
+# bugs
+
+despawning sync'd car seems to create a bunch of entities with "replication" as only component, on the client.
