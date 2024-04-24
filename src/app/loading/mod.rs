@@ -9,6 +9,8 @@ use bevy_replicon::core::replication_rules::Replication;
 use serde::{Deserialize, Serialize};
 use crate::ecs::{corn::{asset::processing::CornAssetTransformer, field::{cf_image_carved::CornSensor, prelude::*}}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
 
+use super::character::Player;
+
 #[derive(Resource, Default)]
 pub struct LoadingTaskCount(pub usize);
 
@@ -66,7 +68,9 @@ fn setup_scene(
             ..default()
         }),
         ..default()
-    }, FlyCam, MainCamera, CornSensor::default()));
+    }, /*FlyCam,*/ MainCamera, CornSensor::default()));
+
+    commands.spawn(Player.bundle());
 
     //Spawn Rest of Scene
     // commands.spawn((

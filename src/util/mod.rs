@@ -3,6 +3,7 @@ use bevy::{ecs::component::Component, render::extract_component::ExtractComponen
 pub mod integer_set;
 pub mod specialized_material;
 pub mod asset_io;
+pub mod clone_entity;
 
 #[derive(Component, Clone, ExtractComponent)]
 pub struct DebugTag{}

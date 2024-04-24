@@ -8,6 +8,7 @@ pub mod loading;
 pub mod audio;
 pub mod network;
 pub mod ui;
+pub mod character;
 
 use std::time::Duration;
 
@@ -16,7 +17,7 @@ use bevy_gltf_components::ComponentsFromGltfPlugin;
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
 
-use self::audio::MyAudioPlugin;
+use self::{audio::MyAudioPlugin};
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum CornGameState{
@@ -51,7 +52,7 @@ impl Plugin for CornAppPlugin{
                 ),
                 MyAudioPlugin
             ))
-            .add_plugins((network::CornNetworkingPlugin, ui::MenuPlugin));
+            .add_plugins((network::CornNetworkingPlugin, ui::MenuPlugin, character::CharacterPlugin));
     }
 }
 

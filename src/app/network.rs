@@ -120,49 +120,49 @@ impl Plugin for CornNetworkingPlugin{
         app.add_systems(Update, name_sync_test.after(ClientSet::Receive).run_if(has_authority.map(|b|!b)));
         //app.add_systems(Update, scene_add_repl_test.after(ClientSet::Receive).run_if(has_authority));
         
-        app.add_client_event::<UpdateMapping>(ChannelKind::Ordered)
-            .add_systems(Update, handle_update_mapping.run_if(has_authority));
+        // app.add_client_event::<UpdateMapping>(ChannelKind::Ordered)
+        //     .add_systems(Update, handle_update_mapping.run_if(has_authority));
 
-        app.add_server_event::<DestroyOld>(ChannelKind::Ordered)
-            .add_systems(Update, handle_delete_old);  
+        // app.add_server_event::<DestroyOld>(ChannelKind::Ordered)
+        //     .add_systems(Update, handle_delete_old);  
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Event, Serialize)]
-struct UpdateMapping(Entity, Entity); /*new, old*/
+// #[derive(Clone, Copy, Debug, Deserialize, Event, Serialize)]
+// struct UpdateMapping(Entity, Entity); /*new, old*/
 
-#[derive(Clone, Copy, Debug, Deserialize, Event, Serialize)]
-struct DestroyOld(Entity);
+// #[derive(Clone, Copy, Debug, Deserialize, Event, Serialize)]
+// struct DestroyOld(Entity);
 
-fn handle_update_mapping(
-    mut rx: EventReader<FromClient<UpdateMapping>>,
-    mut entity_map: ResMut<ClientEntityMap>,
-    mut tx: EventWriter<ToClients<DestroyOld>>
-) {
-    for FromClient { client_id, event } in rx.read() {
-        let server_entity = event.1; // You can insert more components, they will be sent to the client's entity correctly.
+// fn handle_update_mapping(
+//     mut rx: EventReader<FromClient<UpdateMapping>>,
+//     mut entity_map: ResMut<ClientEntityMap>,
+//     mut tx: EventWriter<ToClients<DestroyOld>>
+// ) {
+//     for FromClient { client_id, event } in rx.read() {
+//         let server_entity = event.1; // You can insert more components, they will be sent to the client's entity correctly.
 
-        entity_map.insert(
-            *client_id,
-            ClientMapping {
-                server_entity,
-                client_entity: event.0,
-            },
-        );
+//         entity_map.insert(
+//             *client_id,
+//             ClientMapping {
+//                 server_entity,
+//                 client_entity: event.0,
+//             },
+//         );
 
-        //tx.send(DestroyOld(event.1));
-    }
-}
+//         //tx.send(DestroyOld(event.1));
+//     }
+// }
 
-/// delete the replicated entity after it gets remapped
-fn handle_delete_old(
-    mut commands: Commands,
-    mut bullet_events: EventReader<DestroyOld>,
-) {
-    for event in bullet_events.read() {
-        commands.entity(event.0).despawn();
-    }
-}
+// /// delete the replicated entity after it gets remapped
+// fn handle_delete_old(
+//     mut commands: Commands,
+//     mut bullet_events: EventReader<DestroyOld>,
+// ) {
+//     for event in bullet_events.read() {
+//         commands.entity(event.0).despawn();
+//     }
+// }
 
 /// name sync
 /// TODO maybe don't require replication on query
@@ -183,22 +183,32 @@ fn name_sync_test(
             #[allow(clippy::unnecessary_unwrap)] 
             if old_is_repl.is_some() && new_is_repl.is_none() {
                 // gameobject replicated *before* client scene-loader spawns it
-                mapper.force_insert(old_is_repl.unwrap(), new.0);
+                mapper.remove_by_client(old.0);
+                mapper.insert(old_is_repl.unwrap(), new.0);
                 let a = dumb.remove(&old.0).unwrap();
                 dumb.insert(new.0, a);
 
                 commands.entity(new.0).insert(Replication);
+                commands.add(crate::util::clone_entity::CloneEntity {
+                    source: old.0,
+                    destination: new.0,
+                });
                 commands.entity(old.0).despawn();
             }
 
             #[allow(clippy::unnecessary_unwrap)] 
             if new_is_repl.is_some() && old_is_repl.is_none(){
                 // gameobject replicated *after* client scene-loader spawns it
-                mapper.force_insert(new_is_repl.unwrap(), old.0);
+                mapper.remove_by_client(new.0);
+                mapper.insert(new_is_repl.unwrap(), old.0);
                 let a = dumb.remove(&new.0).unwrap();
                 dumb.insert(old.0, a);
 
                 commands.entity(old.0).insert(Replication);
+                commands.add(crate::util::clone_entity::CloneEntity {
+                    source: new.0,
+                    destination: old.0,
+                });
                 commands.entity(new.0).despawn();
             }
         }
