@@ -6,6 +6,7 @@
 use std::f32::consts::PI;
 use bevy::{prelude::*, render::mesh::PlaneMeshBuilder};
 use bevy_replicon::core::replication_rules::Replication;
+use bevy_xpbd_3d::prelude::*;
 use serde::{Deserialize, Serialize};
 use crate::ecs::{corn::{asset::processing::CornAssetTransformer, field::{cf_image_carved::CornSensor, prelude::*}}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
 
@@ -70,7 +71,10 @@ fn setup_scene(
         ..default()
     }, /*FlyCam,*/ MainCamera, CornSensor::default()));
 
-    commands.spawn(Player.bundle());
+    commands.spawn(Player.bundle()).insert( TransformBundle{
+        local: Transform::from_xyz(0.0, 1.0, -10.0),
+        ..Default::default()
+    });
 
     //Spawn Rest of Scene
     // commands.spawn((
@@ -116,7 +120,10 @@ fn setup_scene(
         scene: my_gltf,
         //transform: Transform::from_xyz(2.0, 0.0, -5.0), TODO play with this to test relative vs global coords in corn renderer are correct
         ..Default::default()
-    });
+    }).insert((
+        Collider::cuboid(1000.0, 0.01, 1000.0),
+        RigidBody::Static
+    ));
 
     commands.spawn(TestBox);
 

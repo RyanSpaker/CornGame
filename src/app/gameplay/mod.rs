@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-pub mod character_controller;
+//pub mod character_controller;
 
 use crate::ecs::flycam::{enable_flycam, FlyCamPlugin, FlyCamState};
 
@@ -22,7 +22,7 @@ impl<T> Plugin for CornGamePlayPlugin<T> where T: States + Copy{
         app
             .add_plugins((
                 FlyCamPlugin::new(FlyCamState::Disabled),
-                character_controller::CharacterControllerPlugin,
+                //character_controller::CharacterControllerPlugin,
             ))
             .insert_resource(GamePlayExitState(self.exit_state))
             .add_systems(OnEnter(self.active_state), enable_flycam)

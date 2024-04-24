@@ -16,7 +16,7 @@ use std::{f32::consts::FRAC_PI_2, ops::Deref};
 
 use macaw::prelude::*;
 use bevy::{ecs::bundle::DynamicBundle, prelude::*};
-use bevy_tnua::{builtins::TnuaBuiltinWalk, controller::TnuaController, math::AdjustPrecision};
+use bevy_tnua::{builtins::{TnuaBuiltinCrouch, TnuaBuiltinDash, TnuaBuiltinWalk}, controller::TnuaController, math::AdjustPrecision};
 use bevy_xpbd_3d::prelude::*;
 
 pub struct CharacterPlugin;
@@ -69,7 +69,9 @@ impl Player {
                 
             InputManagerBundle::with_map(
                 Action::default_input_map(),
-            )
+            ),
+
+            Name::new("Player")
             // NOTE: not bothering with this yet
             // `TnuaCrouchEnforcer` can be used to prevent the character from standing up when obstructed.
             // bevy_tnua::control_helpers::TnuaCrouchEnforcer::new(0.5 * Vec3::Y, |cmd| {
@@ -81,42 +83,55 @@ impl Player {
 }
 
 fn input_handler(
-    mut query : Query<( &ActionState<Action>, &mut TnuaController)>,
+    mut query : Query<(&Transform, &ActionState<Action>, &mut TnuaController), Without<crate::ecs::main_camera::MainCamera>>,
     mut camera : Query<&mut Transform, With<crate::ecs::main_camera::MainCamera>>
 ){
     let Ok(mut camera) = camera.get_single_mut() else { return };
 
-    for (input, mut controller) in query.iter_mut() {
-        let pan = input.axis_pair(&Action::Pan).unwrap();
+    for (transform, input, mut controller) in query.iter_mut() {
+        let mouse = input.axis_pair(&Action::Pan).unwrap();
 
-        let yaw = Quat::from_rotation_y(-0.01 * pan.x()).adjust_precision();
-        camera.rotation *= yaw;
+        let sensitivity = 0.002;
+        let (mut yaw, mut pitch, _) = camera.rotation.to_euler(EulerRot::YXZ);
+        yaw   -= sensitivity * mouse.x();
+        pitch -= sensitivity * mouse.y();
+        pitch = pitch.clamp(-1.54, 1.54);
 
-        // TODO add math helpers
-        let forward = camera.forward().normalize() * (Vec3::X + Vec3::Z);
-
-        let mut pitch = forward.angle_between(*camera.forward());
-        pitch += 0.005 * pan.y();
-        pitch = pitch.clamp(-FRAC_PI_2, FRAC_PI_2);
-
-        let axis = camera.left().normalize();
-        camera.rotation *= Quat::from_axis_angle(axis, pitch);
-
-        let speed = match input.pressed(&Action::Run) {
-            true => 2.0,
-            false => 1.0,
-        };
+        let yaw_rot = Quat::from_rotation_y(yaw);
+        camera.rotation = yaw_rot*Quat::from_rotation_x(pitch);
+        camera.translation = transform.translation + Vec3::new(0., 0.0, 0.);
 
         let direction = input.clamped_axis_pair(&Action::Move).unwrap();
         let direction : Vec2 = direction.into();
 
-        let direction = direction.extend(0.0).xzy();
+        let mut direction = direction.extend(0.0).xzy();
+        direction.z = -direction.z;
+
+        let speed = match input.pressed(&Action::Run) {
+            true => 5.0,
+            false => 2.5,
+        };
+
+        // TODO add math helpers
+        let forward = camera.forward().normalize() * (Vec3::X + Vec3::Z);
 
         controller.basis( TnuaBuiltinWalk{
-            desired_velocity: direction * speed,
+            desired_velocity: yaw_rot * direction * speed,
             desired_forward: forward,
+            float_height: 2.0,
+            acceleration: 150.0,
             ..default()
         });
+
+        if input.pressed(&Action::Crouch){
+            controller.action(TnuaBuiltinCrouch {
+                float_offset: -0.9,
+                ..Default::default()
+            });
+        } else if input.pressed(&Action::Run){
+            controller.action(TnuaBuiltinDash::default());
+        }
+    
     }
 }
 
