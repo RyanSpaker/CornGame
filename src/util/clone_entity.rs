@@ -10,9 +10,10 @@ impl CloneEntity {
     // Copy all components from an entity to another.
     // Using an entity with no components as the destination creates a copy of the source entity.
     // Panics if:
-    // - the components are not registered in the type registry,
-    // - the world does not have a type registry
     // - the source or destination entity do not exist
+    // - the world does not have a type registry
+    // Fails silently:
+    // - the components are not registered in the type registry,
     fn clone_entity(self, world: &mut World) {
         let components = {
             let registry = world.get_resource::<AppTypeRegistry>().unwrap().read();
@@ -22,21 +23,17 @@ impl CloneEntity {
                 .unwrap()
                 .archetype()
                 .components()
-                .map(|component_id| {
+                .filter_map(|component_id| {
                     world
                         .components()
-                        .get_info(component_id)
-                        .unwrap()
+                        .get_info(component_id)?
                         .type_id()
-                        .unwrap()
                 })
-                .map(|type_id| {
-                    registry
-                        .get(type_id)
-                        .unwrap()
-                        .data::<ReflectComponent>()
-                        .unwrap()
-                        .clone()
+                .filter_map(|type_id| {
+                    Some(registry
+                        .get(type_id)?
+                        .data::<ReflectComponent>()?
+                        .clone())
                 })
                 .collect::<Vec<_>>()
         };

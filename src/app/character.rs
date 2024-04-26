@@ -24,12 +24,18 @@ impl Plugin for CharacterPlugin{
         app.add_plugins(InputManagerPlugin::<Action>::default());
 
         // init physics plugins
-        app.add_plugins(PhysicsPlugins::default());
-
+        app.add_plugins((
+            PhysicsPlugins::default(), 
+            PhysicsDebugPlugin::default()
+        ));
+        
         // init character controller plugin
         app.add_plugins(bevy_tnua_xpbd3d::TnuaXpbd3dPlugin::default());
         app.add_plugins(bevy_tnua::controller::TnuaControllerPlugin::default());
-        
+        app.register_type::<DebugRender>();
+        app.init_resource::<DebugRender>();
+        app.add_systems(Update, toggle_gizmos);
+
         // This plugin supports `TnuaCrouchEnforcer`, which prevents the character from standing up
         // while obstructed by an obstacle.
         // app.add_plugins(bevy_tnua::control_helpers::TnuaCrouchEnforcerPlugin::default());
@@ -41,6 +47,16 @@ impl Plugin for CharacterPlugin{
         );
         // app.add_systems(Update, animation_patcher_system);
         // app.add_systems(Update, animate_platformer_character);
+    }
+}
+
+#[derive(Debug, Default, Resource, Reflect, Serialize, Deserialize)]
+#[reflect(Resource)]
+struct DebugRender(bool);
+fn toggle_gizmos(d: Res<DebugRender>, mut store: ResMut<GizmoConfigStore>) {
+    if d.is_changed(){
+        let (config, _) = store.config_mut::<PhysicsGizmos>();
+        config.enabled = d.0;
     }
 }
 
@@ -61,7 +77,7 @@ impl Player {
     pub fn bundle(&self) -> impl Bundle {
         (
             RigidBody::Dynamic,
-            Collider::capsule(1.0, 0.5),
+            Collider::capsule(1.5, 0.5),
             bevy_tnua::controller::TnuaControllerBundle::default(),
             bevy_tnua::TnuaAnimatingState::<AnimationState>::default(),
                 
@@ -136,6 +152,7 @@ fn input_handler(
 
 // abstracts keyboard input
 use leafwing_input_manager::prelude::*;
+use serde::{Deserialize, Serialize};
 
 #[derive(Actionlike, PartialEq, Eq, Clone, Copy, Hash, Debug, Reflect)]
 enum Action {

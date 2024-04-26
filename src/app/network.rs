@@ -120,7 +120,7 @@ impl Plugin for CornNetworkingPlugin{
         app.add_systems(Update, (super::loading::TestBox::spawn).after(ClientSet::Receive));
 
         // TODO make this more robust (upstreamable)
-        app.add_systems(Update, name_sync_test.after(ClientSet::Receive).run_if(has_authority.map(|b|!b)));
+        app.add_systems(PreUpdate, name_sync_test.after(ClientSet::Receive).run_if(has_authority.map(|b|!b)));
 
         // Replication of core stuff
         app.replicate::<Transform>();
@@ -128,10 +128,12 @@ impl Plugin for CornNetworkingPlugin{
 
         // TODO client interpolation, plus maybe move these to physics system setup
         use bevy_xpbd_3d::prelude::*;
-        app.replicate::<Position>();
-        app.replicate::<Rotation>();
         app.replicate::<LinearVelocity>();
         app.replicate::<AngularVelocity>();
+
+        // blueprints
+        app.register_type::<TestBox>();
+        app.replicate::<TestBox>();
 
         // TODO replicate character controller
 

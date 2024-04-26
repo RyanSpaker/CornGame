@@ -52,7 +52,7 @@ impl Default for FlyCamKeybinds{
             move_right: KeyCode::KeyD, 
             move_ascend: KeyCode::Space, 
             move_descend: KeyCode::ShiftLeft,
-            cursor_grab: KeyCode::Backquote
+            cursor_grab: KeyCode::Escape
         }
     }
 }

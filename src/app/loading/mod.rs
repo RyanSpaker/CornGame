@@ -130,7 +130,8 @@ fn setup_scene(
     task_count.0 -= 1;
 }
 
-#[derive(Component, Serialize, Deserialize)]
+#[derive(Component, Serialize, Deserialize, Reflect)]
+#[reflect(Component)]
 pub struct TestBox;
 impl TestBox {
     pub fn spawn(
@@ -140,13 +141,18 @@ impl TestBox {
         mut commands: Commands
     ){
         for (id, _) in query.iter() {
+            // XXX how can this fail
             commands.entity(id).insert((
+                Name::new("test cube"),
                 PbrBundle{
                     mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
                     material: materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0))),
                     transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
                     ..default()
                 },
+                RigidBody::Dynamic,
+                Collider::cuboid(1.0, 1.0, 1.0),
+                //AsyncCollider(ComputedCollider::ConvexHull),
                 Replication
             ));
         }

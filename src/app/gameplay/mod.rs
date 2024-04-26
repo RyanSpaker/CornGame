@@ -38,7 +38,8 @@ fn exit_state_on_key<T: States + Copy>(
     mut next_state: ResMut<NextState<T>>
 ){
     if input.just_released(KeyCode::Escape){
-        next_state.set(exit_state.0);
+        // XXX move all user input to app folder
+        //next_state.set(exit_state.0);
     }
 }
 
