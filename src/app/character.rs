@@ -1,5 +1,3 @@
-use std::{f32::consts::FRAC_PI_2, ops::Deref};
-
 /// This will implement the character controller and animations.
 /// 
 /// using a library called tnua because it had a working demo with animations. https://idanarye.github.io/bevy-tnua/demos/platformer_3d-xpbd
@@ -14,9 +12,9 @@ use std::{f32::consts::FRAC_PI_2, ops::Deref};
 /// [ ] item holding (ex flashlight)
 /// [ ] sight map (for out of sight changes)
 
-use macaw::prelude::*;
-use bevy::{ecs::bundle::DynamicBundle, prelude::*};
-use bevy_tnua::{builtins::{TnuaBuiltinCrouch, TnuaBuiltinDash, TnuaBuiltinWalk}, controller::TnuaController, math::AdjustPrecision};
+use bevy::prelude::*;
+use bevy_tnua::prelude::*;
+use bevy_tnua::builtins::{TnuaBuiltinCrouch, TnuaBuiltinDash}; 
 use bevy_xpbd_3d::prelude::*;
 
 pub struct CharacterPlugin;

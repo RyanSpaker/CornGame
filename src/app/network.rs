@@ -90,6 +90,7 @@ use bevy_replicon_renet::{
     },
     RenetChannelsExt, RepliconRenetPlugins,
 };
+use bevy_tnua::controller::TnuaController;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
@@ -111,13 +112,29 @@ impl Plugin for CornNetworkingPlugin{
     fn build(&self, app: &mut App) {
         app.init_resource::<Cli>();
         app.add_plugins((RepliconPlugins, RepliconRenetPlugins));
+
+        // TODO move this to top level app
+        app.add_systems(Startup, read_cli.map(Result::unwrap)); 
+
+        //TODO make this generic blueprint system
+        app.add_systems(Update, (super::loading::TestBox::spawn).after(ClientSet::Receive));
+
+        // TODO make this more robust (upstreamable)
+        app.add_systems(Update, name_sync_test.after(ClientSet::Receive).run_if(has_authority.map(|b|!b)));
+
+        // Replication of core stuff
         app.replicate::<Transform>();
-        app.replicate::<TestBox>();
         app.replicate::<Name>();
 
-        app.add_systems(Startup, read_cli.map(Result::unwrap));
-        app.add_systems(Update, (super::loading::TestBox::spawn).after(ClientSet::Receive));
-        app.add_systems(Update, name_sync_test.after(ClientSet::Receive).run_if(has_authority.map(|b|!b)));
+        // TODO client interpolation, plus maybe move these to physics system setup
+        use bevy_xpbd_3d::prelude::*;
+        app.replicate::<Position>();
+        app.replicate::<Rotation>();
+        app.replicate::<LinearVelocity>();
+        app.replicate::<AngularVelocity>();
+
+        // TODO replicate character controller
+
         //app.add_systems(Update, scene_add_repl_test.after(ClientSet::Receive).run_if(has_authority));
         
         // app.add_client_event::<UpdateMapping>(ChannelKind::Ordered)

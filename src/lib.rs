@@ -26,7 +26,6 @@ impl Plugin for CornGame{
                 }
             )
         );
-        app.add_plugins(EditorPlugin::default());
         app.add_plugins((
             CornAppPlugin,
             CornGameECSPlugin

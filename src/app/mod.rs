@@ -9,10 +9,12 @@ pub mod audio;
 pub mod network;
 pub mod ui;
 pub mod character;
+//pub mod console;
 
 use std::time::Duration;
 
 use bevy::{app::AppExit, prelude::*};
+use bevy_editor_pls::EditorPlugin;
 use bevy_gltf_components::ComponentsFromGltfPlugin;
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
@@ -35,6 +37,7 @@ pub struct CornAppPlugin;
 impl Plugin for CornAppPlugin{
     fn build(&self, app: &mut App) {
         app            
+            .add_plugins(EditorPlugin::default())
             .add_plugins(ComponentsFromGltfPlugin::default())
             .init_state::<CornGameState>()
             .init_resource::<LoadingTimer>()
