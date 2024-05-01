@@ -2,6 +2,7 @@ pub mod corn;
 pub mod main_camera;
 pub mod flycam;
 pub mod framerate;
+pub mod loading;
 
 use bevy::prelude::*;
 use self::{

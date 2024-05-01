@@ -9,15 +9,31 @@ mkShell rec {
   buildInputs = [
     cargo-udeps #check for unused deps in cargo.toml
     cargo-workspaces #list workspace members
-    (complete.withComponents [
-      "cargo"
-      "clippy"
-      "rust-src"
-      "rustc"
-      "rustfmt"
+    (combine [ # Get nightly rust components as well as the wasm32 target
+      (complete.withComponents [
+        "cargo"
+        "clippy"
+        "rust-src"
+        "rustc"
+        "rustfmt"
+      ])
+      targets.wasm32-unknown-unknown.latest.rust-std
     ])
+    (rustPlatform.buildRustPackage rec { # runner for wasm32 target. automatically creates server to run game
+      pname = "wasm-server-runner";
+      version = "0.6.3";
+
+      src = fetchCrate {
+        inherit pname version;
+        hash = "sha256-4NuvNvUHZ7n0QP42J9tuf1wqBe9f/R6iJAGeuno9qtg=";
+      };
+
+      cargoHash = "sha256-aq4hrZPRgKdRNvMrE9Lhy3AD7lXb/UocNUNpeNZz3cM=";
+      cargoDepsName = pname;
+    })
     rust-analyzer
     rustc.llvmPackages.clang 
+    rustc.llvmPackages.bintools
     pkg-config
 
 		udev udev.dev alsa-lib

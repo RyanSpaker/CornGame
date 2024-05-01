@@ -3,16 +3,15 @@ name = "corn_game"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-bevy = { version = "0.13.0", default-features = true, features=["dynamic_linking", "asset_processor", "file_watcher", "embedded_watcher"]}
+bevy = { version = "0.13.2", default-features = true, features=["dynamic_linking", "asset_processor", "file_watcher", "embedded_watcher"]}
 rand = "0.8.5"
-bytemuck = "1.14.1"
-futures-lite = "2.2.0"
+bytemuck = "1.15.0"
+futures-lite = "2.3.0"
 wgpu = "0.19.1"
 bevy_rapier3d = "0.25.0"
 image = "0.24.8"
+bevy-inspector-egui = "0.23.4"
 
 [profile.dev]
 opt-level = 1

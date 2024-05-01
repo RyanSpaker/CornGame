@@ -3,6 +3,58 @@
     This includes the reading of the corn asset file
     it also includes the initial scene setup
 */
+use bevy::prelude::*;
+/*
+    Loading paradigm:
+    
+        Every Level has a list of dependencies required
+        When entering the level load state, a resource is created, tracking the unloaded dependencies needed
+        When that resource shows no more unloaded dependencies, the state is moved to an active one
+
+        Dependecies are specified by the levels themselves
+
+        Global dependecy tracking so that we can easily determine what needs to be loaded at any point
+
+        Dependecy types:
+            Assets that need to be loaded
+            Resources that need to be setup
+            Systems with custom setup logic
+            Functions that need to be run
+            States that need to be entered
+        
+        Dependencies need to know when to run
+
+        They need init, finish, and regular update functions
+
+        
+
+*/
+
+pub trait LevelDependencySetter{
+    fn add_level_dependency(&mut self, ) -> &mut Self;
+}
+
+/// A component representing a Dependency for the currently loading level. 
+#[derive(Component)]
+pub struct LevelDependency{
+    /// Whether the dependency is finished
+    pub finished: bool
+}
+/// A component containing a description for a Level's Dependency
+pub struct DependencyDescription{
+    /// Name of the dependency
+    pub name: String,
+    /// Description of the dependency
+    pub description: String
+}
+/// A component containing the current progress level of the dependency
+pub struct DependencyProgress{
+    /// 0-1 percent of progress for the dependency
+    pub percent: f32
+}
+
+
+
 use std::f32::consts::PI;
 use bevy::{prelude::*, render::mesh::PlaneMeshBuilder};
 use crate::ecs::{corn::field::{cf_image_carved::CornSensor, prelude::*}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
