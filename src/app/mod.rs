@@ -9,17 +9,18 @@ pub mod audio;
 pub mod network;
 pub mod ui;
 pub mod character;
-pub mod console;
+pub mod physics;
 
 use std::time::Duration;
 
 use bevy::{app::AppExit, prelude::*};
 use bevy_editor_pls::EditorPlugin;
 use bevy_gltf_components::ComponentsFromGltfPlugin;
+use bevy_xpbd_3d::{plugins::{PhysicsDebugPlugin, PhysicsPlugins}, PhysicsSet};
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
 
-use self::{audio::MyAudioPlugin, console::MyConsolePlugin};
+use self::{audio::MyAudioPlugin, ui::console::MyConsolePlugin};
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum CornGameState{
@@ -41,6 +42,7 @@ impl Plugin for CornAppPlugin{
                 EditorPlugin::default(),
                 MyConsolePlugin,
             ))
+            // did not work .configure_sets(Update, PhysicsSet::Prepare.after(bevy_editor_pls_core::EditorSet::UI))
             .add_plugins(ComponentsFromGltfPlugin::default())
             .init_state::<CornGameState>()
             .init_resource::<LoadingTimer>()
@@ -58,7 +60,8 @@ impl Plugin for CornAppPlugin{
                 ),
                 MyAudioPlugin
             ))
-            .add_plugins((network::CornNetworkingPlugin, ui::MenuPlugin, character::CharacterPlugin));
+            
+            .add_plugins((physics::MyPhysicsPlugin, network::CornNetworkingPlugin, ui::MenuPlugin, character::MyCharacterPlugin));
     }
 }
 

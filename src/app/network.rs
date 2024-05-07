@@ -135,6 +135,7 @@ impl Plugin for CornNetworkingPlugin{
         app.register_type::<TestBox>();
         app.replicate::<TestBox>();
 
+        // This is the classic case of I wish I could put the line of code in 2 places
         // TODO replicate character controller
 
         //app.add_systems(Update, scene_add_repl_test.after(ClientSet::Receive).run_if(has_authority));

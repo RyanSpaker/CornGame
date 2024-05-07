@@ -1,3 +1,5 @@
+pub mod console;
+
 use bevy::prelude::*;
 use kayak_ui::{
     prelude::{widgets::*, *},

@@ -6,6 +6,8 @@ use bevy_xpbd_3d::{components::{AngularVelocity, LinearVelocity, Position, Rotat
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
+use crate::app::loading::TestBox;
+
 pub struct MyConsolePlugin;
 impl Plugin for MyConsolePlugin {
     fn build(&self, app: &mut App) {
@@ -13,6 +15,8 @@ impl Plugin for MyConsolePlugin {
             .add_plugins(ConsolePlugin)
             .add_console_command::<EchoCommand, _>(echo_command)
             .add_console_command::<SpawnCommand, _>(spawn_command)
+
+            .register_type::<Initial<Transform>>()
             .add_console_command::<ResetCommand, _>(reset_command.before(PhysicsSet::Sync))
             .add_systems(PostUpdate, record_initial::<Transform>.before(PhysicsSet::Sync));
     }
@@ -44,7 +48,7 @@ enum SpawnCommand {
 fn spawn_command(mut ctx: ConsoleCommand<SpawnCommand>, mut commands: Commands){
     if let Some(Ok(cmd)) = ctx.take() {
         match cmd {
-            SpawnCommand::TestCube => commands.spawn(super::loading::TestBox),
+            SpawnCommand::TestCube => commands.spawn(TestBox),
         };
     }
 }
