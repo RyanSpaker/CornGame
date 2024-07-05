@@ -72,3 +72,6 @@ impl Player {
         )
     }
 }
+
+// TODO system to prevent rendering player model for current player
+// TODO system to rehydrate player on client

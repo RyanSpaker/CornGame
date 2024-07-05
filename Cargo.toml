@@ -9,12 +9,11 @@ edition = "2021"
 bevy = { version = "0.13.0", default-features = true, features=["dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher"]}
 bevy_gltf_components = { version = "0.5"} #components in gltf
 
-bevy_rapier3d = "0.25.0" #physics
-
 bevy_replicon = "0.24.1" #networking
 bevy_replicon_renet = "0.1.0" #transport
 
 bevy_editor_pls = "0.8.1" #minimal editor
+bevy_editor_pls_core = "0.8.1"
 
 #belly = { version="*", git="https://github.com/jkb0o/belly.git" }
 kayak_ui = {version="*", git="https://github.com/StarArawn/kayak_ui"} # ui
@@ -26,6 +25,15 @@ bytemuck = "1.14.1"
 futures-lite = "2.2.0"
 wgpu = "0.19.1"
 image = "0.24.8"
+bevy-tnua = "0.16.0"
+bevy-tnua-xpbd3d = "0.4.0"
+bevy_xpbd_3d = { version = "0.4.2", features = ["serialize"] }
+leafwing-input-manager = "0.13.3"
+macaw = "0.19.1"
+bevy_console = "0.11.1"
+prse = "1.2.1"
+auto_enums = "0.8.5"
+bevy_animation_graph = "0.3.0"
 
 [profile.dev]
 opt-level = 1

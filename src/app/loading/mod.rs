@@ -71,8 +71,10 @@ fn setup_scene(
         ..default()
     }, /*FlyCam,*/ MainCamera, CornSensor::default()));
 
-    commands.spawn(Player.bundle()).insert( TransformBundle{
-        local: Transform::from_xyz(0.0, 1.0, -10.0),
+    let my_gltf = asset_server.load("scenes/player.glb#Scene0");
+    commands.spawn(Player.bundle()).insert(SceneBundle {
+        scene: my_gltf,
+        transform: Transform::from_xyz(0.0, 1.0, -10.0),
         ..Default::default()
     });
 

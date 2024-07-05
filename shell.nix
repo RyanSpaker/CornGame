@@ -18,9 +18,8 @@ mkShell rec {
     ])
     rust-analyzer
     rustc.llvmPackages.clang 
-    pkg-config
 
-		udev udev.dev alsa-lib
+		udev udev.dev alsa-lib alsa-lib.dev
     vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
 		lutris
     xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr # To use the x11 feature
@@ -32,9 +31,11 @@ mkShell rec {
     cacert
     which
     (wrapBintoolsWith { bintools = mold; })
+
+		pkg-config
   ];
+
   LIBCLANG_PATH = lib.makeLibraryPath [ rustc.llvmPackages.libclang.lib ];
-  #PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig:${pkgs.udev.dev}/lib/pkgconfig:${pkgs.udev.dev}/share/pkgconfig";
   RUSTFLAGS = "-C link-arg=-fuse-ld=mold -C linker=clang -Zshare-generics=y";
   RUST_SRC_PATH = "${complete.rust-src}/lib/rustlib/src/rust/library";
   LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;

@@ -7,6 +7,9 @@ use bevy_tnua::builtins::{TnuaBuiltinCrouch, TnuaBuiltinDash};
 use leafwing_input_manager::action_state::ActionState;
 use super::input::Action; 
 
+// controls the main camera and the Player entity (these are intractibly linked)
+// camera should not be a child of player, you need flexibility to decouple these
+// the player *can* have a mesh, but it might not (on other clients for example), but lets assume for now character controller only runs for player and server
 pub fn input_handler(
     mut query : Query<(&Transform, &ActionState<Action>, &mut TnuaController), Without<crate::ecs::main_camera::MainCamera>>,
     mut camera : Query<&mut Transform, With<crate::ecs::main_camera::MainCamera>>
@@ -56,7 +59,6 @@ pub fn input_handler(
         } else if input.pressed(&Action::Run){
             controller.action(TnuaBuiltinDash::default());
         }
-    
     }
 }
 
