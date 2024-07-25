@@ -1,9 +1,10 @@
-use bevy::prelude::*;
-
 pub mod character_controller;
+pub mod state;
 
+pub use state::GameplayState;
+
+use bevy::prelude::*;
 use crate::ecs::flycam::{enable_flycam, FlyCamPlugin, FlyCamState};
-
 
 #[derive(Resource, Default)]
 pub struct GamePlayExitState<T>(T) where T: States + Copy;

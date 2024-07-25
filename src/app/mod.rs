@@ -1,18 +1,11 @@
-/*
-    Main plugin for the game
-    handles the state transition between loading, gameplay, and closing
-*/
-pub mod level;
 pub mod menu;
-
 pub mod gameplay;
 pub mod loading;
 pub mod audio;
 
 use std::time::Duration;
 use bevy::{app::AppExit, prelude::*};
-
-use self::{level::GlobalLevelState, menu::GlobalMenuState, audio::MyAudioPlugin};
+use self::{audio::MyAudioPlugin, menu::AppMenuState, gameplay::GameplayState};
 
 
 /// Enum for representing the state of the application
@@ -21,7 +14,12 @@ pub enum AppState{
     /// Initial State of the app, responsible for loading bare essential assets, and preparing for a main menu scene
     #[default] Startup,
     /// State after loading, represents an app that is ready to be interacted with. Contains a Menu state and a Level state
-    Open(GlobalMenuState, GlobalLevelState)
+    Open{
+        /// State of the app menu. (main menu, settings, etc).
+        menu_state: AppMenuState,
+        /// State of the game. (Level, gameplay menus, etc).
+        gameplay_state: GameplayState 
+    }
 }
 
 #[derive(Default, Resource)]
@@ -30,6 +28,7 @@ pub struct LoadingTimer(Duration);
 pub struct CornAppPlugin;
 impl Plugin for CornAppPlugin{
     fn build(&self, app: &mut App) {
+        app.add_systems(schedule, systems)
         app
             .init_state::<AppState>()
             .add_plugins((

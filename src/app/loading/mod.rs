@@ -3,11 +3,20 @@
     This includes the reading of the corn asset file
     it also includes the initial scene setup
 */
-use bevy::prelude::*;
+use bevy::{ecs::schedule::SystemConfigs, prelude::*};
 /*
     Loading paradigm:
     
-        Every Level has a list of dependencies required
+        Every Level has a list of dependencies required, defined when the LevelDependencies resource is created
+        The resource tracks which dependencies are finished or not.
+
+        When a level is loaded, the resource spawns LevelDendency Entities corresponding to each dependency that needs to be loaded or unloaded.
+
+        The resource queries the entities for completion, until all tasks are done, deletes the entities, and sets the state to loaded
+
+        Every dependency has a init, work, and is_finished system to run when loading.
+
+        init is run once at the start of the loading sequence, work is run every time when the dependency is not finished, and is_finished 
         When entering the level load state, a resource is created, tracking the unloaded dependencies needed
         When that resource shows no more unloaded dependencies, the state is moved to an active one
 
@@ -16,6 +25,15 @@ use bevy::prelude::*;
         Global dependecy tracking so that we can easily determine what needs to be loaded at any point
 
         Dependecy types:
+            one shot functions
+            setup-work-finish functions
+            setup-wait-finish functions
+            wait-work-wait-...-finish functions
+
+            setup: system: runs once when starting to load
+            work: system set: runs once every frame while loading
+            is_finished: system, returns bool telling whether the work is finished
+
             Assets that need to be loaded
             Resources that need to be setup
             Systems with custom setup logic
@@ -30,8 +48,25 @@ use bevy::prelude::*;
 
 */
 
-pub trait LevelDependencySetter{
-    fn add_level_dependency(&mut self, ) -> &mut Self;
+
+/// Trait describing necessary behaviour for LevelDependencies
+pub trait AsLevelDependency<F, Marker> where F: SystemParamFunction<Marker, Out = bool>
+{
+    /// Returns a system to run once when we just start loading the dependency
+    fn setup_function() -> Option<SystemConfigs> {None}
+    /// Returns a system to run once every frame when we are loading the dependency
+    fn work_function() -> Option<SystemConfigs> {None}
+    /// Returns a system to run once per frame, returning the progress of the dependency
+    fn status_function() -> Option<F> {None}
+}
+impl<F, Marker, S> AsLevelDependency<F, Marker> for S
+where
+    S: IntoSystem<(), (), Marker>,
+    F: SystemParamFunction<Marker, Out = bool>
+{
+    fn setup_function() -> Option<SystemConfigs> {
+        Some(IntoSystem::into_system(S))
+    }
 }
 
 /// A component representing a Dependency for the currently loading level. 
