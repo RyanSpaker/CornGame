@@ -4,9 +4,9 @@
     it also includes the initial scene setup
 */
 use std::f32::consts::PI;
-use bevy::{prelude::*, render::mesh::PlaneMeshBuilder};
-use bevy_replicon::core::replication_rules::Replication;
-use bevy_xpbd_3d::prelude::*;
+use bevy::{prelude::*, render::mesh::PlaneMeshBuilder, state::state::FreelyMutableState};
+use avian3d::prelude::*;
+use lightyear::prelude::ServerReplicate;
 use serde::{Deserialize, Serialize};
 use crate::ecs::{corn::{asset::processing::CornAssetTransformer, field::{cf_image_carved::CornSensor, prelude::*}}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
 
@@ -27,7 +27,7 @@ impl<T> LoadGamePlugin<T> where T: States + Copy{
         Self {active_state, exit_state}
     }
 }
-impl<T> Plugin for LoadGamePlugin<T> where T: States + Copy{
+impl<T> Plugin for LoadGamePlugin<T> where T: FreelyMutableState + Copy{
     fn build(&self, app: &mut App) {
         app
             .insert_resource(LoadingTaskCount(1))
@@ -36,8 +36,8 @@ impl<T> Plugin for LoadGamePlugin<T> where T: States + Copy{
                 Update, 
                 (
                     schedule_exit_loading_state::<T>,
-                    setup_scene.run_if(run_once()),
-                    spawn_fps_text.run_if(run_once())
+                    setup_scene.run_if(run_once),
+                    spawn_fps_text.run_if(run_once)
                 ).run_if(in_state(self.active_state))
             );//.add_systems(Startup, setup_scene.run_if(run_once())); This crashes, TODO why?
     }
@@ -47,7 +47,7 @@ fn schedule_exit_loading_state<T>(
     task_count: Res<LoadingTaskCount>,
     mut next_state: ResMut<NextState<T>>,
     exit_state: Res<LoadingExitState<T>>
-) where T: States + Copy{
+) where T: FreelyMutableState + Copy{
     if task_count.0 == 0{
         next_state.set(exit_state.0);
     }
@@ -61,22 +61,20 @@ fn setup_scene(
     asset_server: Res<AssetServer>
 ){
     //Spawn Camera
-    commands.spawn((Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 2.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
-        projection: Projection::Perspective(PerspectiveProjection{
+    commands.spawn((
+        Transform::from_xyz(0.0, 2.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        Projection::Perspective(PerspectiveProjection{
             near: 0.1,
             far: 200.0,
             ..default()
         }),
-        ..default()
-    }, /*FlyCam,*/ MainCamera, CornSensor::default()));
+        /*FlyCam,*/ MainCamera, CornSensor::default()));
 
     let my_gltf = asset_server.load("scenes/player.glb#Scene0");
-    commands.spawn(Player.bundle()).insert(SceneBundle {
-        scene: my_gltf,
-        transform: Transform::from_xyz(0.0, 1.0, -10.0),
-        ..Default::default()
-    });
+    commands.spawn(Player.bundle()).insert((
+        SceneRoot(my_gltf),
+        Transform::from_xyz(0.0, 1.0, -10.0),
+    ));
 
     //Spawn Rest of Scene
     // commands.spawn((
@@ -118,11 +116,9 @@ fn setup_scene(
 
     // note that we have to include the `Scene0` label
     let my_gltf = asset_server.load("scenes/cornmenu_min.glb#Scene0");
-    commands.spawn(SceneBundle {
-        scene: my_gltf,
+    commands.spawn((
+        SceneRoot(my_gltf),
         //transform: Transform::from_xyz(2.0, 0.0, -5.0), TODO play with this to test relative vs global coords in corn renderer are correct
-        ..Default::default()
-    }).insert((
         Collider::cuboid(1000.0, 0.01, 1000.0),
         RigidBody::Static
     ));
@@ -146,16 +142,13 @@ impl TestBox {
             // XXX how can this fail
             commands.entity(id).insert((
                 Name::new("test cube"),
-                PbrBundle{
-                    mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
-                    material: materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0))),
-                    transform: Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
-                    ..default()
-                },
+                    Mesh3d(meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0)))),
+                    MeshMaterial3d(materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0)))),
+                    Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
                 RigidBody::Dynamic,
                 Collider::cuboid(1.0, 1.0, 1.0),
                 //AsyncCollider(ComputedCollider::ConvexHull),
-                Replication
+                ServerReplicate::default()
             ));
         }
     }

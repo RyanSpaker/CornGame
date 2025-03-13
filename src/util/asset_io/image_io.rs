@@ -1,5 +1,5 @@
-use bevy::render::{render_asset::RenderAssetUsages, texture::Image};
-use wgpu::{Extent3d, TextureDimension, TextureFormat};
+use bevy::{asset::RenderAssetUsages, prelude::*};
+use wgpu_types::{Extent3d, TextureDimension, TextureFormat};
 use super::*;
 
 /*
@@ -17,7 +17,7 @@ pub async fn save_image(image: &Image, writer: &mut bevy::asset::io::Writer) -> 
     return Ok(byte_counter);
 }
 /// Reads an Image from the reader. Returns the total number of bytes read.
-pub async fn read_image<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<Image, std::io::Error>{
+pub async fn read_image<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Image, std::io::Error>{
     let usage = RenderAssetUsages::from_bits_truncate(read_byte(reader, counter).await?);
     let format = decode_texture_format(read_byte(reader, counter).await?);
     let dimension = decode_texture_dimension(read_byte(reader, counter).await?);
@@ -32,7 +32,7 @@ async fn write_extent3d(writer: &mut bevy::asset::io::Writer, counter: &mut usiz
     write_u32(value.depth_or_array_layers, writer, counter).await?;
     Ok(())
 }
-async fn read_extent3d<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<Extent3d, std::io::Error>{
+async fn read_extent3d<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Extent3d, std::io::Error>{
     let width = read_u32(reader, counter).await?;
     let height = read_u32(reader, counter).await?;
     let depth = read_u32(reader, counter).await?;
@@ -75,7 +75,7 @@ pub fn encode_texture_format(val: &TextureFormat) -> u8 {
         TextureFormat::Rgb9e5Ufloat => 28,
         TextureFormat::Rgb10a2Uint => 29,
         TextureFormat::Rgb10a2Unorm => 30,
-        TextureFormat::Rg11b10Float => 31,
+        TextureFormat::Rg11b10Ufloat => 31,
         TextureFormat::Rg32Uint => 32,
         TextureFormat::Rg32Sint => 33,
         TextureFormat::Rg32Float => 34,
@@ -154,7 +154,7 @@ pub fn decode_texture_format(val: u8) -> TextureFormat{
         28 => TextureFormat::Rgb9e5Ufloat,
         29 => TextureFormat::Rgb10a2Uint,
         30 => TextureFormat::Rgb10a2Unorm,
-        31 => TextureFormat::Rg11b10Float,
+        31 => TextureFormat::Rg11b10Ufloat,
         32 => TextureFormat::Rg32Uint,
         33 => TextureFormat::Rg32Sint,
         34 => TextureFormat::Rg32Float,

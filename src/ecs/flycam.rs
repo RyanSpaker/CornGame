@@ -1,15 +1,12 @@
+use bevy::prelude::*;
 use bevy::{
     app::{App, Plugin, PreUpdate, Update}, 
-    ecs::{component::Component, 
-        event::{Event, EventReader, EventWriter}, 
+    ecs::{event::{EventReader, EventWriter}, 
         query::{With, Without}, 
-        schedule::{common_conditions::{in_state, not, on_event}, AndThen, IntoSystemConfigs, NextState, OrElse, States}, 
-        system::{IntoSystem, Query, Res, ResMut, Resource}
+        system::{IntoSystem, Query, Res, ResMut}
     }, 
     input::{keyboard::KeyCode, mouse::MouseMotion, ButtonInput}, 
     math::{EulerRot, Quat, Vec2, Vec3}, 
-    prelude::System, 
-    reflect::Reflect, 
     time::Time, 
     transform::components::Transform, 
     window::{CursorGrabMode, PrimaryWindow, Window}
@@ -90,38 +87,17 @@ impl Plugin for FlyCamPlugin{
             .add_event::<FlyCamCaptureEvent>()
             .add_systems(PreUpdate, read_flycam_button_inputs.run_if(not(in_state(FlyCamState::Disabled))))
             .add_systems(Update, (
-                capture_mouse.run_if(and(
+                capture_mouse.run_if(Condition::and(
                     not(in_state(FlyCamState::Disabled)), 
-                    on_event::<FlyCamCaptureEvent>())
+                    on_event::<FlyCamCaptureEvent>)
                 ),
-                move_cam.run_if(and(
-                    in_state(FlyCamState::Focused), 
-                    or(on_event::<MouseMotion>(), on_event::<FlyCamMoveEvent>())
+                move_cam.run_if(
+                    in_state(FlyCamState::Focused).and(
+                    on_event::<MouseMotion>
+                    .or(on_event::<FlyCamMoveEvent>))
                 ))
-            ));
+            );
     }
-}
-
-pub fn and<Marker, TOut, T, MarkerB, BOut, B>(condition: T, condition_b: B) -> AndThen<T::System, B::System>
-where
-    T: IntoSystem<(), TOut, Marker>,
-    B: IntoSystem<(), BOut, MarkerB>,
-{
-    let condition = IntoSystem::into_system(condition);
-    let condition_b = IntoSystem::into_system(condition_b);
-    let name = format!("{}&&{}", condition.name(), condition_b.name());
-    AndThen::new(condition, condition_b, name.into())
-}
-
-pub fn or<Marker, TOut, T, MarkerB, BOut, B>(condition: T, condition_b: B) -> OrElse<T::System, B::System>
-where
-    T: IntoSystem<(), TOut, Marker>,
-    B: IntoSystem<(), BOut, MarkerB>,
-{
-    let condition = IntoSystem::into_system(condition);
-    let condition_b = IntoSystem::into_system(condition_b);
-    let name = format!("{}||{}", condition.name(), condition_b.name());
-    OrElse::new(condition, condition_b, name.into())
 }
 
 pub fn enable_flycam(mut next_state: ResMut<NextState<FlyCamState>>){
@@ -154,20 +130,20 @@ fn capture_mouse(
     mut next_state: ResMut<NextState<FlyCamState>>
 ){
     if let Ok(mut window) = window.get_single_mut(){
-        match window.cursor.grab_mode {
+        match window.cursor_options.grab_mode {
             CursorGrabMode::None => {
-                window.cursor.grab_mode = CursorGrabMode::Locked;
-                window.cursor.visible = false;
+                window.cursor_options.grab_mode = CursorGrabMode::Locked;
+                window.cursor_options.visible = false;
                 next_state.set(FlyCamState::Focused);
             },
             CursorGrabMode::Confined => {
-                window.cursor.grab_mode = CursorGrabMode::None;
-                window.cursor.visible = true;
+                window.cursor_options.grab_mode = CursorGrabMode::None;
+                window.cursor_options.visible = true;
                 next_state.set(FlyCamState::Unfocused);
             },
             CursorGrabMode::Locked => {
-                window.cursor.grab_mode = CursorGrabMode::None;
-                window.cursor.visible = true;
+                window.cursor_options.grab_mode = CursorGrabMode::None;
+                window.cursor_options.visible = true;
                 next_state.set(FlyCamState::Unfocused);
             }
         };
@@ -219,7 +195,7 @@ fn move_cam(
         }
         if is_move{
             let movement: Vec3 = yaw_rot*total_move;
-            transform.translation += movement*config.movement_speed*time.delta_seconds();
+            transform.translation += movement*config.movement_speed*time.delta_secs();
         }
     }
 }

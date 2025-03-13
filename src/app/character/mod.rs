@@ -13,7 +13,7 @@
 /// [ ] sight map (for out of sight changes)
 
 use bevy::prelude::*;
-use bevy_xpbd_3d::prelude::*;
+use avian3d::prelude::*;
 use leafwing_input_manager::plugin::InputManagerPlugin;
 use leafwing_input_manager::InputManagerBundle;
 
@@ -30,7 +30,7 @@ impl Plugin for MyCharacterPlugin{
         app.add_plugins(InputManagerPlugin::<self::input::Action>::default());
         
         // init character controller plugin
-        app.add_plugins(bevy_tnua_xpbd3d::TnuaXpbd3dPlugin::default());
+        app.add_plugins(bevy_tnua_avian3d::TnuaAvian3dPlugin::new(Update));//NOTE: FixedUpdate?
         app.add_plugins(bevy_tnua::controller::TnuaControllerPlugin::default());
 
         // This plugin supports `TnuaCrouchEnforcer`, which prevents the character from standing up
@@ -54,7 +54,7 @@ impl Player {
         (
             RigidBody::Dynamic,
             Collider::capsule(1.5, 0.5),
-            bevy_tnua::controller::TnuaControllerBundle::default(),
+            bevy_tnua::controller::TnuaController::default(),
             bevy_tnua::TnuaAnimatingState::<self::animation::AnimationState>::default(),
                 
             InputManagerBundle::with_map(

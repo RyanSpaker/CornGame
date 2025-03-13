@@ -158,7 +158,7 @@ impl CornInstanceBuffer{
         if instance_buffer.ranges.is_empty() || !corn.loaded || (instance_buffer.lod_count == corn.lod_count as u64 && instance_buffer.indirect_buffer.is_some()) {return;}
         instance_buffer.lod_count = corn.lod_count as u64;
         instance_buffer.time_id += 1;
-        let corn_meshes = corn_model.get(corn.asset.clone()).unwrap();
+        let corn_meshes = corn_model.get(&corn.asset).unwrap();
         let data: Vec<u32> = (0..instance_buffer.lod_count).into_iter()
             .flat_map(|i| [
                 corn_meshes.lod_data[i as usize].total_vertices as u32, 

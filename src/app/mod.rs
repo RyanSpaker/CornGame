@@ -15,8 +15,8 @@ use std::time::Duration;
 
 use bevy::{app::AppExit, prelude::*};
 use bevy_editor_pls::EditorPlugin;
-use bevy_gltf_components::ComponentsFromGltfPlugin;
-use bevy_xpbd_3d::{plugins::{PhysicsDebugPlugin, PhysicsPlugins}, PhysicsSet};
+use blenvy::ComponentsFromGltfPlugin;
+use avian3d::prelude::*;
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
 
@@ -61,7 +61,7 @@ impl Plugin for CornAppPlugin{
                 MyAudioPlugin
             ))
             
-            .add_plugins((physics::MyPhysicsPlugin, network::CornNetworkingPlugin, ui::MenuPlugin, character::MyCharacterPlugin));
+            .add_plugins((physics::MyPhysicsPlugin, network::CornNetworkingPlugin, character::MyCharacterPlugin));
     }
 }
 
@@ -86,6 +86,6 @@ pub fn finish_loading(
 pub fn exit_game(
     mut exit: EventWriter<AppExit>
 ){
-    exit.send(AppExit{});
+    exit.send(AppExit::Success);
 }
 

@@ -8,7 +8,7 @@ use bevy::{
     reflect::GetTypeRegistration,
     render::{Extract, RenderApp}
 };
-use bevy_gltf_components::GltfComponentsSet;
+use blenvy::GltfComponentsSet;
 use cf_image_carved::ImageCarvedHexagonalCornField;
 use cf_simple::{SimpleHexagonalCornField, SimpleRectangularCornField};
 use state::{CornAssetState, MasterCornFieldStatePlugin};
@@ -92,7 +92,7 @@ pub struct CornTestGltf;
 
 fn init_gltf_cornfield(
     corn: Query<(Entity, &CornTestGltf, &Children,  &GlobalTransform), Without<ImageCarvedHexagonalCornField>>,
-    mut children: Query<(&Handle<StandardMaterial>, &mut Visibility)>,
+    mut children: Query<(&MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
     a_materials: Res<Assets<StandardMaterial>>,
     mut commands: Commands
 ){

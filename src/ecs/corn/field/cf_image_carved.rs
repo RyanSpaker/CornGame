@@ -1,8 +1,9 @@
 use core::panic;
 use std::{collections::hash_map::DefaultHasher, default, hash::{Hash, Hasher}};
 use bevy::{
-    app::Update, asset::{Assets, Handle}, ecs::{component::Component, reflect::ReflectComponent, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::Image}, transform::components::GlobalTransform
+    app::Update, asset::{Assets, Handle}, ecs::{component::Component, reflect::ReflectComponent, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::GpuImage}, transform::components::GlobalTransform
 };
+use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
 use wgpu::{util::BufferInitDescriptor, SamplerBindingType};
 use crate::ecs::corn::data_pipeline::{operation_executor::{CreateInitBindgroupStructures, CreateInitBufferStructures, IntoCornPipeline, IntoOperationResources}, operation_manager::IntoBufferOperation};
@@ -161,7 +162,7 @@ impl ImageCarvedHexagonalCornField{
         images: Res<Assets<Image>>
     ){
         for field in fields.iter_mut(){
-            if !field.image_ready && images.get(field.image.clone()).is_some() {
+            if !field.image_ready && images.get(&field.image).is_some() {
                 field.into_inner().image_ready = true;
             }
         }
@@ -180,7 +181,7 @@ impl ImageCarvedHexagonalCornField{
         }
 
         for field in fields.iter(){
-            if let Some(image) = images.get(field.image.clone()){
+            if let Some(image) = images.get(&field.image){
                 let im = image.clone().try_into_dynamic().unwrap(); // XXX doing this every frame
                 //let px = image.texture_descriptor.format.pixel_size();
 
@@ -245,7 +246,7 @@ impl IntoOperationResources for ImageCarvedHexagonalCornField{
             let Some((buffer, _)) = data.buffers.iter().filter(|(_, val)| val.as_ref().is_some_and(|val| *val == id)).next() else{
                 return None;
             };
-            let Some(image) = data.images.get(field.image.clone()) else {return None;};
+            let Some(image) = data.images.get(&field.image) else {return None;};
             let init_bind_group = data.render_device.create_bind_group(
                 Some("Image Carved Corn Init Bind Group".into()),
                 data.layout,

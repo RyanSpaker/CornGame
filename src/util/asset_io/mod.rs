@@ -1,4 +1,5 @@
-use bevy::{asset::{Asset, AssetId, Handle}, render::color::Color, utils::Uuid};
+use bevy::{asset::{Asset, AssetId, Handle}, color::{Color, ColorToComponents, Srgba}};
+use uuid::Uuid;
 use bytemuck::Pod;
 use futures_lite::{AsyncReadExt, AsyncWriteExt};
 
@@ -13,7 +14,7 @@ pub async fn write_string(writer: &mut bevy::asset::io::Writer, counter: &mut us
     *counter += bytes.len();
     Ok(())
 }
-pub async fn read_string<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<String, std::io::Error>{
+pub async fn read_string<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<String, std::io::Error>{
     let len = read_u64(reader, counter).await?;
     let mut string_bytes = vec![0u8; len as usize];
     let bytes = string_bytes.as_mut_slice();
@@ -26,7 +27,7 @@ pub async fn write_each<'a, T>(writer: &mut bevy::asset::io::Writer, counter: &m
     write_u64(items.len() as u64, writer, counter).await?;
     Ok(items)
 }
-pub async fn read_each<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<std::ops::Range<usize>, std::io::Error>{
+pub async fn read_each<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<std::ops::Range<usize>, std::io::Error>{
     Ok(0..read_u64(reader, counter).await? as usize)
 }
 
@@ -47,7 +48,7 @@ pub async fn write_vector<T: Pod>(vec: &Vec<T>, writer: &mut bevy::asset::io::Wr
     *counter += bytes.len();
     Ok(())
 }
-pub async fn read_vector_casted<'a, T: Pod>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<Vec<T>, std::io::Error> {
+pub async fn read_vector_casted<'a, T: Pod>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Vec<T>, std::io::Error> {
     let mut len_bytes = [0u8; 8];
     reader.read_exact(&mut len_bytes).await?;
     *counter += 8;
@@ -58,7 +59,7 @@ pub async fn read_vector_casted<'a, T: Pod>(reader: &'a mut bevy::asset::io::Rea
     *counter += data_slice.len();
     Ok(bytemuck::cast_slice::<u8, T>(data_slice).to_vec())
 }
-pub async fn read_vector<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<Vec<u8>, std::io::Error> {
+pub async fn read_vector<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Vec<u8>, std::io::Error> {
     let mut len_bytes = [0u8; 8];
     reader.read_exact(&mut len_bytes).await?;
     *counter += 8;
@@ -81,7 +82,7 @@ pub async fn write_option<T>(opt: &Option<T>, writer: &mut bevy::asset::io::Writ
         Ok(false)
     }
 }
-pub async fn read_option<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<bool, std::io::Error> {
+pub async fn read_option<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<bool, std::io::Error> {
     let mut read_byte: [u8; 1] = [0; 1];
     reader.read_exact(&mut read_byte).await?;
     *counter += 1;
@@ -93,7 +94,7 @@ pub async fn write_byte(byte: u8, writer: &mut bevy::asset::io::Writer, counter:
     *counter += 1;
     Ok(())
 }
-pub async fn read_byte<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<u8, std::io::Error>{
+pub async fn read_byte<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<u8, std::io::Error>{
     let mut read_byte: [u8; 1] = [0; 1];
     reader.read_exact(&mut read_byte).await?;
     *counter += 1;
@@ -106,7 +107,7 @@ pub async fn write_u32(data: u32, writer: &mut bevy::asset::io::Writer, counter:
     *counter += 4;
     Ok(())
 }
-pub async fn read_u32<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<u32, std::io::Error>{
+pub async fn read_u32<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<u32, std::io::Error>{
     let mut bytes: [u8; 4] = [0; 4];
     reader.read_exact(&mut bytes).await?;
     *counter += 4;
@@ -119,7 +120,7 @@ pub async fn write_u64(data: u64, writer: &mut bevy::asset::io::Writer, counter:
     *counter += 8;
     Ok(())
 }
-pub async fn read_u64<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<u64, std::io::Error>{
+pub async fn read_u64<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<u64, std::io::Error>{
     let mut bytes: [u8; 8] = [0; 8];
     reader.read_exact(&mut bytes).await?;
     *counter += 8;
@@ -132,7 +133,7 @@ pub async fn write_u128(data: u128, writer: &mut bevy::asset::io::Writer, counte
     *counter += 16;
     Ok(())
 }
-pub async fn read_u128<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<u128, std::io::Error>{
+pub async fn read_u128<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<u128, std::io::Error>{
     let mut bytes: [u8; 16] = [0; 16];
     reader.read_exact(&mut bytes).await?;
     *counter += 16;
@@ -144,7 +145,7 @@ pub async fn write_f32(data: f32, writer: &mut bevy::asset::io::Writer, counter:
     *counter += 4;
     Ok(())
 }
-pub async fn read_f32<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<f32, std::io::Error>{
+pub async fn read_f32<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<f32, std::io::Error>{
     let mut bytes = [0u8; 4];
     reader.read_exact(&mut bytes).await?;
     *counter += 4;
@@ -152,15 +153,15 @@ pub async fn read_f32<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter
 }
 
 pub async fn write_color(data: Color, writer: &mut bevy::asset::io::Writer, counter: &mut usize) -> Result<(), std::io::Error>{
-    for val in data.as_rgba_f32(){write_f32(val, writer, counter).await?;}
+    for val in data.to_srgba().to_f32_array(){write_f32(val, writer, counter).await?;}
     Ok(())
 }
-pub async fn read_color<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<Color, std::io::Error>{
+pub async fn read_color<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Color, std::io::Error>{
     let mut floats: [f32; 4] = [0.0; 4];
     for i in 0..4{
         floats[i] = read_f32(reader, counter).await?;
     }
-    Ok(Color::rgba_from_array(floats))
+    Ok(Srgba::from_f32_array(floats).into())
 }
 
 pub async fn write_bool(data: bool, writer: &mut bevy::asset::io::Writer, counter: &mut usize) -> Result<(), std::io::Error>{
@@ -168,7 +169,7 @@ pub async fn write_bool(data: bool, writer: &mut bevy::asset::io::Writer, counte
     *counter += 1;
     Ok(())
 }
-pub async fn read_bool<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<bool, std::io::Error>{
+pub async fn read_bool<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<bool, std::io::Error>{
     let mut bytes = [0u8];
     reader.read_exact(&mut bytes).await?;
     *counter += 1;
@@ -184,7 +185,7 @@ pub async fn write_opt_handle<T: Asset>(data: &Option<&Handle<T>>, writer: &mut 
     }
     Ok(())
 }
-pub async fn read_opt_handle<'a, T: Asset>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<Option<Handle<T>>, std::io::Error>{
+pub async fn read_opt_handle<'a, T: Asset>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Option<Handle<T>>, std::io::Error>{
     let handle = if read_option(reader, counter).await? {
         let uuid = read_u128(reader, counter).await?;
         Some(Handle::<T>::Weak(AssetId::Uuid { uuid: Uuid::from_u128(uuid) }))

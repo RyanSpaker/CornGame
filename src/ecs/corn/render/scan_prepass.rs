@@ -27,8 +27,8 @@ pub struct FrustumValues {
 impl From<&ExtractedView> for FrustumValues{
     fn from(value: &ExtractedView) -> Self {
         Self{
-            mat: value.projection*(value.transform.compute_matrix().inverse()),
-            offset: value.transform.translation().extend(1.0)
+            mat: value.clip_from_view*(value.world_from_view.compute_matrix().inverse()),
+            offset: value.world_from_view.translation().extend(1.0)
         }
     }
 }
@@ -490,7 +490,8 @@ impl CornBufferPrePassPipeline{
                 ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count as u32+1),
                 ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count as u32*5),
             ],
-            entry_point: "vote_scan".into()
+            entry_point: "vote_scan".into(),
+            zero_initialize_workgroup_memory: true,
         },
         ComputePipelineDescriptor{
             label: Some("Corn Sum 1 Pipeline".into()),
@@ -503,7 +504,8 @@ impl CornBufferPrePassPipeline{
                 ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count as u32+1),
                 ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count as u32*5),
             ],
-            entry_point: "group_scan_1".into()
+            entry_point: "group_scan_1".into(),
+            zero_initialize_workgroup_memory: true,
         },
         ComputePipelineDescriptor{
             label: Some("Corn Sum 2 Pipeline".into()),
@@ -516,7 +518,8 @@ impl CornBufferPrePassPipeline{
                 ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count as u32+1),
                 ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count as u32*5),
             ],
-            entry_point: "group_scan_2".into()
+            entry_point: "group_scan_2".into(),
+            zero_initialize_workgroup_memory: true,
         },
         ComputePipelineDescriptor{
             label: Some("Corn Compact Pipeline".into()),
@@ -529,7 +532,8 @@ impl CornBufferPrePassPipeline{
                 ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), lod_count as u32+1),
                 ShaderDefVal::UInt("OVERRIDE_INDIRECT_COUNT".to_string(), lod_count as u32*5),
             ],
-            entry_point: "compact".into()
+            entry_point: "compact".into(),
+            zero_initialize_workgroup_memory: true,
         },
         ]
     }
@@ -622,8 +626,8 @@ impl Plugin for CornPrepassPlugin{
         if TIMING_ENABLED{
             app.sub_app_mut(RenderApp).add_systems(Render, ScanPrepassResources::finish_timing.in_set(RenderSet::Cleanup));
         }
-        let mut binding = app.get_sub_app_mut(RenderApp).unwrap()
-            .world.get_resource_mut::<RenderGraph>().unwrap();
+        let mut binding = app.sub_app_mut(RenderApp)
+            .world_mut().get_resource_mut::<RenderGraph>().unwrap();
         let graph = binding
             .get_sub_graph_mut(core_3d::graph::Core3d).unwrap();
         graph.add_node(CornBufferPrepassStage, CornBufferPrepassNode);

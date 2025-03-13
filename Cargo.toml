@@ -6,37 +6,39 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.13.0", default-features = true, features=["dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher"]}
-bevy_gltf_components = { version = "0.5"} #components in gltf
+bevy = { version = "0.15.3", default-features = true, features=["dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher", "default_font"]}
+blenvy = { git = "https://github.com/ptsd/blenvy", branch = "blenvy-bevy-0.15" }
 
-bevy_replicon = "0.24.1" #networking
-bevy_replicon_renet = "0.1.0" #transport
-
-bevy_editor_pls = "0.8.1" #minimal editor
-bevy_editor_pls_core = "0.8.1"
-
-#belly = { version="*", git="https://github.com/jkb0o/belly.git" }
-kayak_ui = {version="*", git="https://github.com/StarArawn/kayak_ui"} # ui
+bevy_editor_pls = "0.11" #minimal editor
 
 serde = "*"
 clap = {version = "*", features = ["derive"]}
-rand = "0.8.5"
+rand = "0.9.0"
 bytemuck = "1.14.1"
 futures-lite = "2.2.0"
-wgpu = "0.19.1"
-image = "0.24.8"
-bevy-tnua = "0.16.0"
-bevy-tnua-xpbd3d = "0.4.0"
-bevy_xpbd_3d = { version = "0.4.2", features = ["serialize"] }
-leafwing-input-manager = "0.13.3"
+uuid = "*"
+
+wgpu-types = "23"
+wgpu = "23"
+
+image = "0.25.5"
+bevy-tnua = "0.21.0"
+bevy-tnua-avian3d = "0.2.0"
+avian3d = { version = "0.2", features = ["serialize"]}
+lightyear = {version="0.19", features = ["avian3d"]}
+leafwing-input-manager = "0.16.0"
 macaw = "0.19.1"
-bevy_console = "0.11.1"
+bevy_console = "0.13.0"
 prse = "1.2.1"
 auto_enums = "0.8.5"
-bevy_animation_graph = "0.3.0"
+bevy_animation_graph = "0.6.0"
 
 [profile.dev]
 opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[patch.crates-io]
+bevy_editor_pls = { git="https://github.com/jakobhellermann/bevy_editor_pls" }
+transform-gizmo-bevy = { git = "https://github.com/ActuallyHappening/transform-gizmo" }

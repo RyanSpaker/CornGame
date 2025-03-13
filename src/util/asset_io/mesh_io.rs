@@ -1,5 +1,5 @@
 use bevy::render::{mesh::{Indices, Mesh, MeshVertexAttribute, MeshVertexAttributeId, VertexAttributeValues}, render_asset::RenderAssetUsages};
-use wgpu::{PrimitiveTopology, VertexFormat};
+use wgpu_types::{PrimitiveTopology, VertexFormat};
 use super::*;
 
 /*
@@ -13,14 +13,14 @@ pub async fn save_mesh(mesh: &Mesh, writer: &mut bevy::asset::io::Writer) -> Res
     write_byte(mesh.asset_usage.bits(), writer, &mut byte_counter).await?;
     write_indices(&mesh.indices(), writer, &mut byte_counter).await?;
     for (id, attribute) in write_each(writer, &mut byte_counter, &mesh.attributes().collect()).await?.into_iter(){
-        write_attribute(writer, &mut byte_counter, id, *attribute).await?;
+        write_attribute(writer, &mut byte_counter, &id.id, *attribute).await?;
     }
     //Morph Targets ignored for now. Currently no way to get the Morph Target image handle, so until i need it or the functionality is added, it will remain ignored
 
     return Ok(byte_counter);
 }
 /// Reads a Mesh from the reader. Returns the total number of bytes read.
-pub async fn read_mesh<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, byte_counter: &mut usize) -> Result<Mesh, std::io::Error>{
+pub async fn read_mesh<'a>(reader: &'a mut dyn bevy::asset::io::Reader, byte_counter: &mut usize) -> Result<Mesh, std::io::Error>{
     let primitive_topology = decode_primitive_topology(read_byte(reader, byte_counter).await?);
     let asset_usage = RenderAssetUsages::from_bits_truncate(read_byte(reader, byte_counter).await?);
 
@@ -45,7 +45,7 @@ pub async fn write_attribute(writer: &mut bevy::asset::io::Writer, counter: &mut
     let mut lower = usize::MIN;
     let mut mid = lower+(upper-lower)/2;
     loop{
-        let cur_id = MeshVertexAttribute::new("", mid, wgpu::VertexFormat::Float32).id;
+        let cur_id = MeshVertexAttribute::new("", mid as u64, wgpu_types::VertexFormat::Float32).id;
         if *id == cur_id {
             break;
         }else if upper - lower == 1{
@@ -82,9 +82,9 @@ pub async fn write_attribute(writer: &mut bevy::asset::io::Writer, counter: &mut
     write_slice(writer, counter, attr.get_bytes()).await?;
     Ok(())
 }
-pub async fn read_attribute<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<(MeshVertexAttribute, VertexAttributeValues), std::io::Error>{
+pub async fn read_attribute<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<(MeshVertexAttribute, VertexAttributeValues), std::io::Error>{
     let name = read_string(reader, counter).await?;
-    let id = MeshVertexAttribute::new("", read_u128(reader, counter).await? as usize, VertexFormat::Float16x2).id;
+    let id = MeshVertexAttribute::new("", read_u128(reader, counter).await? as u64, VertexFormat::Float16x2).id;
     let format = decode_vertex_format(read_byte(reader, counter).await?);
     let attr = if id == Mesh::ATTRIBUTE_COLOR.id {Mesh::ATTRIBUTE_COLOR}
         else if id == Mesh::ATTRIBUTE_JOINT_INDEX.id {Mesh::ATTRIBUTE_JOINT_INDEX}
@@ -148,7 +148,7 @@ pub async fn write_indices(indices: &Option<&Indices>, writer: &mut bevy::asset:
     }
     Ok(())
 }
-pub async fn read_indices<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<Option<Indices>, std::io::Error> {
+pub async fn read_indices<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Option<Indices>, std::io::Error> {
     if read_option(reader, counter).await? {
         let indice_count = read_u64(reader, counter).await? as usize;
         let data = read_vector(reader, counter).await?;
@@ -196,6 +196,7 @@ fn encode_vertex_format(val: &VertexFormat) -> u8{
         VertexFormat::Float64x2 => 31,
         VertexFormat::Float64x3 => 32,
         VertexFormat::Float64x4 => 33,
+        VertexFormat::Unorm10_10_10_2 => todo!(), //XXX
     }
 }
 fn decode_vertex_format(val: u8) -> VertexFormat{

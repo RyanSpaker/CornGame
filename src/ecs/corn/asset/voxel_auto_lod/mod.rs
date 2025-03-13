@@ -34,6 +34,7 @@ fn spawn_mesh(mut meshes: ResMut<Assets<Mesh>>, mut commands: Commands, mut mate
     }
 }
 
+
 #[derive(Debug, Component)]
 pub struct VoxelMeshTask(Task<Mesh>);
 
@@ -386,7 +387,7 @@ async fn voxel_auto_lod(mesh: Mesh, indice_limit: usize, voxel_size: f32) -> Mes
     let indices = Indices::U32(faces.into_iter().flat_map(|face| [face[0] as u32, face[1] as u32, face[2] as u32, face[2] as u32, face[3] as u32, face[0] as u32].into_iter()).collect::<Vec<u32>>());
     let vertices = VertexAttributeValues::from(vertices);
 
-    let mut mesh = Mesh::new(wgpu::PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
+    let mut mesh = Mesh::new(wgpu_types::PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
     mesh.insert_indices(indices);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
     mesh.duplicate_vertices();

@@ -7,7 +7,9 @@ use leafwing_input_manager::prelude::*;
 pub enum Action {
     Crouch,
     Run,
+    #[actionlike(DualAxis)]
     Move,
+    #[actionlike(DualAxis)]
     Pan
 }
 
@@ -17,10 +19,10 @@ impl Action {
         let mut input_map = InputMap::default();
 
         // Default kbm input bindings
-        input_map.insert(Self::Move, VirtualDPad::wasd());
+        input_map.insert_dual_axis(Self::Move, VirtualDPad::wasd());
         input_map.insert(Self::Crouch, KeyCode::ControlLeft);
         input_map.insert(Self::Run, KeyCode::ShiftLeft);
-        input_map.insert(Self::Pan, DualAxis::mouse_motion());
+        input_map.insert_dual_axis(Self::Pan, MouseMove::default());
 
         input_map
     }

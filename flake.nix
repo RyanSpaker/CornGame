@@ -1,5 +1,3 @@
-# FIXME XXX, THIS FILE IS SYMLINKED AND HARD LINKED!!!
-
 {
   description = "Rust environment example";
 

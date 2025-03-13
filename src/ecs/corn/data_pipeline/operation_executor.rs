@@ -1,15 +1,11 @@
-use std::{any::type_name, marker::PhantomData, sync::{Arc, Mutex}};
+use std::{any::type_name, marker::PhantomData, ops::Deref, sync::{Arc, Mutex}};
 use bevy::{
-    prelude::*, 
-    utils::hashbrown::HashMap, 
-    render::{
-        render_resource::*, 
-        renderer::{RenderDevice, RenderContext},
-        render_graph::{Node, RenderGraphContext, RenderGraph, RenderLabel}, RenderApp, Render, RenderSet, render_asset::RenderAssets
-    }
+    prelude::*, render::{
+        render_asset::RenderAssets, render_graph::{Node, RenderGraph, RenderGraphContext, RenderLabel}, render_resource::*, renderer::{RenderContext, RenderDevice}, texture::GpuImage, Render, RenderApp, RenderSet
+    }, utils::hashbrown::HashMap
 };
 use bytemuck::{Pod, Zeroable};
-use wgpu::Maintain;
+use wgpu_types::Maintain;
 use crate::ecs::corn::field::RenderableCornField;
 
 use super::{
@@ -41,7 +37,7 @@ pub struct CreateInitBufferStructures<'a, T: IntoOperationResources>{
 pub struct CreateInitBindgroupStructures<'a, T: IntoOperationResources>{
     pub fields: Vec<(&'a T, BufferRange)>,
     pub render_device: &'a RenderDevice,
-    pub images: &'a RenderAssets<Image>,
+    pub images: &'a RenderAssets<GpuImage>,
     pub layout: &'a BindGroupLayout,
     pub operation_buffer: &'a Buffer,
     pub buffers: &'a Vec<(Buffer, Option<RenderableCornFieldID>)>
@@ -293,7 +289,7 @@ impl CornOperationResources{
     pub fn prepare_init_bindgroup<T: RenderableCornField>(
         fields: Query<(&T, &CornInitOp)>,
         mut resources: ResMut<CornOperationResources>,
-        images: Res<RenderAssets<Image>>,
+        images: Res<RenderAssets<GpuImage>>,
         operations: Res<CornBufferOperations>,
         pipelines: Res<CornOperationPipelines>,
         render_device: Res<RenderDevice>,
@@ -405,7 +401,7 @@ impl CornOperationResources{
     }
     /// Returns all system configuration for this functionality
     pub fn add_systems(app: &mut App) {
-        app
+        app.sub_app_mut(RenderApp)
         .configure_sets(Render, PrepareInitBuffersSet.in_set(RenderSet::PrepareResources))
         .configure_sets(Render, PrepareInitBindgroupsSet.in_set(RenderSet::PrepareBindGroups))
         .add_systems(Render, (
@@ -482,6 +478,7 @@ impl FromWorld for CornOperationPipelines{
             shader: defrag_shader,
             shader_defs: vec![],
             entry_point: "defragment".into(),
+            zero_initialize_workgroup_memory: true, // TODO?
         });
 
         let stale_bind_group = render_device.create_bind_group_layout(
@@ -514,7 +511,8 @@ impl FromWorld for CornOperationPipelines{
             push_constant_ranges: vec![],
             shader: stale_shader,
             shader_defs: vec![],
-            entry_point: "flag_stale".into()
+            entry_point: "flag_stale".into(),
+            zero_initialize_workgroup_memory: true, // TODO?
         });
 
         Self{
@@ -556,6 +554,7 @@ impl CornOperationPipelines{
             shader: init_shader.clone(),
             shader_defs: T::init_shader_defs(),
             entry_point: T::init_entry_point().into(),
+            zero_initialize_workgroup_memory: true // TODO?,
         });
         pipeline_res.pipelines.insert(typename.clone(), id);
         pipeline_res.bindgroups.insert(typename, bind_group_layout);
@@ -571,7 +570,7 @@ impl CornOperationPipelines{
     /// Returns the system configuration for this resource
     pub fn add_systems(app: &mut App) {
         // Pipeline creation is put in prepare assets, no real reason except to make sure they are created before our operation resources functions
-        app.configure_sets(Render, QueuePipelineCreationSet.in_set(RenderSet::PrepareAssets));
+        app.sub_app_mut(RenderApp).configure_sets(Render, QueuePipelineCreationSet.in_set(RenderSet::PrepareAssets));
     }
     /// Gets a pipeline using a str, if it exists
     pub fn get(&self, id: &str) -> Option<CachedComputePipelineId>{
@@ -691,7 +690,7 @@ impl Node for CornBufferOperationsNode{
                     let init_pipeline = needed_pipelines.get(typename).unwrap();
                     compute_pass.set_pipeline(init_pipeline);
                     for (bindgroup, total_corn) in bind_groups{
-                        compute_pass.set_bind_group(0, &bindgroup, &[]);
+                        compute_pass.set_bind_group(0, bindgroup.deref(), &[]);
                         compute_pass.dispatch_workgroups((*total_corn as f32 / 256.0).ceil() as u32, 1, 1);
                     }
                 }
@@ -734,13 +733,13 @@ impl Plugin for CornOperationExecutionPlugin{
         app.sub_app_mut(RenderApp)
             .init_resource::<CornOperationResources>()
             .init_resource::<NodeSuccess>();
-        CornOperationResources::add_systems(app.sub_app_mut(RenderApp));
-        CornOperationPipelines::add_systems(app.sub_app_mut(RenderApp));
+        CornOperationResources::add_systems(app);
+        CornOperationPipelines::add_systems(app);
     }
     fn finish(&self, app: &mut App) {
         app.sub_app_mut(RenderApp)
             .init_resource::<CornOperationPipelines>()
-            .world.resource_mut::<RenderGraph>()
+            .world_mut().resource_mut::<RenderGraph>()
                 .add_node(CornBufferOperationsStage, CornBufferOperationsNode);
     }
 }
@@ -756,12 +755,11 @@ impl<T: IntoOperationResources + IntoCornPipeline> CornFieldOperationExecutionPl
 }
 impl<T: RenderableCornField> Plugin for CornFieldOperationExecutionPlugin<T>{
     fn build(&self, app: &mut App) {
-        if let Ok(render_app) = app.get_sub_app_mut(RenderApp){
-            render_app.add_systems(Render, (
+        app.sub_app_mut(RenderApp).add_systems(Render, (
                 CornOperationResources::prepare_init_bindgroup::<T>.in_set(PrepareInitBindgroupsSet),
                 CornOperationResources::prepare_init_buffers::<T>.in_set(PrepareInitBuffersSet),
                 CornOperationPipelines::queue_init_pipeline::<T>.in_set(QueuePipelineCreationSet)
             ));
-        }
+        
     }
 }

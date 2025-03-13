@@ -2,7 +2,7 @@ use std::error::Error;
 
 use bevy::{ecs::reflect, prelude::*};
 use bevy_console::{reply, AddConsoleCommand, ConsoleCommand, ConsolePlugin};
-use bevy_xpbd_3d::{components::{AngularVelocity, LinearVelocity, Position, Rotation}, PhysicsSchedule, PhysicsSet};
+use avian3d::prelude::*;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 

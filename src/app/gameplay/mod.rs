@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, state::state::FreelyMutableState};
 
 //pub mod character_controller;
 
@@ -17,7 +17,7 @@ impl<T> CornGamePlayPlugin<T> where T: States + Copy{
         Self {active_state, exit_state}
     }
 }
-impl<T> Plugin for CornGamePlayPlugin<T> where T: States + Copy{
+impl<T> Plugin for CornGamePlayPlugin<T> where T: FreelyMutableState + Copy{
     fn build(&self, app: &mut App) {
         app
             .add_plugins((
@@ -32,7 +32,7 @@ impl<T> Plugin for CornGamePlayPlugin<T> where T: States + Copy{
     }
 }
 
-fn exit_state_on_key<T: States + Copy>(
+fn exit_state_on_key<T: FreelyMutableState + Copy>(
     input: Res<ButtonInput<KeyCode>>,
     exit_state: Res<GamePlayExitState::<T>>,
     mut next_state: ResMut<NextState<T>>
