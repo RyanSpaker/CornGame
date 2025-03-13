@@ -43,7 +43,6 @@
         devShells.default = pkgs.mkShell{
           name = "rust environment";
 
-
 					inherit buildInputs;
           nativeBuildInputs = with pkgs; [
             nixd
@@ -67,7 +66,11 @@
           RUST_SRC_PATH = "${rust.complete.rust-src}/lib/rustlib/src/rust/library";
           LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           #RUSTC_WRAPPER = "${pkgs.sccache}/bin/sccache";
-					LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
+					#LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";
+					LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+      			pkgs.libxkbcommon
+						pkgs.vulkan-loader
+    			];
 
           # https://github.com/rust-lang/rustc_codegen_cranelift
           #CARGO_PROFILE_DEV_CODEGEN_BACKEND = "cranelift";
