@@ -1,7 +1,7 @@
 use core::panic;
 use std::{collections::hash_map::DefaultHasher, default, hash::{Hash, Hasher}};
 use bevy::{
-    app::Update, asset::{Assets, Handle}, ecs::{component::Component, reflect::ReflectComponent, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::GpuImage}, transform::components::GlobalTransform
+    app::Update, asset::{Assets, Handle}, ecs::{component::Component, reflect::ReflectComponent, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, sync_world::SyncToRenderWorld, texture::GpuImage}, transform::components::GlobalTransform
 };
 use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
@@ -90,6 +90,7 @@ pub struct CornSensor{
 /// This is a Corn Field with a path carved out based on a input image. Any corn stalks on a pixel with red are kept, corn on a pixel without red are discarded
 /// The corn is placed in a hexagonal pattern, making stright line patterns less common
 #[derive(Clone, Component, Debug, Reflect)]
+#[require(SyncToRenderWorld)] // NOTE: this would not be needed if we used the normal ExtractPlugin
 pub struct ImageCarvedHexagonalCornField{
     /// World Space center of the corn field
     center: Vec3,

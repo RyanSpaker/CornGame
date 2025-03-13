@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use bevy::{app::AppExit, prelude::*};
 use bevy_editor_pls::EditorPlugin;
-use blenvy::ComponentsFromGltfPlugin;
+use blenvy::BlenvyPlugin;
 use avian3d::prelude::*;
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
@@ -39,11 +39,11 @@ impl Plugin for CornAppPlugin{
     fn build(&self, app: &mut App) {
         app            
             .add_plugins((
-                EditorPlugin::default(),
+                //EditorPlugin::new(),
                 MyConsolePlugin,
             ))
             // did not work .configure_sets(Update, PhysicsSet::Prepare.after(bevy_editor_pls_core::EditorSet::UI))
-            .add_plugins(ComponentsFromGltfPlugin::default())
+            .add_plugins(BlenvyPlugin::default())
             .init_state::<CornGameState>()
             .init_resource::<LoadingTimer>()
             .add_systems(OnEnter(CornGameState::Init), init_game)

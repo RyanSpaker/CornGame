@@ -25,6 +25,11 @@ impl Plugin for CornGame{
                     ..default()
                 }
             )
+            // .set(bevy::log::LogPlugin {
+            //     level: bevy::log::Level::DEBUG,
+            //     filter: "debug,wgpu_hal=error,wgpu_core=error,corn_game=debug".to_string(),
+            //     ..default()
+            // })
         );
         app.add_plugins((
             CornAppPlugin,

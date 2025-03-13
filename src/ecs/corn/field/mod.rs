@@ -6,11 +6,12 @@ use std::marker::PhantomData;
 use bevy::{
     prelude::*,
     reflect::GetTypeRegistration,
-    render::{Extract, RenderApp}
+    render::{sync_world::RenderEntity, Extract, RenderApp}
 };
 use blenvy::GltfComponentsSet;
 use cf_image_carved::ImageCarvedHexagonalCornField;
 use cf_simple::{SimpleHexagonalCornField, SimpleRectangularCornField};
+use serde::Deserialize;
 use state::{CornAssetState, MasterCornFieldStatePlugin};
 use wgpu::core::device::resource;
 use self::state::CornFieldStatePlugin;
@@ -52,7 +53,7 @@ impl From<u64> for RenderableCornFieldID{
 pub fn extract_renderable_corn_field<T: RenderableCornField>(
     mut commands: Commands,
     mut previous_len: Local<usize>,
-    query: Extract<Query<(Entity, &T)>>
+    query: Extract<Query<(RenderEntity, &T)>>
 ){
     let mut values = Vec::with_capacity(*previous_len);
     for (entity, query_item) in &query {
@@ -85,10 +86,10 @@ impl<T: RenderableCornField> Plugin for RenderableCornFieldPlugin<T>{
     }
 }
 
-#[derive(Component, Reflect, Default, Debug)]
+#[derive(Component, Reflect, Default, Debug, Deserialize)]
 #[reflect(Component)]
 /// test component for loading cornfields from blender
-pub struct CornTestGltf;
+pub struct CornTestGltf(String);
 
 fn init_gltf_cornfield(
     corn: Query<(Entity, &CornTestGltf, &Children,  &GlobalTransform), Without<ImageCarvedHexagonalCornField>>,
@@ -97,6 +98,8 @@ fn init_gltf_cornfield(
     mut commands: Commands
 ){
     for (id, _corn, child, transform) in corn.iter() {
+        info!("initializing gltf loaded cornfield entity {}", id);
+
         let (h_mat, mut visible) = children.get_mut(*child.first().unwrap()).unwrap();
 
         // hide the reference plane

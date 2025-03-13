@@ -4,7 +4,7 @@
     it also includes the initial scene setup
 */
 use std::f32::consts::PI;
-use bevy::{prelude::*, render::mesh::PlaneMeshBuilder, state::state::FreelyMutableState};
+use bevy::{prelude::*, render::{mesh::PlaneMeshBuilder, sync_world::SyncToRenderWorld}, state::state::FreelyMutableState};
 use avian3d::prelude::*;
 use lightyear::prelude::ServerReplicate;
 use serde::{Deserialize, Serialize};
@@ -62,47 +62,48 @@ fn setup_scene(
 ){
     //Spawn Camera
     commands.spawn((
+        Camera3d::default(),
         Transform::from_xyz(0.0, 2.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         Projection::Perspective(PerspectiveProjection{
             near: 0.1,
             far: 200.0,
             ..default()
         }),
-        /*FlyCam,*/ MainCamera, CornSensor::default()));
+        Name::new("main_camera"), IsDefaultUiCamera, MainCamera, CornSensor::default()));
 
-    let my_gltf = asset_server.load("scenes/player.glb#Scene0");
+    // let my_gltf = asset_server.load("scenes/player.glb#Scene0");
     commands.spawn(Player.bundle()).insert((
-        SceneRoot(my_gltf),
+        // SceneRoot(my_gltf),
         Transform::from_xyz(0.0, 1.0, -10.0),
     ));
 
-    //Spawn Rest of Scene
+    // //Spawn Rest of Scene
     // commands.spawn((
-    //     SpatialBundle::INHERITED_IDENTITY,
-
+    //     Transform::default(),
+    //     Visibility::default(),
     //     ImageCarvedHexagonalCornField::new(
     //         Vec3::ZERO, Vec2::ONE*75.0, 
     //         0.75, Vec2::new(0.9, 1.1), 0.2, 
     //         asset_server.load("textures/maze.png")
-    //     )
+    //     ),
     // ));
-    // commands.spawn(PbrBundle{
-    //     mesh: meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))),
-    //     material: materials.add(StandardMaterial::from(Color::rgb(1.0, 0.0, 0.0))),
-    //     transform: Transform::from_translation(Vec3::new(10.0, 0.5, 0.0)),
-    //     ..default()
-    // });
+    // commands.spawn((
+    //     Mesh3d( meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0)))),
+    //     MeshMaterial3d(materials.add(StandardMaterial::from(Color::srgb(1.0, 0.0, 0.0)))),
+    //     Transform::from_translation(Vec3::new(10.0, 0.5, 0.0)),
+    // ));
     // //ground
-    // commands.spawn(PbrBundle {
-    //     mesh: meshes.add(PlaneMeshBuilder::new(Direction3d::Y, Vec2::ONE*5000.0)),
-    //     material: materials.add(StandardMaterial{
-    //         base_color: Color::rgb(0.27, 0.19, 0.11),
+    // commands.spawn((
+    //     Mesh3d(meshes.add(PlaneMeshBuilder::new(Dir3::Y, Vec2::ONE*5000.0))),
+    //     MeshMaterial3d(materials.add(StandardMaterial{
+    //         base_color: Color::srgb(0.27, 0.19, 0.11),
     //         reflectance: 0.0,
     //         metallic: 0.0,
     //         ..Default::default()
-    //     }),
-    //     ..default()
-    // });
+    //     })),
+    //     Collider::cuboid(1000.0, 0.01, 1000.0),
+    //     RigidBody::Static
+    // ));
     // light
     commands.spawn(DirectionalLightBundle{
         directional_light: DirectionalLight { 
@@ -113,12 +114,11 @@ fn setup_scene(
         transform: Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, PI/4.0, -PI/4.0, 0.0)),
         ..default()
     });
+    use blenvy::*;
 
-    // note that we have to include the `Scene0` label
-    let my_gltf = asset_server.load("scenes/cornmenu_min.glb#Scene0");
     commands.spawn((
-        SceneRoot(my_gltf),
-        //transform: Transform::from_xyz(2.0, 0.0, -5.0), TODO play with this to test relative vs global coords in corn renderer are correct
+        BlueprintInfo::from_path("levels/Scene.glb"),
+        SpawnBlueprint,
         Collider::cuboid(1000.0, 0.01, 1000.0),
         RigidBody::Static
     ));
@@ -148,7 +148,8 @@ impl TestBox {
                 RigidBody::Dynamic,
                 Collider::cuboid(1.0, 1.0, 1.0),
                 //AsyncCollider(ComputedCollider::ConvexHull),
-                ServerReplicate::default()
+                ServerReplicate::default(),
+                Name::new("test_box")
             ));
         }
     }

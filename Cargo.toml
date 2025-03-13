@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.15.3", default-features = true, features=["dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher", "default_font"]}
+bevy = { version = "0.15.3", default-features = true, features = ["dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher", "default_font", "jpeg", "track_change_detection"] }
 blenvy = { git = "https://github.com/ptsd/blenvy", branch = "blenvy-bevy-0.15" }
 
 bevy_editor_pls = "0.11" #minimal editor
@@ -25,7 +25,7 @@ image = "0.25.5"
 bevy-tnua = "0.21.0"
 bevy-tnua-avian3d = "0.2.0"
 avian3d = { version = "0.2", features = ["serialize"]}
-lightyear = {version="0.19", features = ["avian3d"]}
+lightyear = {version="0.19", features = ["avian3d", "track_change_detection"]}
 leafwing-input-manager = "0.16.0"
 macaw = "0.19.1"
 bevy_console = "0.13.0"

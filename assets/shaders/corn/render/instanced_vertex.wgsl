@@ -6,7 +6,7 @@
     mesh_bindings::mesh,
     view_transformations::position_world_to_clip,
 }
-#import bevy_render::maths::affine_to_square
+#import bevy_render::maths::affine3_to_square
 #import corn_game::wind::{wind}
 
 // #import bevy_pbr::{
@@ -28,7 +28,7 @@ fn get_instance_index(instance_index: u32) -> u32 {
 }
 
 fn get_model_matrix(instance_index: u32) -> mat4x4<f32> {
-    return affine_to_square(mesh[get_instance_index(instance_index)].model);
+    return affine3_to_square(mesh[get_instance_index(instance_index)].world_from_local);
 }
 
 struct Vertex {

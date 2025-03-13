@@ -26,7 +26,6 @@
   - specific monsters can drain batteries faster
 
 # bevy
-
 add single method to children
 
 # gotchas

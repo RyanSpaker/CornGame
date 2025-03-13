@@ -21,6 +21,7 @@ pub struct RawCornAsset{
 }
 
 /// Takes a [`Gltf`] Asset, extracts the corn model, and turns it into a [`RawCornAsset`] to be saved
+#[derive(Debug, Reflect)]
 pub struct CornAssetTransformer;
 impl CornAssetTransformer{
     /// Given a vector of lods, each a vector of Mesh Label, material index, Combine the meshes into a single master mesh, and track vertex information, returning both.
