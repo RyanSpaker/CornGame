@@ -2,7 +2,7 @@ use std::error::Error;
 
 use bevy::{ecs::reflect, prelude::*};
 use bevy_console::{reply, AddConsoleCommand, ConsoleCommand, ConsolePlugin};
-use avian3d::prelude::*;
+use avian3d::{debug_render, prelude::*};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +15,7 @@ impl Plugin for MyConsolePlugin {
             .add_plugins(ConsolePlugin)
             .add_console_command::<EchoCommand, _>(echo_command)
             .add_console_command::<SpawnCommand, _>(spawn_command)
+            .add_console_command::<DebugCommand, _>(debug_command)
 
             .register_type::<Initial<Transform>>()
             .add_console_command::<ResetCommand, _>(reset_command.before(PhysicsSet::Sync))
@@ -106,5 +107,19 @@ fn reset_command(mut ctx: ConsoleCommand<ResetCommand>, mut commands: Commands, 
                 }
             }
         };
+    }
+}
+
+#[derive(Parser, ConsoleCommand)]
+#[command(name = "debug")]
+enum DebugCommand {
+    Physics
+}
+
+fn debug_command(mut ctx: ConsoleCommand<DebugCommand>, mut gizmo: ResMut<GizmoConfigStore>) {
+    if let Some(Ok(cmd)) = ctx.take() {
+        let (config, _) = gizmo.config_mut::<PhysicsGizmos>();
+        config.enabled = !config.enabled;
+        reply!(ctx, "{}", config.enabled);
     }
 }

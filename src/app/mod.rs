@@ -14,6 +14,7 @@ pub mod physics;
 use std::time::Duration;
 
 use bevy::{app::AppExit, prelude::*};
+use bevy_edge_detection::EdgeDetectionPlugin;
 use bevy_editor_pls::EditorPlugin;
 use blenvy::BlenvyPlugin;
 use avian3d::prelude::*;
@@ -39,9 +40,10 @@ impl Plugin for CornAppPlugin{
     fn build(&self, app: &mut App) {
         app            
             .add_plugins((
-                //EditorPlugin::new(),
+                EditorPlugin::new(),
                 MyConsolePlugin,
             ))
+            .add_plugins(EdgeDetectionPlugin::default())
             // did not work .configure_sets(Update, PhysicsSet::Prepare.after(bevy_editor_pls_core::EditorSet::UI))
             .add_plugins(BlenvyPlugin::default())
             .init_state::<CornGameState>()

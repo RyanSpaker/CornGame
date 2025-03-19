@@ -124,7 +124,7 @@ fn init_gltf_cornfield(
         commands.entity(id).insert(
             ImageCarvedHexagonalCornField::new(
                 center, half_extents, 
-                0.75, Vec2::new(1.6, 1.8), 0.2, 
+                0.75, Vec2::new(1.1, 1.3), 0.2, 
                 h_image,
             )
         );

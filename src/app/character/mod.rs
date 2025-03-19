@@ -1,3 +1,4 @@
+use bevy::gizmos::GizmoRenderSystem;
 /// This will implement the character controller and animations.
 /// 
 /// using a library called tnua because it had a working demo with animations. https://idanarye.github.io/bevy-tnua/demos/platformer_3d-xpbd
@@ -14,6 +15,7 @@
 
 use bevy::prelude::*;
 use avian3d::prelude::*;
+use controller::CornGameCharController;
 use leafwing_input_manager::plugin::InputManagerPlugin;
 use leafwing_input_manager::InputManagerBundle;
 
@@ -29,6 +31,8 @@ impl Plugin for MyCharacterPlugin{
         // button input plugin
         app.add_plugins(InputManagerPlugin::<self::input::Action>::default());
         
+        app.register_type::<CornGameCharController>();
+
         // init character controller plugin
         app.add_plugins(bevy_tnua_avian3d::TnuaAvian3dPlugin::new(Update));//NOTE: FixedUpdate?
         app.add_plugins(bevy_tnua::controller::TnuaControllerPlugin::default());
@@ -39,7 +43,7 @@ impl Plugin for MyCharacterPlugin{
 
         // app.add_systems(Startup, setup_player);
         app.add_systems(
-            Update,
+            FixedUpdate, // Update was causing jitter. but it might have just been gizmos.
             self::controller::input_handler.in_set(bevy_tnua::TnuaUserControlsSystemSet),
         );
         // app.add_systems(Update, animation_patcher_system);
@@ -53,10 +57,17 @@ impl Player {
     pub fn bundle(&self) -> impl Bundle {
         (
             RigidBody::Dynamic,
-            Collider::capsule(1.5, 0.5),
             bevy_tnua::controller::TnuaController::default(),
             bevy_tnua::TnuaAnimatingState::<self::animation::AnimationState>::default(),
-                
+            bevy_tnua_avian3d::TnuaAvian3dSensorShape(Collider::cylinder(0.2, 0.0)), //XXX configure this in CornGameCharacterController
+            CornGameCharController{
+                // height: 2.0,
+                // crouch_height: 2.0,
+                // float: 0.5,
+                // crouch_float:0.1,
+                ..default()
+            },
+            
             InputManagerBundle::with_map(
                 Action::default_input_map(),
             ),

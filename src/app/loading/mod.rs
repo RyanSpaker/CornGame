@@ -69,6 +69,7 @@ fn setup_scene(
             far: 200.0,
             ..default()
         }),
+        bevy_edge_detection::EdgeDetection::default(), //post-process shader
         Name::new("main_camera"), IsDefaultUiCamera, MainCamera, CornSensor::default()));
 
     // let my_gltf = asset_server.load("scenes/player.glb#Scene0");
@@ -117,7 +118,7 @@ fn setup_scene(
     use blenvy::*;
 
     commands.spawn((
-        BlueprintInfo::from_path("levels/Scene.glb"),
+        BlueprintInfo::from_path("levels/cctest.glb"),
         SpawnBlueprint,
         Collider::cuboid(1000.0, 0.01, 1000.0),
         RigidBody::Static

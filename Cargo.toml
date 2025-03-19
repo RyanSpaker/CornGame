@@ -32,6 +32,7 @@ bevy_console = "0.13.0"
 prse = "1.2.1"
 auto_enums = "0.8.5"
 bevy_animation_graph = "0.6.0"
+bevy_edge_detection = "0.15.4"
 
 [profile.dev]
 opt-level = 1
@@ -42,3 +43,5 @@ opt-level = 3
 [patch.crates-io]
 bevy_editor_pls = { git="https://github.com/jakobhellermann/bevy_editor_pls" }
 transform-gizmo-bevy = { git = "https://github.com/ActuallyHappening/transform-gizmo" }
+bevy-tnua-avian3d = { path = "./forks/bevy-tnua/avian3d" }
+#avian3d = {git = "https://github.com/Jondolf/avian.git"}
