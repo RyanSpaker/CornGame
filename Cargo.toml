@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 bevy = { version = "0.15.3", default-features = true, features = ["dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher", "default_font", "jpeg", "track_change_detection"] }
-blenvy = { git = "https://github.com/ptsd/blenvy", branch = "blenvy-bevy-0.15" }
+blenvy = { path = "./forks/Blenvy/crates/blenvy"}
 
 bevy_editor_pls = "0.11" #minimal editor
 
@@ -33,6 +33,7 @@ prse = "1.2.1"
 auto_enums = "0.8.5"
 bevy_animation_graph = "0.6.0"
 bevy_edge_detection = "0.15.4"
+i-cant-believe-its-not-bsn = "0.3.0"
 
 [profile.dev]
 opt-level = 1
