@@ -6,7 +6,7 @@
 use std::{env::args, f32::consts::PI, ffi::OsStr, path::PathBuf};
 use bevy::{core_pipeline::{bloom::{Bloom, BloomSettings}, tonemapping::Tonemapping}, prelude::*, render::{mesh::PlaneMeshBuilder, sync_world::SyncToRenderWorld}, state::state::FreelyMutableState};
 use avian3d::prelude::*;
-use lightyear::prelude::{AppComponentExt, ChannelDirection, ClientReplicate, ServerReplicate};
+use lightyear::{prelude::{AppComponentExt, ChannelDirection, ClientReplicate, NetworkIdentity, ServerReplicate}, shared::replication::network_target};
 use serde::{Deserialize, Serialize};
 use crate::{app::character::SpawnPlayerEvent, ecs::{corn::{asset::processing::CornAssetTransformer, field::{cf_image_carved::CornSensor, prelude::*}}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera}};
 
@@ -41,7 +41,7 @@ impl<T> Plugin for LoadGamePlugin<T> where T: FreelyMutableState + Copy{
                 ).run_if(in_state(self.active_state))
             );//.add_systems(Startup, setup_scene.run_if(run_once())); This crashes, TODO why?
 
-        app.add_systems(Update, TestCube::spawn_system);
+        app.add_systems(Update, TestCube::on_added_system);
         app.register_type::<TestCube>();
         app.register_component::<TestCube>(ChannelDirection::Bidirectional);
 
@@ -164,23 +164,27 @@ fn setup_scene(
 #[reflect(Component)]
 pub struct TestCube;
 impl TestCube {
-    fn spawn_system(
+    fn on_added_system(
+        net: NetworkIdentity,
         query: Query<Entity, Added<Self>>,
         assets: ResMut<AssetServer>,
         mut commands: Commands
     ){
-        for id in query.iter() {
-            // XXX how can this fail
-            commands.entity(id).insert((
+        for id in query.iter(){
+            info!("spawning test cube {:?}", net.identity());
+            let mut entity = commands.entity(id);
+            entity.insert((
                 Name::new("test cube"),
                 Mesh3d(assets.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0)))),
-                MeshMaterial3d(assets.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0)))),
-                Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
-                //RigidBody::Dynamic,
-                //Collider::cuboid(1.0, 1.0, 1.0),
-                //AsyncCollider(ComputedCollider::ConvexHull),
-                ServerReplicate::default(),
+                MeshMaterial3d(assets.add(StandardMaterial::from(Color::srgb(1.0, 1.0, 1.0)))),
+                Transform::from_translation(Vec3::new(0.0, 2.0, 0.0)),
+                RigidBody::Dynamic,
+                Collider::cuboid(1.0, 1.0, 1.0),
             ));
+
+            if net.is_server(){
+                entity.insert(ServerReplicate::default());
+            }
         }
     }
 }

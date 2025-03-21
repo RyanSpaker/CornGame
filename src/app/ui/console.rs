@@ -5,7 +5,9 @@ use bevy_console::{reply, AddConsoleCommand, ConsoleCommand, ConsolePlugin};
 use avian3d::{debug_render, prelude::*};
 use blenvy::GameWorldTag;
 use clap::Parser;
+use lightyear::{connection::server::ServerConnections, prelude::{client::{self, ClientConnection, NetClient, NetworkingState}, server}};
 use serde::{Deserialize, Serialize};
+use wgpu::hal::auxil::db;
 
 use crate::app::{character::SpawnPlayerEvent, loading::TestCube};
 
@@ -32,6 +34,7 @@ impl Plugin for MyConsolePlugin {
             .add_console_command::<DebugCommand, _>(debug_command)
             .add_console_command::<RespawnCommand, _>(respawn_command)
             .add_console_command::<ReloadCommand, _>(reload_command)
+            .add_console_command::<NetTest, _>(nettest_command)
 
             .register_type::<Initial<Transform>>()
             .add_console_command::<ResetCommand, _>(reset_command.before(PhysicsSet::Sync))
@@ -191,5 +194,31 @@ fn debug_command(mut ctx: ConsoleCommand<DebugCommand>, mut gizmo: ResMut<GizmoC
         let (config, _) = gizmo.config_mut::<PhysicsGizmos>();
         config.enabled = !config.enabled;
         reply!(ctx, "{}", config.enabled);
+        ctx.ok();
+    }
+}
+
+
+#[derive(Parser, ConsoleCommand)]
+#[command(name = "nettest")]
+struct NetTest;
+
+fn nettest_command(
+    mut ctx: ConsoleCommand<NetTest>,
+    client: Res<ClientConnection>,
+    client_config: Res<client::ClientConfig>,
+    server_config: Res<server::ServerConfig>,
+    server: Res<ServerConnections>,
+    server_state: Res<State<server::NetworkingState>>,
+    client_state: Res<State<client::NetworkingState>>,
+){
+    if let Some(Ok(cmd)) = ctx.take() { // seriously fuck this api
+        dbg!(&client_state);
+        dbg!(&server_state);
+        dbg!(&client_config.shared.mode);
+        dbg!(&server_config.shared.mode);
+        reply!(ctx, "server {:?}", server_state);
+        reply!(ctx, "client {} {:?}", client.client.id(), client_state);
+        ctx.ok();
     }
 }

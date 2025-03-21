@@ -61,8 +61,26 @@ networking development
 I have switched the code to [lightyear]
 
 Currently I have server entities replicating to client but their components are staying synced.
-Using testcube.
+Using [testcube].
+
+I think the problem is I am inserting ServerReplicate on the client. I need to check whether I am the client of the server.
+Oh, and I need to be carefull this runs *after* the network is initialized... or else is_server will be false.
+- Nope, still an issue, [NetworkIdentity]::is_server() is always false, even though the server is definitely running.
+- Setting <Client|Server>Config.shared.mode=HostServer seems to be required
+- including setting ClientServer.share.mode=HostServer on the *server* even with no client running.
+
+works at a basic level (Transform synced, cubes moving).
+
+what is the deal with interpolation/predition?
 
 [testcube]: ./src/app/loading/mod.rs#TestCube
 [lightyear]: https://github.com/cBournhonesque/lightyear
+[NetworkIdentity]: https://docs.rs/lightyear/latest/lightyear/shared/plugin/struct.NetworkIdentity.html
 
+# Fri Mar 21 11:35:32 AM EDT 2025
+issue: bevy_editor_pls panic clicking on entity which has fallen off the map.
+
+```
+thread 'main' panicked at /home/user/.cargo/registry/src/index.crates.io-6f17d22bba15001f/bevy-inspector-egui-0.28.1/src/restricted_world_view.rs:223:9:
+assertion failed: self.allows_access_to_component(component)
+```

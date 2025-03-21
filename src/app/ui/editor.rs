@@ -14,13 +14,22 @@ impl Plugin for MyEditorPlugin{
             app.insert_resource(editor_controls());
         }
 
-        app.add_systems(Startup, |mut window: Query<&mut Window>|{
+        app.add_systems(Startup, |mut window: Query<&mut Window>, cli: Res<crate::Cli>|{
             for mut w in window.iter_mut() {
                 dbg!(w.resolution.scale_factor());
                 dbg!(w.resolution.base_scale_factor());
                 dbg!(w.resolution.scale_factor_override());
 
                 w.resolution.set_scale_factor(1.5);
+                if cli.client {
+                    w.title = "client".into();
+                }
+                if cli.server {
+                    w.title = "server".into();
+                    if cli.client {
+                        w.title = "client server".into()
+                    }
+                }
             }      
         });
     }
