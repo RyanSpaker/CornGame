@@ -3,12 +3,12 @@
     This includes the reading of the corn asset file
     it also includes the initial scene setup
 */
-use std::f32::consts::PI;
-use bevy::{prelude::*, render::{mesh::PlaneMeshBuilder, sync_world::SyncToRenderWorld}, state::state::FreelyMutableState};
+use std::{env::args, f32::consts::PI, ffi::OsStr, path::PathBuf};
+use bevy::{core_pipeline::{bloom::{Bloom, BloomSettings}, tonemapping::Tonemapping}, prelude::*, render::{mesh::PlaneMeshBuilder, sync_world::SyncToRenderWorld}, state::state::FreelyMutableState};
 use avian3d::prelude::*;
-use lightyear::prelude::ServerReplicate;
+use lightyear::prelude::{AppComponentExt, ChannelDirection, ClientReplicate, ServerReplicate};
 use serde::{Deserialize, Serialize};
-use crate::ecs::{corn::{asset::processing::CornAssetTransformer, field::{cf_image_carved::CornSensor, prelude::*}}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera};
+use crate::{app::character::SpawnPlayerEvent, ecs::{corn::{asset::processing::CornAssetTransformer, field::{cf_image_carved::CornSensor, prelude::*}}, flycam::FlyCam, framerate::spawn_fps_text, main_camera::MainCamera}};
 
 use super::character::Player;
 
@@ -40,6 +40,12 @@ impl<T> Plugin for LoadGamePlugin<T> where T: FreelyMutableState + Copy{
                     spawn_fps_text.run_if(run_once)
                 ).run_if(in_state(self.active_state))
             );//.add_systems(Startup, setup_scene.run_if(run_once())); This crashes, TODO why?
+
+        app.add_systems(Update, TestCube::spawn_system);
+        app.register_type::<TestCube>();
+        app.register_component::<TestCube>(ChannelDirection::Bidirectional);
+
+        app.insert_resource(UiScale(2.0));
     }
 }
 
@@ -58,11 +64,21 @@ fn setup_scene(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
     mut task_count: ResMut<LoadingTaskCount>,
-    asset_server: Res<AssetServer>
+    asset_server: Res<AssetServer>,
+    cli: Res<crate::Cli>
 ){
     //Spawn Camera
     commands.spawn((
         Camera3d::default(),
+        
+        //bloom
+        Camera {
+            hdr: true, // 1. HDR is required for bloom
+            ..default()
+        },
+        Tonemapping::TonyMcMapface,
+        Bloom::NATURAL,
+
         Transform::from_xyz(0.0, 2.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         Projection::Perspective(PerspectiveProjection{
             near: 0.1,
@@ -73,10 +89,10 @@ fn setup_scene(
         Name::new("main_camera"), IsDefaultUiCamera, MainCamera, CornSensor::default()));
 
     // let my_gltf = asset_server.load("scenes/player.glb#Scene0");
-    commands.spawn(Player.bundle()).insert((
-        // SceneRoot(my_gltf),
-        Transform::from_xyz(0.0, 1.0, -10.0),
-    ));
+    // commands.spawn(Player.bundle()).insert((
+    //     // SceneRoot(my_gltf),
+    //     Transform::from_xyz(0.0, 1.0, -10.0),
+    // ));
 
     // //Spawn Rest of Scene
     // commands.spawn((
@@ -106,52 +122,66 @@ fn setup_scene(
     //     RigidBody::Static
     // ));
     // light
-    commands.spawn(DirectionalLightBundle{
-        directional_light: DirectionalLight { 
-            illuminance: 15000.0,
-            shadows_enabled: true, 
-            ..default()
-        },
-        transform: Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, PI/4.0, -PI/4.0, 0.0)),
-        ..default()
-    });
+    // commands.spawn(DirectionalLightBundle{
+    //     directional_light: DirectionalLight { 
+    //         illuminance: 15000.0,
+    //         shadows_enabled: true, 
+    //         ..default()
+    //     },
+    //     transform: Transform::from_rotation(Quat::from_euler(EulerRot::YXZ, PI/4.0, -PI/4.0, 0.0)),
+    //     ..default()
+    // });
     use blenvy::*;
-
+    
     commands.spawn((
-        BlueprintInfo::from_path("levels/cctest.glb"),
-        SpawnBlueprint,
-        Collider::cuboid(1000.0, 0.01, 1000.0),
-        RigidBody::Static
+        Name::new("default_floor"),
+        Collider::cuboid(1000.0, 0.1, 1000.0),
+        Transform::from_xyz(0.0, -0.5, 0.0),
+        RigidBody::Static,
     ));
 
-    commands.spawn(TestBox);
+    for path in cli.scenes.iter() {
+        let path = path.strip_prefix("assets/").unwrap_or(&path);
+
+        if path.extension() == Some(OsStr::new("glb")) {
+        commands.spawn((
+            BlueprintInfo::from_path(&path.to_str().unwrap()), //NOTE: I wish there was a language where I could just do path, and it would give a warning but I wouldn't have to do all this type munching
+            SpawnBlueprint,
+            GameWorldTag,
+            RigidBody::Static // weird things happen if there are colliders with no rigid body
+        ));
+    }
+
+    }
+
+    commands.spawn(TestCube);
 
     task_count.0 -= 1;
 }
 
-#[derive(Component, Serialize, Deserialize, Reflect)]
+/// Test object for debugging network / replication (or whatever)
+#[derive(Component, Serialize, Deserialize, Reflect, PartialEq)]
 #[reflect(Component)]
-pub struct TestBox;
-impl TestBox {
-    pub fn spawn(
-        query: Query<(Entity, &Self), Added<Self>>,
-        mut meshes: ResMut<Assets<Mesh>>,
-        mut materials: ResMut<Assets<StandardMaterial>>,
+pub struct TestCube;
+impl TestCube {
+    fn spawn_system(
+        query: Query<Entity, Added<Self>>,
+        assets: ResMut<AssetServer>,
         mut commands: Commands
     ){
-        for (id, _) in query.iter() {
+        for id in query.iter() {
             // XXX how can this fail
             commands.entity(id).insert((
                 Name::new("test cube"),
-                    Mesh3d(meshes.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0)))),
-                    MeshMaterial3d(materials.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0)))),
-                    Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
-                RigidBody::Dynamic,
-                Collider::cuboid(1.0, 1.0, 1.0),
+                Mesh3d(assets.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0)))),
+                MeshMaterial3d(assets.add(StandardMaterial::from(Color::rgb(1.0, 1.0, 1.0)))),
+                Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
+                //RigidBody::Dynamic,
+                //Collider::cuboid(1.0, 1.0, 1.0),
                 //AsyncCollider(ComputedCollider::ConvexHull),
                 ServerReplicate::default(),
-                Name::new("test_box")
             ));
         }
     }
 }
+

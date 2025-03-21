@@ -1,6 +1,7 @@
 use avian3d::math::PI;
 use avian3d::prelude::{collider, Collider, ColliderParent, ColliderTransform};
 use bevy::prelude::*;
+use bevy::window::{CursorGrabMode, PrimaryWindow};
 use bevy_tnua::prelude::*;
 
 use bevy_tnua::builtins::{TnuaBuiltinCrouch, TnuaBuiltinDash};
@@ -70,6 +71,7 @@ pub fn input_handler(
     >,
     mut colliders: Query<(&ColliderParent, &mut Collider, &mut Transform), (Without<CornGameCharController>, Without<MainCamera>)>,
     mut camera: Query<&mut Transform, With<crate::ecs::main_camera::MainCamera>>,
+    mut window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     let Ok(mut camera) = camera.get_single_mut() else {
         return;
@@ -85,7 +87,18 @@ pub fn input_handler(
 
         let (_, mut collider, mut c_trans) = collider.unwrap();
 
-        let mouse = input.axis_pair(&Action::Pan);
+        let mut mouse = input.axis_pair(&Action::Pan);
+        let mut direction = input.clamped_axis_pair(&Action::Move);
+
+        // Only allow input when cursor is grabbed
+        // TODO, we should do this on the input side instead of here.
+        // TODO need a generic framework for claiming inputs
+        if let Ok(window) = window.get_single(){
+            if window.cursor_options.grab_mode != CursorGrabMode::Locked {
+                mouse = default();
+                direction = default();
+            }
+        }
 
         let sensitivity = 0.002;
         let (mut yaw, mut pitch, _) = camera.rotation.to_euler(EulerRot::YXZ);
@@ -96,9 +109,6 @@ pub fn input_handler(
         let yaw_rot = Quat::from_rotation_y(yaw);
         camera.rotation = yaw_rot * Quat::from_rotation_x(pitch);
         camera.translation = transform.translation + Vec3::new(0., 0.0, 0.);
-
-        let direction = input.clamped_axis_pair(&Action::Move);
-        let direction: Vec2 = direction.into();
 
         let mut direction = direction.extend(0.0).xzy();
         direction.z = -direction.z;

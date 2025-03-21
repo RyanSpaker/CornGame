@@ -44,4 +44,5 @@ opt-level = 3
 bevy_editor_pls = { git="https://github.com/jakobhellermann/bevy_editor_pls" }
 transform-gizmo-bevy = { git = "https://github.com/ActuallyHappening/transform-gizmo" }
 bevy-tnua-avian3d = { path = "./forks/bevy-tnua/avian3d" }
+bevy-tnua-physics-integration-layer = { path = "./forks/bevy-tnua/physics-integration-layer" }
 #avian3d = {git = "https://github.com/Jondolf/avian.git"}

@@ -647,8 +647,6 @@ dependencies = [
 [[package]]
 name = "bevy-tnua-physics-integration-layer"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fbe99d25b7253cb99a00f69fe9accc875645b4ecf9910bb5f24459835ff177e"
 dependencies = [
  "bevy",
 ]

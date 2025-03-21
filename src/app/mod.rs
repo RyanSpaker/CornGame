@@ -20,6 +20,7 @@ use blenvy::BlenvyPlugin;
 use avian3d::prelude::*;
 use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
+use ui::editor::MyEditorPlugin;
 
 use self::{audio::MyAudioPlugin, ui::console::MyConsolePlugin};
 
@@ -40,9 +41,10 @@ impl Plugin for CornAppPlugin{
     fn build(&self, app: &mut App) {
         app            
             .add_plugins((
-                EditorPlugin::new(),
+                MyEditorPlugin,
                 MyConsolePlugin,
             ))
+            .add_plugins(network::CornNetworkingPlugin) // must be added early so we can register components
             .add_plugins(EdgeDetectionPlugin::default())
             // did not work .configure_sets(Update, PhysicsSet::Prepare.after(bevy_editor_pls_core::EditorSet::UI))
             .add_plugins(BlenvyPlugin::default())
@@ -63,7 +65,7 @@ impl Plugin for CornAppPlugin{
                 MyAudioPlugin
             ))
             
-            .add_plugins((physics::MyPhysicsPlugin, network::CornNetworkingPlugin, character::MyCharacterPlugin));
+            .add_plugins((physics::MyPhysicsPlugin, character::MyCharacterPlugin));
     }
 }
 

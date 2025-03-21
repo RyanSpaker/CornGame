@@ -1,12 +1,26 @@
 use std::error::Error;
 
-use bevy::{ecs::reflect, prelude::*};
+use bevy::{ecs::{query::QuerySingleError, reflect}, prelude::*};
 use bevy_console::{reply, AddConsoleCommand, ConsoleCommand, ConsolePlugin};
 use avian3d::{debug_render, prelude::*};
+use blenvy::GameWorldTag;
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
-use crate::app::loading::TestBox;
+use crate::app::{character::SpawnPlayerEvent, loading::TestCube};
+
+// TODO: 
+// - commands to query and act on entities
+// - generic way to trigger events
+// - retained history
+// - camera modes
+// - integrate keybinds
+// - command to add things to a live stat overlay
+//    - ex) specific entities position
+//    - ex) query filtered entity counts
+// - retained selection
+// - bevy mod picking integration?
+// - command to open up floating editor windows, with component modification
 
 pub struct MyConsolePlugin;
 impl Plugin for MyConsolePlugin {
@@ -16,6 +30,8 @@ impl Plugin for MyConsolePlugin {
             .add_console_command::<EchoCommand, _>(echo_command)
             .add_console_command::<SpawnCommand, _>(spawn_command)
             .add_console_command::<DebugCommand, _>(debug_command)
+            .add_console_command::<RespawnCommand, _>(respawn_command)
+            .add_console_command::<ReloadCommand, _>(reload_command)
 
             .register_type::<Initial<Transform>>()
             .add_console_command::<ResetCommand, _>(reset_command.before(PhysicsSet::Sync))
@@ -49,8 +65,62 @@ enum SpawnCommand {
 fn spawn_command(mut ctx: ConsoleCommand<SpawnCommand>, mut commands: Commands){
     if let Some(Ok(cmd)) = ctx.take() {
         match cmd {
-            SpawnCommand::TestCube => commands.spawn(TestBox),
+            SpawnCommand::TestCube => commands.spawn(TestCube),
         };
+    }
+}
+
+#[derive(Parser, ConsoleCommand)]
+#[command(name = "respawn")]
+struct RespawnCommand{
+    target: Option<String>,   
+}
+
+fn respawn_command(mut ctx: ConsoleCommand<RespawnCommand>, mut commands: Commands){
+    if let Some(Ok(cmd)) = ctx.take() {
+        commands.trigger(SpawnPlayerEvent{target:cmd.target});
+    }
+}
+
+#[derive(Parser, ConsoleCommand)]
+#[command(name = "reload")]
+struct ReloadCommand{
+    path: Option<String>,
+}
+
+fn reload_command(
+    mut ctx: ConsoleCommand<ReloadCommand>, 
+    mut commands: Commands, 
+    scene: Query<(Entity, &blenvy::BlueprintInfo), With<GameWorldTag>>
+){
+    if let Some(Ok(cmd)) = ctx.take() {
+        match scene.get_single() {
+            Ok((id, info)) => {
+                let path = cmd.path.unwrap_or(info.path.clone());
+                commands.entity(id).despawn();
+                commands.spawn((
+                    blenvy::BlueprintInfo::from_path(&path), 
+                    blenvy::SpawnBlueprint,
+                    blenvy::GameWorldTag,
+                    RigidBody::Static // NOTE: keeping this function in sync with the one in loading/mod.rs is error prone. 
+                                      // TODO: loading event
+                ));
+            },
+            Err(QuerySingleError::NoEntities(_)) => {
+                let Some(path) = cmd.path else {
+                    ctx.reply_failed("must specify path");
+                    return;
+                };
+                commands.spawn((
+                    blenvy::BlueprintInfo::from_path(&path), 
+                    blenvy::SpawnBlueprint,
+                    blenvy::GameWorldTag
+                ));
+            },
+            Err(QuerySingleError::MultipleEntities(_)) => {
+                todo!()
+            }
+        }
     }
 }
 
