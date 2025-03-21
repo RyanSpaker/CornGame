@@ -9,12 +9,19 @@ Util is the simplest, and is simply the place where we put any stand alone funct
 
 App is a module which defines our application structure, including scene switching, app state, loading, menus, and whatever else defines the application structure.
 
-ECS is a module which contains each game element, for instance, a flashlight might have a module in ECS, the corn has an ECS module, as does the player, the enemies, the maze generator. Any discrete system or functionality is added to the app in the ECS module. Spawning is not handled by ecs, while an ecs module might define how to spawn something, like the maze generator, the actual choice to call that method is done in the app folder.
+ECS is a module which contains discrete game element or system. (flashlight, corn, player, map, etc).
 
 
 ### App
 
 The app defines the state machine of the app:
+
+AppState:
+- Init: Initial state of the app. Used to setup global app settings like window state and other such nonsense.
+- Open(AppMenuState, GameplayState): after initializing, the app moves into the loaded state, which contains a substate to describe the gameplay and menu state.
+- - AppMenuState: Describes the state of the app menu
+- - - 
+
 
 - Loading: This is the initial state of the app. we load bare essential assets, and prepare the window.
 - Main Menu: This is the state we enter upon finishing loading. The player is presented a main menu, with an options sub menu, and the ability to start the game

@@ -1,10 +1,10 @@
 use app::CornAppPlugin;
 use bevy::prelude::*;
-use ecs::CornGameECSPlugin;
+//use ecs::CornGameECSPlugin;
 
 pub mod app;
-pub mod ecs;
-pub mod util;
+//pub mod ecs;
+//pub mod util;
 
 
 pub struct CornGame;
@@ -21,8 +21,7 @@ impl Plugin for CornGame{
                 mode: AssetMode::Processed,
                 ..Default::default()
             }),
-            CornAppPlugin,
-            CornGameECSPlugin
+            CornAppPlugin
         ));
     }
 }
