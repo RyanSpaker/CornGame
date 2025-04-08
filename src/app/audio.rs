@@ -1,11 +1,19 @@
+use std::marker::PhantomData;
+
+use avian3d::prelude::{Collision, CollisionStarted};
 use bevy::{audio::Volume, prelude::*};
+use wgpu::core::command;
 
 use crate::{
     ecs::{
-        corn::field::cf_image_carved::CornSensor, flycam::FlyCamMoveEvent, main_camera::MainCamera,
+        corn::field::cf_image_carved::CornSensor,
+        flycam::FlyCamMoveEvent,
+        main_camera::MainCamera,
     },
     util::lerp,
 };
+
+use super::character::Player;
 
 #[derive(Component, PartialEq)]
 enum WindNoise {
@@ -46,11 +54,11 @@ struct Footsteps {
     lerp_speed: f32,
 
     /// speed [on_path, in_corn]
-    s: [f32;2],
+    s: [f32; 2],
     _s_lerp_seconds: f32,
 
     /// volume [on_path, in_corn]
-    v: [f32;2],
+    v: [f32; 2],
     _v_lerp_seconds: f32,
 }
 
@@ -59,9 +67,9 @@ impl Default for Footsteps {
         Self {
             lerp: 0.0,
             lerp_speed: 0.0,
-            s: [1.0,1.0],
+            s: [1.0, 1.0],
             _s_lerp_seconds: 0.2,
-            v: [1.0,1.0],
+            v: [1.0, 1.0],
             _v_lerp_seconds: 0.2,
         }
     }
@@ -79,7 +87,6 @@ fn play_footsteps(
         return;
     };
     let flying = t.translation.y > 2.0; //MOVEME
-
 
     for (s, initial, mut fs) in settings.iter_mut() {
         let speed = lerp(fs.s[0], fs.s[1], sensor.is_in_corn);
@@ -104,7 +111,7 @@ fn play_footsteps(
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         AudioPlayer::<AudioSource>(asset_server.load("sounds/wind.ogg")),
-        PlaybackSettings{
+        PlaybackSettings {
             mode: bevy::audio::PlaybackMode::Loop,
             ..Default::default()
         },
@@ -113,7 +120,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands.spawn((
         AudioPlayer::<AudioSource>(asset_server.load("sounds/wind_rustle.ogg")),
-        PlaybackSettings{
+        PlaybackSettings {
             mode: bevy::audio::PlaybackMode::Loop,
             volume: Volume::new(0.1),
             ..Default::default()
@@ -129,10 +136,10 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..Default::default()
         },
         Footsteps {
-            s: [1.2,0.7],
-            v: [0.2,1.0],
+            s: [1.2, 0.7],
+            v: [0.2, 1.0],
             ..Default::default()
-        }
+        },
     ));
 
     // commands.spawn((
@@ -168,8 +175,65 @@ impl Plugin for MyAudioPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, (wind_volume, play_footsteps))
             .add_systems(Startup, setup);
+        app.register_type::<SoundTrackOnEnter>();
+        app.register_type::<Soundtrack>();
+        app.add_systems(Update, SoundTrackOnEnter::observer);
     }
 }
 
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+pub struct Soundtrack;
+
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+#[require(DelayCounter)]
+pub struct SoundTrackOnEnter {
+    track: String,
+    delay: Option<f32>,
+}
+
+#[derive(Debug, Default, Clone, Component, Reflect)]
+#[reflect(Component)]
+pub struct DelayCounter<T=()>{
+    counter: f32,
+    // idea is that a single entity might need multiple of these.
+    _dummy: PhantomData<T>
+}
+
+impl SoundTrackOnEnter {
+    /// system to play a track when entering a avian sensor
+    fn observer(
+        mut commands: Commands,
+        frame_time: Res<Time>,
+        asset_server: Res<AssetServer>,
+        player: Query<(Entity, &Player)>,
+        mut sensors: Query<(Entity, &Self, &mut DelayCounter)>,
+        mut collisions: EventReader<Collision>,
+        mut soundtrack: Query<&Soundtrack>,
+    ) {
+        let Ok((player, _)) = player.get_single() else { return };
+        for c in collisions.read() {
+            let e = [c.0.entity1, c.0.entity2, c.0.body_entity1.unwrap_or(c.0.entity1), c.0.body_entity2.unwrap_or(c.0.entity1)];
+            if c.0.is_sensor && e.contains(&player) {
+                if let Some(mut s) = sensors.iter_mut().find(|s| e.contains(&s.0)) {
+                    s.2.counter += frame_time.delta_secs();
+                    if soundtrack.is_empty() && s.2.counter >= s.1.delay.unwrap_or_default(){
+                        dbg!();
+                        commands.spawn((
+                            Soundtrack,
+                            AudioPlayer::<AudioSource>(asset_server.load(&s.1.track)),
+                            PlaybackSettings {
+                                mode: bevy::audio::PlaybackMode::Once,
+                                volume: Volume::new(0.1),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
 
 //NOTE: https://musicforprogramming.net/seventythree

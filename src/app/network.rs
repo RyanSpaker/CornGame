@@ -4,12 +4,12 @@ use std::time::Duration;
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use clap::Parser;
-use lightyear::prelude::server::{NetConfig, ServerCommands, ServerTransport};
+use lightyear::prelude::server::{NetConfig, ServerCommandsExt, ServerTransport};
 use lightyear::prelude::*;
 
 use lightyear::client::components::{ComponentSyncMode, LerpFn};
 use lightyear::client::config::ClientConfig;
-use lightyear::prelude::client::{Authentication, ClientCommands, ClientConnection, ClientTransport};
+use lightyear::prelude::client::{Authentication, ClientCommandsExt, ClientConnection, ClientTransport};
 use lightyear::transport::config::SharedIoConfig;
 use lightyear::utils::avian3d::*;
 use lightyear::utils::bevy::TransformLinearInterpolation;
@@ -31,42 +31,42 @@ impl Plugin for CornNetworkingPlugin{
         app.register_component::<Name>(ChannelDirection::ServerToClient);
         
         // // Physics
-        // app.register_component::<LinearVelocity>(ChannelDirection::Bidirectional)
-        //     .add_prediction(ComponentSyncMode::Full);
+        app.register_component::<LinearVelocity>(ChannelDirection::Bidirectional)
+            .add_prediction(ComponentSyncMode::Full);
 
-        // app.register_component::<AngularVelocity>(ChannelDirection::Bidirectional)
-        //     .add_prediction(ComponentSyncMode::Full);
+        app.register_component::<AngularVelocity>(ChannelDirection::Bidirectional)
+            .add_prediction(ComponentSyncMode::Full);
 
-        // app.register_component::<ExternalForce>(ChannelDirection::Bidirectional)
-        //     .add_prediction(ComponentSyncMode::Full);
+        app.register_component::<ExternalForce>(ChannelDirection::Bidirectional)
+            .add_prediction(ComponentSyncMode::Full);
 
-        // app.register_component::<ExternalImpulse>(ChannelDirection::Bidirectional)
-        //     .add_prediction(ComponentSyncMode::Full);
+        app.register_component::<ExternalImpulse>(ChannelDirection::Bidirectional)
+            .add_prediction(ComponentSyncMode::Full);
 
         // // Do not replicate Transform when we are replicating Position/Rotation!
         // // See https://github.com/cBournhonesque/lightyear/discussions/941
         // // app.register_component::<Transform>(ChannelDirection::Bidirectional)
         // //     .add_prediction(ComponentSyncMode::Full);
 
-        // app.register_component::<ComputedMass>(ChannelDirection::Bidirectional)
-        //     .add_prediction(ComponentSyncMode::Full);
+        app.register_component::<ComputedMass>(ChannelDirection::Bidirectional)
+            .add_prediction(ComponentSyncMode::Full);
 
         // Position and Rotation have a `correction_fn` set, which is used to smear rollback errors
         // over a few frames, just for the rendering part in postudpate.
         //
         // They also set `interpolation_fn` which is used by the VisualInterpolationPlugin to smooth
         // out rendering between fixedupdate ticks.
-        // app.register_component::<Position>(ChannelDirection::ServerToClient)
-        //     .add_prediction(ComponentSyncMode::Full)
-        //     .add_interpolation_fn(position::lerp)
-        //     .add_interpolation(ComponentSyncMode::Full)
-        //     .add_correction_fn(position::lerp);
+        app.register_component::<Position>(ChannelDirection::ServerToClient)
+            .add_prediction(ComponentSyncMode::Full)
+            .add_interpolation_fn(position::lerp)
+            .add_interpolation(ComponentSyncMode::Full)
+            .add_correction_fn(position::lerp);
 
-        // app.register_component::<Rotation>(ChannelDirection::ServerToClient)
-        //     .add_prediction(ComponentSyncMode::Full)
-        //     .add_interpolation_fn(rotation::lerp)
-        //     .add_interpolation(ComponentSyncMode::Full)
-        //     .add_correction_fn(rotation::lerp);
+        app.register_component::<Rotation>(ChannelDirection::ServerToClient)
+            .add_prediction(ComponentSyncMode::Full)
+            .add_interpolation_fn(rotation::lerp)
+            .add_interpolation(ComponentSyncMode::Full)
+            .add_correction_fn(rotation::lerp);
 
         // do not replicate Transform but make sure to register an interpolation function
         // for it so that we can do visual interpolation
@@ -74,11 +74,7 @@ impl Plugin for CornNetworkingPlugin{
         // app.add_interpolation::<Transform>(ComponentSyncMode::None);
         //app.add_interpolation_fn::<Transform>(TransformLinearInterpolation::lerp);
 
-        app.register_component::<Transform>(ChannelDirection::ServerToClient)
-             .add_prediction(ComponentSyncMode::Full)
-             .add_interpolation_fn(TransformLinearInterpolation::lerp)
-             .add_interpolation(ComponentSyncMode::Full)
-             .add_correction_fn(TransformLinearInterpolation::lerp);
+        //app.register_component::<Transform>(ChannelDirection::ServerToClient);
     }
 }
 
@@ -120,10 +116,10 @@ pub fn start_server(
 
     // Here we only provide a single net config, but you can provide multiple!
     config.net = vec![net_config];
-    config.shared.mode = Mode::HostServer;
+    //config.shared.mode = Mode::HostServer;
 
     client_config.net = client::NetConfig::Local { id: std::process::id() as u64 };
-    client_config.shared.mode = Mode::HostServer;
+    //client_config.shared.mode = Mode::HostServer;
 
     commands.start_server();
 }
@@ -154,7 +150,7 @@ pub fn start_client(
         config: default()
     };
     config.net = net_config; 
-    config.shared.mode = Mode::HostServer;
+    //config.shared.mode = Mode::HostServer;
     
     commands.connect_client();
 }

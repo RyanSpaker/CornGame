@@ -4,7 +4,7 @@
     it also includes the initial scene setup
 */
 use std::{env::args, f32::consts::PI, ffi::OsStr, path::PathBuf};
-use bevy::{core_pipeline::{bloom::{Bloom, BloomSettings}, tonemapping::Tonemapping}, prelude::*, render::{mesh::PlaneMeshBuilder, sync_world::SyncToRenderWorld}, state::state::FreelyMutableState};
+use bevy::{core_pipeline::{bloom::{Bloom, BloomSettings}, tonemapping::Tonemapping}, pbr::{FogVolume, ScreenSpaceReflections, VolumetricFog}, prelude::*, render::{mesh::PlaneMeshBuilder, sync_world::SyncToRenderWorld}, state::state::FreelyMutableState};
 use avian3d::prelude::*;
 use lightyear::{prelude::{AppComponentExt, ChannelDirection, ClientReplicate, NetworkIdentity, ServerReplicate}, shared::replication::network_target};
 use serde::{Deserialize, Serialize};
@@ -46,6 +46,8 @@ impl<T> Plugin for LoadGamePlugin<T> where T: FreelyMutableState + Copy{
         app.register_component::<TestCube>(ChannelDirection::Bidirectional);
 
         app.insert_resource(UiScale(2.0));
+
+        app.register_type::<FogVolume>();
     }
 }
 
@@ -86,7 +88,19 @@ fn setup_scene(
             ..default()
         }),
         bevy_edge_detection::EdgeDetection::default(), //post-process shader
-        Name::new("main_camera"), IsDefaultUiCamera, MainCamera, CornSensor::default()));
+        VolumetricFog{
+            ambient_intensity: 0.0,
+            ..default()
+        },
+        ScreenSpaceReflections::default(),
+        Name::new("main_camera"), IsDefaultUiCamera, MainCamera, CornSensor::default()),
+        
+    );
+
+    commands.spawn((
+        FogVolume{ density_factor:0.0001, ..default() },
+        Transform::from_scale(Vec3::splat(35.0)),
+    ));
 
     // let my_gltf = asset_server.load("scenes/player.glb#Scene0");
     // commands.spawn(Player.bundle()).insert((
@@ -171,7 +185,7 @@ impl TestCube {
         mut commands: Commands
     ){
         for id in query.iter(){
-            info!("spawning test cube {:?}", net.identity());
+            info!("spawning test cube {:?}", net);
             let mut entity = commands.entity(id);
             entity.insert((
                 Name::new("test cube"),

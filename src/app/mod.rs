@@ -22,7 +22,7 @@ use loading::LoadGamePlugin;
 use gameplay::CornGamePlayPlugin;
 use ui::editor::MyEditorPlugin;
 
-use self::{audio::MyAudioPlugin, ui::console::MyConsolePlugin};
+use self::{audio::MyAudioPlugin, /*ui::console::MyConsolePlugin*/};
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum CornGameState{
@@ -42,7 +42,10 @@ impl Plugin for CornAppPlugin{
         app            
             .add_plugins((
                 MyEditorPlugin,
-                MyConsolePlugin,
+                //MyConsolePlugin,
+                bevy::remote::RemotePlugin::default(),
+                bevy::remote::http::RemoteHttpPlugin::default(),
+                bevy_remote_inspector::RemoteInspectorPlugins
             ))
             .add_plugins(network::CornNetworkingPlugin) // must be added early so we can register components
             .add_plugins(EdgeDetectionPlugin::default())

@@ -1,13 +1,13 @@
 use std::error::Error;
 
-use bevy::{ecs::{query::QuerySingleError, reflect}, prelude::*};
-use bevy_console::{reply, AddConsoleCommand, ConsoleCommand, ConsolePlugin};
+use bevy::{ecs::{query::QuerySingleError, reflect::{self, ReflectCommandExt}}, prelude::*, scene::ron::de::SpannedError};
+use bevy_console::{reply, reply_failed, AddConsoleCommand, ConsoleCommand, ConsolePlugin};
 use avian3d::{debug_render, prelude::*};
 use blenvy::GameWorldTag;
 use clap::Parser;
 use lightyear::{connection::server::ServerConnections, prelude::{client::{self, ClientConnection, NetClient, NetworkingState}, server}};
 use serde::{Deserialize, Serialize};
-use wgpu::hal::auxil::db;
+use wgpu::{hal::auxil::db, util::make_spirv_raw};
 
 use crate::app::{character::SpawnPlayerEvent, loading::TestCube};
 
@@ -35,6 +35,7 @@ impl Plugin for MyConsolePlugin {
             .add_console_command::<RespawnCommand, _>(respawn_command)
             .add_console_command::<ReloadCommand, _>(reload_command)
             .add_console_command::<NetTest, _>(nettest_command)
+            .add_console_command::<AddCommand, _>(AddCommand::system)
 
             .register_type::<Initial<Transform>>()
             .add_console_command::<ResetCommand, _>(reset_command.before(PhysicsSet::Sync))
@@ -146,7 +147,7 @@ enum ResetCommand {
 }
 
 #[auto_enums::auto_enum(Error)]
-fn entity_from_string(s: String) -> Result<Entity, impl Error> {
+fn entity_from_string(s: &str) -> Result<Entity, impl Error> {
     let (low, high) : (u32, u32) = prse::try_parse!(s, "{}v{}")?;
     let v = ((high as u64) << u32::BITS) | (low as u64);
     let e = Entity::try_from_bits(v)?;
@@ -167,7 +168,7 @@ fn reset_command(mut ctx: ConsoleCommand<ResetCommand>, mut commands: Commands, 
                 }
             },
             ResetCommand::Entity{entity} => { 
-                match entity_from_string(entity) {
+                match entity_from_string(&entity) {
                     Ok(e) => {
                         let Ok((_, initial)) = query.get(e) else { return; };
                         commands.entity(e).insert(initial.0);
@@ -215,10 +216,71 @@ fn nettest_command(
     if let Some(Ok(cmd)) = ctx.take() { // seriously fuck this api
         dbg!(&client_state);
         dbg!(&server_state);
-        dbg!(&client_config.shared.mode);
-        dbg!(&server_config.shared.mode);
+        dbg!(&client_config);
+        dbg!(&server_config);
+        // dbg!(&client);
+        // dbg!(&server);
         reply!(ctx, "server {:?}", server_state);
         reply!(ctx, "client {} {:?}", client.client.id(), client_state);
         ctx.ok();
+    }
+}
+
+#[derive(Parser, ConsoleCommand)]
+#[command(name = "add")]
+struct AddCommand {
+    //#[arg(value_parser = entity_from_string)]
+    //id: Entity,
+    id: String,
+    component: String,
+    data: Option<String>,
+}
+impl AddCommand {
+    fn system(
+        mut ctx: ConsoleCommand<AddCommand>, 
+        registry: Res<AppTypeRegistry>,
+        mut commands: Commands,
+        names: Query<(Entity, &Name)>,
+    ) {
+        use bevy::reflect::serde::*;
+        use serde::de::DeserializeSeed;
+
+        // TODO fork bevy_console
+        if let Some(Ok(cmd)) = ctx.take() {
+            // bev
+            let input = format!("{{\"{}\": ({})}}", cmd.component, cmd.data.unwrap_or_default());
+            
+            let registry = registry.read();
+            let mut deserializer = match bevy::scene::ron::Deserializer::from_str(&input) {
+                Ok(s)=>s,
+                Err(e)=>{
+                    reply_failed!(ctx, "{}", e);
+                    return
+                }
+            };
+            let reflect_deserializer = ReflectDeserializer::new(&registry);
+            
+            let id = match entity_from_string(&cmd.id) {
+                Ok(s) => s,
+                Err(_) => {
+                    match names.iter_inner().find(|n|n.1.as_str() == cmd.id){
+                        Some((id, _name)) => id,
+                        None => {
+                            reply_failed!(ctx, "no entity named {}", &cmd.id);
+                            return
+                        }
+                    }
+                }
+            };
+
+            let output: Box<dyn PartialReflect> = match reflect_deserializer.deserialize(&mut deserializer) {
+                Ok(s) => s,
+                Err(e) => {
+                    reply_failed!(ctx, "{}", e);
+                    return
+                }
+            };
+            commands.entity(id).insert_reflect(output);
+        }
     }
 }
