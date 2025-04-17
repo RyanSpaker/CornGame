@@ -232,16 +232,19 @@ fn spawn_dehydrated_child_obs(
 use blenvy::{BlueprintAnimationPlayerLink, BlueprintInfo, SpawnBlueprint};
 use blenvy::BlueprintAnimations;
 
-pub fn animation_test(
-    animated_robots: Query<(Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations)>,
+use super::interactions::Interactable;
 
-    mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
+/// KEEP this, default behavior should be to play animations
+pub fn animation_test(
+    animated_robots: Query<(Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations), Without<Interactable>>,
+
+    mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>, //TODO should be more general without case
 
 ) {
     // robots
     for (id, link, animations) in animated_robots.iter() {
-        let (mut animation_player, mut animation_transitions) =
-            animation_players.get_mut(link.0).unwrap();
+        let Ok((mut animation_player, mut animation_transitions)) =
+            animation_players.get_mut(link.0) else {continue};
         if animation_player.playing_animations().next().is_some(){
             // don't start animation if one is playing
             break;   

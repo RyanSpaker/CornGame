@@ -1,6 +1,6 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, time::Duration};
 
-use avian3d::prelude::{Collision, CollisionStarted};
+use avian3d::prelude::{Collision, CollisionEnded, CollisionStarted};
 use bevy::{audio::Volume, prelude::*};
 use wgpu::core::command;
 
@@ -113,6 +113,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         AudioPlayer::<AudioSource>(asset_server.load("sounds/wind.ogg")),
         PlaybackSettings {
             mode: bevy::audio::PlaybackMode::Loop,
+            volume: Volume::new(0.8),
             ..Default::default()
         },
         WindNoise::Wind,
@@ -122,7 +123,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         AudioPlayer::<AudioSource>(asset_server.load("sounds/wind_rustle.ogg")),
         PlaybackSettings {
             mode: bevy::audio::PlaybackMode::Loop,
-            volume: Volume::new(0.1),
+            volume: Volume::new(0.2),
             ..Default::default()
         },
         WindNoise::Rustle,
@@ -132,7 +133,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         AudioPlayer::<AudioSource>(asset_server.load("sounds/footstep_leaves.ogg")),
         PlaybackSettings {
             mode: bevy::audio::PlaybackMode::Loop,
-            volume: Volume::new(0.3),
+            volume: Volume::new(0.4),
             ..Default::default()
         },
         Footsteps {
@@ -177,7 +178,9 @@ impl Plugin for MyAudioPlugin {
             .add_systems(Startup, setup);
         app.register_type::<SoundTrackOnEnter>();
         app.register_type::<Soundtrack>();
+        app.add_systems(Update, (fade));
         app.add_systems(Update, SoundTrackOnEnter::observer);
+        app.add_systems(PostUpdate,SoundTrackOnEnter::attenuate);//PostUpdate so it can reliably get RemovedComponent<Soundtrack>
     }
 }
 
@@ -191,6 +194,7 @@ pub struct Soundtrack;
 pub struct SoundTrackOnEnter {
     track: String,
     delay: Option<f32>,
+    fade_on_leave: bool,
 }
 
 #[derive(Debug, Default, Clone, Component, Reflect)]
@@ -210,13 +214,31 @@ impl SoundTrackOnEnter {
         player: Query<(Entity, &Player)>,
         mut sensors: Query<(Entity, &Self, &mut DelayCounter)>,
         mut collisions: EventReader<Collision>,
-        mut soundtrack: Query<&Soundtrack>,
+        mut collision_end: EventReader<CollisionEnded>,
+        mut soundtrack: Query<(Entity, &Soundtrack)>,
     ) {
+        for c in collision_end.read() {
+            for s in sensors.iter(){
+                if s.0 == c.0 || s.0 == c.1 {
+                    info!("Stop soundtrack");
+                    if let Ok((entity, _)) = soundtrack.get_single() {
+                        dbg!();
+                        commands.entity(entity).insert(Fade(Duration::from_secs(2), Some(0.0)));
+                    }
+                    return;
+                }
+            }
+        }
+
         let Ok((player, _)) = player.get_single() else { return };
         for c in collisions.read() {
             let e = [c.0.entity1, c.0.entity2, c.0.body_entity1.unwrap_or(c.0.entity1), c.0.body_entity2.unwrap_or(c.0.entity1)];
             if c.0.is_sensor && e.contains(&player) {
                 if let Some(mut s) = sensors.iter_mut().find(|s| e.contains(&s.0)) {
+                    if c.0.collision_stopped() {
+                        dbg!(); // TODO, why doesn't this work
+                    }
+
                     s.2.counter += frame_time.delta_secs();
                     if soundtrack.is_empty() && s.2.counter >= s.1.delay.unwrap_or_default(){
                         dbg!();
@@ -224,16 +246,91 @@ impl SoundTrackOnEnter {
                             Soundtrack,
                             AudioPlayer::<AudioSource>(asset_server.load(&s.1.track)),
                             PlaybackSettings {
-                                mode: bevy::audio::PlaybackMode::Once,
-                                volume: Volume::new(0.1),
+                                mode: bevy::audio::PlaybackMode::Despawn,
+                                volume: Volume::new(0.2),
                                 ..Default::default()
                             },
                         ));
+                        return;
                     }
                 }
+            }
+        }
+    }
+
+    fn attenuate(
+        mut commands: Commands, 
+        soundtrack: Query<(Entity, Ref<Soundtrack>, Option<Ref<Fade>>)>,
+        ended: RemovedComponents<Soundtrack>,
+        ambient: Query<(Entity, &PlaybackSettings, Option<&Fade>), With<WindNoise>>
+    ){
+        let factor = 0.3;
+
+        let mut playing = false;
+        let mut started = false;
+        let mut stopped = ! ended.is_empty();
+        for (_entity, s, fade) in soundtrack.iter(){
+            // treat soundtrack with active fade out as if it isn't playing
+            if Some(0.0) == fade.as_ref().and_then(|f|f.1){
+                if fade.unwrap().is_changed() {
+                    stopped = true;
+                }
+            } else {
+                if s.is_added(){
+                    started = true;
+                }
+                playing = true;
+            }
+        }
+
+        for (a, settings, fade) in ambient.iter(){
+            if stopped && !playing{
+                if fade.is_some_and(|f|f.1.is_none()){
+                    //already fading back to default
+                    continue;
+                }
+
+                info!("cancelling attenuation");
+                commands.entity(a).insert(Fade(Duration::from_secs_f32(4.0), None));
+            }
+            else if started{
+                info!("attenuating");
+                commands.entity(a).insert(Fade(Duration::from_secs_f32(4.0), Some(settings.volume.get() * factor)));
             }
         }
     }
 }
 
 //NOTE: https://musicforprogramming.net/seventythree
+// This component will be attached to an entity to fade the audio in
+#[derive(Component)]
+struct Fade(Duration, Option<f32>);
+
+// Fades in the audio of entities that has the FadeIn component. Removes the FadeIn component once
+// full volume is reached.
+fn fade(
+    mut commands: Commands,
+    mut audio_sink: Query<(&mut AudioSink, Entity, &mut Fade, Option<&PlaybackSettings>)>,
+    time: Res<Time>,
+) {
+    for (audio, entity, mut fade, settings) in audio_sink.iter_mut() {
+        let target = fade.1.or(settings.map(|f|f.volume.get())).unwrap_or(1.0);
+
+        let inc =(target - audio.volume()) * time.delta_secs() / fade.0.as_secs_f32();
+        fade.0 = fade.0.saturating_sub(time.delta());
+        if ! fade.0.is_zero() {
+            audio.set_volume(audio.volume() + inc);
+        } else {
+            if target == 0.0 {
+                if audio.volume() == 0.0 {
+                    info!("fade out complete, despawning");
+                    commands.entity(entity).despawn_recursive();
+                }
+            }else{
+                info!("fade complete {}", target);
+                commands.entity(entity).remove::<Fade>(); 
+            }
+            audio.set_volume(target);
+        }
+    }
+}

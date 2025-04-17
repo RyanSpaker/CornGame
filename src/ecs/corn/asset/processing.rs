@@ -141,8 +141,11 @@ impl AssetTransformer for CornAssetTransformer{
             let mut used_materials: Vec<Handle<StandardMaterial>> = vec![];
             // List of Lods each a list of meshes and the index of the material that mesh uses
             let mut lods: Vec<Vec<(Handle<Mesh>, usize)>> = vec![];
-            for (_, (label, name)) in named_meshes.iter(){
-                if name[..7] != *"CornLOD" {continue;}
+            for (_, (label,name)) in named_meshes.iter(){
+                dbg!(&name);
+                let Some((_, tail)) = name.split_once("Corn2LOD") else {continue}; //XXX fixme hardcoded
+                let (lod_level, mesh_index) = tail.split_once(".").unwrap_or((tail, "0"));
+
                 let sub_asset = asset.get_labeled::<GltfMesh, str>(label).unwrap();
                 let gltf_mesh = sub_asset.get();
                 let primitive = &gltf_mesh.primitives[0];
@@ -152,8 +155,8 @@ impl AssetTransformer for CornAssetTransformer{
                     used_materials.push(mat.to_owned());
                     used_materials.len() - 1
                 };
-                let lod_level = name[7..8].parse::<usize>().unwrap();
-                let mesh_index = if name.len() == 8 {0} else {name[11..12].parse::<usize>().unwrap()};
+                let lod_level = lod_level.parse::<usize>().unwrap(); 
+                let mesh_index = mesh_index.parse::<usize>().unwrap();
                 while lods.len() <= lod_level {lods.push(vec![]);}
                 while lods[lod_level].len() <= mesh_index {lods[lod_level].push((Handle::default(), 0));}
                 lods[lod_level][mesh_index] = (mesh, pos);
@@ -264,7 +267,7 @@ impl AssetSaver for CornAssetSaver{
             }
             for (tex, name) in write_each(writer, &mut byte_count, &asset.textures).await?.into_iter(){
                 write_string(writer, &mut byte_count, name).await?;
-                byte_count += save_image(tex, writer).await?;
+                save_image(tex, writer, &mut byte_count).await?;
             }
             return Ok(());
         })        
@@ -303,8 +306,10 @@ impl AssetLoader for CornAssetLoader{
             }
             let tex_number = read_u64(reader, &mut byte_counter).await? as usize;
             let mut textures: Vec<(Image, String)> = Vec::with_capacity(tex_number);
-            for _ in 0..tex_number{
+            for i in 0..tex_number{
+                dbg!(i, tex_number);
                 let name = read_string(reader, &mut byte_counter).await?;
+                dbg!(&name);
                 let image = read_image(reader, &mut byte_counter).await?;
                 textures.push((image, name));
             }

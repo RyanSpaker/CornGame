@@ -152,7 +152,7 @@ pub async fn read_indices<'a>(reader: &'a mut dyn bevy::asset::io::Reader, count
     if read_option(reader, counter).await? {
         let indice_count = read_u64(reader, counter).await? as usize;
         let data = read_vector(reader, counter).await?;
-        if data.len() / indice_count == 2 {
+        if indice_count == 0 || data.len() / indice_count == 2 {
             Ok(Some(Indices::U16(bytemuck::cast_slice::<u8, u16>(data.as_slice()).to_vec())))
         }else{
             Ok(Some(Indices::U32(bytemuck::cast_slice::<u8, u32>(data.as_slice()).to_vec())))

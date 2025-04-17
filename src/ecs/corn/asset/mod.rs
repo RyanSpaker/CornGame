@@ -35,6 +35,7 @@ impl Plugin for CornAssetPlugin{
 /// Loads the corn model from the assets folder. Runs when the app starts
 pub fn spawn_corn_asset(mut corn_res: ResMut<CornModel>, assets: Res<AssetServer>){
     corn_res.asset = assets.load("models/Corn.glb");
+    // corn_res.asset = assets.load("models/corn2.glb");
 }
 
 /// Resource which holds some commonly accessed data about the corn Model, as well as a handle to the [`CornAsset`]

@@ -9,7 +9,8 @@ impl Plugin for MyPhysicsPlugin {
         // init physics plugins
         app.add_plugins((
             PhysicsPlugins::default(),
-            PhysicsDebugPlugin::default(),
+            // PhysicsDebugPlugin::default(),
+            
             //PhysicsDiagnosticsPlugin,
             //PhysicsDiagnosticsUiPlugin,
         ));

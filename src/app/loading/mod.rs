@@ -162,7 +162,8 @@ fn setup_scene(
             BlueprintInfo::from_path(&path.to_str().unwrap()), //NOTE: I wish there was a language where I could just do path, and it would give a warning but I wouldn't have to do all this type munching
             SpawnBlueprint,
             GameWorldTag,
-            RigidBody::Static // weird things happen if there are colliders with no rigid body
+            // RigidBody::Static // weird things happen if there are colliders with no rigid body
+            // EDIT: weirder things happen with nested RigidBodys
         ));
     }
 

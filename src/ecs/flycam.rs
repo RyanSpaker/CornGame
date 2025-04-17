@@ -134,6 +134,8 @@ fn capture_mouse(
             CursorGrabMode::None => {
                 window.cursor_options.grab_mode = CursorGrabMode::Locked;
                 window.cursor_options.visible = false;
+                let center = Some(window.size()/2.0);
+                window.set_cursor_position(center);
                 next_state.set(FlyCamState::Focused);
             },
             CursorGrabMode::Confined => {

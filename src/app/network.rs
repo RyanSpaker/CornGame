@@ -26,6 +26,8 @@ impl Plugin for CornNetworkingPlugin{
         app.add_plugins(server::ServerPlugins {
             config: ServerConfig::default(),
         });
+
+        return;
         app.add_systems(Startup, network_on_start_system);
 
         app.register_component::<Name>(ChannelDirection::ServerToClient);

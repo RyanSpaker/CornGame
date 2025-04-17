@@ -7,14 +7,14 @@ use super::*;
 */
 
 /// Saves an Image to the writer with all necessary reading information present in the data. Returns the total number of bytes written.
-pub async fn save_image(image: &Image, writer: &mut bevy::asset::io::Writer) -> Result<usize, std::io::Error>{
-    let mut byte_counter: usize = 0;
-    write_byte(image.asset_usage.bits(), writer, &mut byte_counter).await?;
-    write_byte(encode_texture_format(&image.texture_descriptor.format), writer, &mut byte_counter).await?;
-    write_byte(encode_texture_dimension(&image.texture_descriptor.dimension), writer, &mut byte_counter).await?;
-    write_extent3d(writer, &mut byte_counter, image.texture_descriptor.size).await?;
-    write_slice(writer, &mut byte_counter, image.data.as_slice()).await?;
-    return Ok(byte_counter);
+pub async fn save_image(image: &Image, writer: &mut bevy::asset::io::Writer, mut byte_counter: &mut usize) -> Result<(), std::io::Error>{
+    write_byte(image.asset_usage.bits(), writer, byte_counter).await?;
+    write_byte(encode_texture_format(&image.texture_descriptor.format), writer, byte_counter).await?;
+    write_byte(encode_texture_dimension(&image.texture_descriptor.dimension), writer, byte_counter).await?;
+    write_extent3d(writer, byte_counter, image.texture_descriptor.size).await?;
+    write_slice(writer, byte_counter, image.data.as_slice()).await?;
+    dbg!((&byte_counter,image.data.len()));
+    Ok(())
 }
 /// Reads an Image from the reader. Returns the total number of bytes read.
 pub async fn read_image<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Image, std::io::Error>{
@@ -23,6 +23,7 @@ pub async fn read_image<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter
     let dimension = decode_texture_dimension(read_byte(reader, counter).await?);
     let size = read_extent3d(reader, counter).await?;
     let data = read_vector(reader, counter).await?;
+    dbg!((&counter,data.len()));
     return Ok(Image::new(size, dimension, data, format, usage));
 }
 
