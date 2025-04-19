@@ -84,3 +84,131 @@ issue: bevy_editor_pls panic clicking on entity which has fallen off the map.
 thread 'main' panicked at /home/user/.cargo/registry/src/index.crates.io-6f17d22bba15001f/bevy-inspector-egui-0.28.1/src/restricted_world_view.rs:223:9:
 assertion failed: self.allows_access_to_component(component)
 ```
+
+# Sat Mar 22 06:12:01 PM EDT 2025
+blenvy export is fucked. I'm trying to figure out how to use this cargo container asset I found but it uses all these blender features :/ 
+guess I need to just make my own. 
+
+https://github.com/kaosat-dev/Blenvy/issues/267
+
+and another issue exporting spot-light data
+https://github.com/kaosat-dev/Blenvy/issues/268
+
+I might need to fork blenvy
+
+# Sat Mar 22 06:58:08 PM EDT 2025
+I want to learn how to use bevy_reflect so I can add entity commands to the console.
+
+Got it working `add 91v6 bevy_pbr::bevy_pbr::volumetric_fog::VolumetricLight` for example.
+
+Might work on a more fleshed out shell later (tab completion).
+but first I need to look into [bevy_remote] 
+via the [vscode extension](https://marketplace.visualstudio.com/items?itemName=splo.vscode-bevy-inspector)
+- vs code extension is pretty limited, can only view entities and components, not modify or add them.
+
+There is also [bevy_remote_inspector] which appears to be an unrelated to bevy_remote.
+- *had to turn off adblocker for this to work*
+- has a bug changing Name component interestingly
+- has a bug when clicking on certain entities where it goes to a blank page
+
+[bevy_remote]: https://docs.rs/bevy/latest/bevy/remote/index.html
+[bevy_remote_inspector]: https://github.com/notmd/bevy_remote_inspector
+
+# Sun Mar 23 04:52:01 AM EDT 2025
+volumetric fog
+
+despite what the docs [imply](https://bevyengine.org/news/bevy-0-15/#volumetric-fog-support-for-point-lights-and-spotlights), it seems you must add FogVolume to the scene to get volumetric fog.
+
+# Sun Mar 23 04:52:10 AM EDT 2025
+
+Performance: 
+- [ ] Is it possible to have vertex / fragment shaders abort if frame is taking too long to draw?
+- [ ] Is it possible to generate billboard dynamically, could we have a heuristic for their error?
+  - how much cheaper would a billboard be than the low poly corn? (if at all)
+  - [ ] test low poly vs all billboard
+- [ ] Is it possible to use meshlets with the corn renderer (using it to dynamically generate LOD models)
+  - first test is just to see how many corn stalks we can draw with meshlets alone
+  - what is the cost of having more granularity to LOD?
+- [ ] subframerate rendering to a skybox texture for faraway objects.
+- [ ] what if we had a seperate model for just the top of the corn?
+
+# Sun Apr 13 05:06:30 AM EDT 2025
+[art] 
+I have drastically reduced the polygons of the mid/low corn LODS. And got the new one loading in the asset loader. Not sure I like it though. Looks less organic even if it's technically closer to the high poly.
+
+I started texturing the corn, but UVs and LOD selection appear broken in our code.
+effect looked kinda cool, I have a screenshot.
+
+---
+
+I managed to get a nice scene with the menu music playing at spawn, fading out as you walk into the maze and then medium_size_maze starts playing once you get to the top of the tower, when you first get a up high view of the maze, pylons leading who knows where in the distance, and shipping container.
+
+I also have the ambient wind attenuate while soundtracks are triggered.
+
+It feels fun to explore the maze.
+
+TODO: late game secret way to climb up on the tower roof and walk across the power lines to the pylons (shortcut?, hack?)
+
+---
+
+New idea: rocket ship. Hint at it early with toy rocket ship + very visible moon (use moon position like a clock with something happening at dead overhead)
+end game will take off in ship, seeing truely infinite field of corn.
+- unlocks lunar map
+  - tent replaced with habitat
+  - new monster: moon bears
+- unlocks new menu scene (on moon, with cheese like wallice and grommit)
+
+# Mon Apr 14 02:24:59 AM EDT 2025
+[gameplay]
+
+- [ ] non-euclidian maze.
+  - since you can only see the distance at specific locations (ex tower), we can show and hide objects and have the corn maze change as you walk through.
+  - networking is similarly easy.
+  - objects have (possibly multiple) 4d_alignment, and the player has a 4d coordinate. View is based on range of 4d values. 
+    - don't need fade-in, just make sure nothing is visible when it pops in out
+  - corn map has gradient in 4d, which updates player loc.
+  - since cutting through corn is generally flat in 4d, this implements shortcuts.
+  - this would let us hide alot of content, bridging small medium and large mazes into single maze for the story/advanced mode.
+    - maze has "random" variability which can be controlled to keep the player away from secrets in early game, lead them astray in mid game, and guide them to secrets if they get struck for too long in the late game.
+- [ ] forced perspective on tower by making character get smaller as you ascend tower
+  - corn looks too big.
+  - might need to change tower size also.
+  
+[art]
+- use music cues for maze levels
+  - ex: harpsicord on castle level
+  - presence of harpsichord in non-castle level indicates you are near a 4d crossover
+
+- working on another track: Escape on the Fifth Axis
+    - for use during intense final sequence to escape maze for real\
+    - big missile/rocket silo underground, sparse splotes of corn growing around walkways.
+        - possibly make this not even the real/final rocket, this one deposits you outside maze, next to a little rocket/shuttle and that way we can have the wave goodbye for credits
+    - at end of sequence (timed with music) we have the "fifth axis" effect, which makes the moon get really big, and the corn field + everything else shrink really small, with sound effect kinda like outer wilds black hole.
+
+# Mon Apr 14 04:41:19 PM EDT 2025
+- [ ] spawning inspector panels
+- [ ] docking panels
+- [ ] switching cameras
+  - [ ] follow objects
+- [ ] click on objects
+- [ ] camera settings 
+  - [ ] cli args
+- [ ] blender hot reload
+  - [ ] spawn?
+
+- [ ] char controller animations
+- [ ] interaction
+  - [x] animation
+  - [x] event
+  - [ ] trigger lights / general game state hook
+    - [ ] network
+
+# Thu Apr 17 03:35:29 AM EDT 2025
+I am implementing picking/interaction and I cannot for the life of me put up with any more ui bullshit. There is a magic extra /2 in the positioning code. I am not looking into why any more. It is either a bevy bug, a documentation inaccuracy, or something unbelievably stupid on my part, bevy's or both.
+
+As far as gameplay, I am implementing a little mechanic where you have to type out actions. For example, the breaker box has a tooltip "f---" and you have to type "flip". I think it will be a nice touch. 
+- and be styled to help with ambiance
+- gives actions a little more *body*, making it more immersive
+  - try frantically typing "unlock" and "open" while the monsters are catching up. 
+- opens the door to a minor puzzle mechanic. ie "--t---e?"
+  - and a secret / easter egg mechanic, instead of "flip"ing the switch, try "feel" to see what you "find"

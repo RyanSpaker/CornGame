@@ -49,7 +49,7 @@ impl Default for FlyCamKeybinds{
             move_right: KeyCode::KeyD, 
             move_ascend: KeyCode::Space, 
             move_descend: KeyCode::ShiftLeft,
-            cursor_grab: KeyCode::Escape
+            cursor_grab: KeyCode::Backquote,
         }
     }
 }
@@ -85,6 +85,7 @@ impl Plugin for FlyCamPlugin{
             .insert_state::<FlyCamState>(self.initial_state.clone())
             .add_event::<FlyCamMoveEvent>()
             .add_event::<FlyCamCaptureEvent>()
+            .add_systems(Update, stupid_fucking_system)
             .add_systems(PreUpdate, read_flycam_button_inputs.run_if(not(in_state(FlyCamState::Disabled))))
             .add_systems(Update, (
                 capture_mouse.run_if(Condition::and(
@@ -133,7 +134,7 @@ fn capture_mouse(
         match window.cursor_options.grab_mode {
             CursorGrabMode::None => {
                 window.cursor_options.grab_mode = CursorGrabMode::Locked;
-                window.cursor_options.visible = false;
+                window.cursor_options.visible = true;
                 let center = Some(window.size()/2.0);
                 window.set_cursor_position(center);
                 next_state.set(FlyCamState::Focused);
@@ -151,6 +152,19 @@ fn capture_mouse(
         };
     }
 }
+
+// god only knows why cursor grabbing is broken
+fn stupid_fucking_system(
+    mut window: Query<&mut Window, With<PrimaryWindow>>,
+){
+    if let Ok(mut window) = window.get_single_mut(){
+        if window.cursor_options.grab_mode == CursorGrabMode::Locked {
+            let center = Some(window.size()/2.0);
+            window.set_cursor_position(center);
+        }
+    }
+}
+
 /// Moves the camera reading from move and mouse motion events
 fn move_cam(
     mut move_events: EventReader<FlyCamMoveEvent>,

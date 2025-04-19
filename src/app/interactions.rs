@@ -1,6 +1,8 @@
 use std::{str::Chars, time::Duration};
 
+use avian3d::prelude::{RigidBody, RigidBodyDisabled};
 use bevy::{
+    audio::Volume,
     ecs::{
         entity,
         query::{self, QueryData},
@@ -10,11 +12,14 @@ use bevy::{
     prelude::*,
     render::primitives::Aabb,
     text::FontStyle,
-    utils::all_tuples, window::PrimaryWindow,
+    utils::all_tuples,
+    window::PrimaryWindow,
 };
 use bevy_editor_pls::egui::TextStyle;
 use blenvy::{BlueprintAnimationPlayerLink, BlueprintAnimations};
 use frunk::{hlist::HList, Generic};
+
+use super::character::Player;
 
 pub struct InteractPlugin;
 impl Plugin for InteractPlugin {
@@ -22,41 +27,155 @@ impl Plugin for InteractPlugin {
         app.add_plugins(MeshPickingPlugin);
         app.add_observer(on_over);
         app.add_observer(on_out);
-        app.add_systems(Update, (display_tooltip, handle_key));
+        app.add_systems(
+            Update,
+            (
+                display_tooltip,
+                handle_key,
+                ToggleInteractionBlender::handle_animation_done,
+                ToggleInteractionBlender::handle_flip,
+            ),
+        );
         app.register_type::<Interactable>();
         app.register_type::<ToggleInteractionBlender>();
+        app.register_type::<ToggleInteractionState>();
+        app.register_type::<FlipVisible>();
+        app.register_type::<Hover>();
+        app.register_type::<InteractionText>();
+        app.register_type::<Pickup>();
+        app.register_type::<Held>();
         app.add_observer(ToggleInteractionBlender::observer);
+        app.add_observer(Pickup::observer);
     }
+}
+
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+#[require(Interactable)]
+#[require(InteractionText(InteractionText::flip))]
+pub struct Pickup;
+
+// TODO want to be able to set held object from commandline or scene file
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+pub struct Held; /*{
+    // Entity to sync to
+    // entity: Entity,
+
+    // Offset
+    // TODO hand bone
+    // offset: Transform,
+}*/
+
+impl Pickup {
+    fn observer(
+        ev: Trigger<Interaction>,
+        mut commands: Commands,
+        mut query: Query<(Entity, &Self, &mut Interactable, &GlobalTransform)>,
+
+        // current held item to put down
+        mut held: Query<(Entity, &Held, &mut Transform)>,
+
+        // player to take item
+        mut player: Query<(Entity, &Player)>,
+    ) {
+        // HERE need to handle rigidbody, and add damping to outer rocket
+
+        let Ok((entity, pickup, mut interactable, gt)) = query.get_mut(ev.entity()) else {
+            return;
+        };
+        debug!("pickup {}", ev.entity());
+
+        let player = player.single(); //TODO multiplayer
+        commands
+            .entity(entity)
+            .set_parent(player.0)
+            .insert((Transform {
+                translation: Vec3::new(0.1, -0.3, -0.6),
+                scale: gt.scale(),
+                ..default()
+            }, 
+            Held, 
+            RigidBodyDisabled // XXX what about child colliders
+        ));
+
+        for mut h in held.iter_mut(){
+            // TODO better logic for putting down currently held item
+            // TODO have everything work off of adding or removing the Held component
+            h.2.translation = gt.translation();
+            commands.entity(h.0).remove::<(Parent, Held, RigidBodyDisabled)>();
+        }
+    }
+}
+
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+pub struct FlipVisible {
+    target: String,
 }
 
 #[derive(Debug, Clone, Default, Component, Reflect)]
 #[reflect(Component)]
 pub struct ToggleInteractionState(bool);
 
-#[derive(Debug, Clone, Component, Reflect)]
+#[derive(Debug, Clone, Default, Component, Reflect)]
 #[reflect(Component)]
 #[require(Interactable, ToggleInteractionState)]
 pub struct ToggleInteractionBlender {
     on_animation: String,
     off_animation: String,
+    on_sfx: Option<String>,
+    off_sfx: Option<String>,
 }
 
 impl ToggleInteractionBlender {
+    fn handle_animation_done(
+        mut animated: Query<(&BlueprintAnimationPlayerLink, &mut Interactable)>,
+        mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
+    ) {
+        for (link, mut state) in animated.iter_mut() {
+            if animation_players.get(link.0).unwrap().0.all_finished() {
+                // TODO what if there is an idle animation
+                state.active = false;
+            }
+        }
+    }
+
+    fn handle_flip(
+        query: Query<(&ToggleInteractionState, &FlipVisible), Changed<ToggleInteractionState>>,
+        mut target: Query<(&Name, &mut Visibility)>,
+    ) {
+        for item in query.iter() {
+            dbg!(item);
+            if let Some((_, mut vis)) = target
+                .iter_mut()
+                .find(|t| *t.0 == Name::from(item.1.target.clone()))
+            {
+                *vis = match item.0 .0 {
+                    true => Visibility::Visible,
+                    false => Visibility::Hidden,
+                }
+            } else {
+                warn!("could not find {}", item.1.target);
+            }
+        }
+    }
+
     fn observer(
         ev: Trigger<Interaction>,
-        mut query: Query<(&Self, &mut ToggleInteractionState)>,
+        mut commands: Commands,
+        asset_server: ResMut<AssetServer>,
+        mut query: Query<(&Self, &mut ToggleInteractionState, &mut Interactable)>,
         animated: Query<(&BlueprintAnimationPlayerLink, &BlueprintAnimations)>,
         mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
     ) {
-        dbg!(&ev, &query);
-        let Ok((conf, mut state)) = query.get_mut(ev.entity()) else {
+        let Ok((conf, mut state, mut interactable)) = query.get_mut(ev.entity()) else {
             return;
         };
         state.0 = !state.0;
         debug!("{} toggle {}", ev.entity(), state.0);
 
         if let Ok((link, animations)) = animated.get(ev.entity()) {
-            dbg!();
             let (mut animation_player, mut animation_transitions) =
                 animation_players.get_mut(link.0).unwrap();
 
@@ -67,17 +186,73 @@ impl ToggleInteractionBlender {
 
             let Some(animation) = animations.named_indices.get(anim_name) else {
                 error!("animation {} does not exist for {}", anim_name, link.0);
-                return
+                return;
             };
-            animation_transitions
-                .play(&mut animation_player, animation.clone(), Duration::from_secs(0));
+
+            // dbg!(animations);
+
+            debug!("play {}", anim_name);
+            interactable.active = true;
+            animation_transitions.play(
+                &mut animation_player,
+                animation.clone(),
+                Duration::from_secs(0),
+            );
+
+            let sfx = match state.0 {
+                true => &conf.on_sfx,
+                false => &conf.off_sfx,
+            };
+
+            if let Some(mut s) = sfx.clone() {
+                if !s.contains("/") {
+                    s.insert_str(0, "sounds/".into());
+                }
+
+                commands.entity(ev.entity()).insert((
+                    AudioPlayer::<AudioSource>(asset_server.load(s)),
+                    PlaybackSettings {
+                        mode: bevy::audio::PlaybackMode::Remove,
+                        volume: Volume::new(0.7),
+                        ..Default::default()
+                    },
+                ));
+            }
         }
     }
 }
 
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+pub struct InteractionText {
+    string: String,
+    show: String,
+}
+impl InteractionText {
+    fn flip() -> Self {
+        Self {
+            string: "pick up".to_string(),
+            show: "p--- --".to_string()
+        }
+    }
+}
+//TODO IntereactionText should be required for tooltip based interaction
+impl Default for InteractionText {
+    fn default() -> Self {
+        Self {
+            string: "i".to_string(),
+            show: "[i]nteract".to_string()
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, Default, Component, Reflect)]
 #[reflect(Component)]
-pub struct Interactable;
+pub struct Interactable {
+    // is unfinished interaction occuring
+    active: bool,
+}
 
 #[derive(Debug, Clone, Event, Reflect)]
 pub struct Interaction;
@@ -121,19 +296,31 @@ pub struct Tooltip {
 
 fn display_tooltip(
     mut commands: Commands,
-    item: Query<(Entity, &Hover, &Aabb, &GlobalTransform, Option<&Name>)>,
+    item: Query<(
+        Entity,
+        &Hover,
+        &Interactable,
+        Option<&InteractionText>,
+        &Aabb,
+        &GlobalTransform,
+        Option<&Name>,
+    ), Without<Held>>, //TODO really should use the active field of the interaction, or remove interactable
     mut tooltip: Query<(Entity, &Tooltip, &mut Node, &ComputedNode, &mut Visibility)>,
     camera: Query<(&Camera, &GlobalTransform)>, //XXX GlobalTransform will have 1 frame delay, unfortionately
-    window: Query<&Window, With<PrimaryWindow>>
+    window: Query<&Window, With<PrimaryWindow>>,
 ) {
     for t in tooltip.iter() {
         let target = t.1.target;
-        if !item.contains(target) {
+        if !item.get(target).is_ok_and(|item| !item.2.active) {
             commands.entity(t.0).despawn();
         }
     }
 
     for item in item.iter().map(frunk::into_generic) {
+        if Interactable::of(&item).active {
+            continue;
+        }
+
         let item_pos = GlobalTransform::of(&item);
         let item_pos = item_pos.transform_point(Aabb::of(&item).center.into());
         let (camera, camera_transform) = camera.get(Hover::of(&item).0.camera).unwrap(); //NOTE another example of somewhere where the unhappy path should be pluggable with panic as default
@@ -147,11 +334,11 @@ fn display_tooltip(
             *t.4 = Visibility::Visible;
 
             let size = t.3.size() / window.single().scale_factor();
-            
+
             let res = window.single().size();
             let xy = res * ((pos + 1.) * 0.5).xy();
 
-            dbg!(size, pos, window.single().scale_factor(), window.single().size());
+            // dbg!(size, pos, window.single().scale_factor(), window.single().size());
 
             let pos = xy - size / 2.0;
             let pos = pos / 2.0; //XXX WHY!
@@ -159,7 +346,9 @@ fn display_tooltip(
             t.2.left = Val::Px(pos.x);
             t.2.bottom = Val::Px(pos.y);
         } else {
-            dbg!(&pos, Name::option(&item));
+            let text = InteractionText::option(&item).cloned().unwrap_or_default();
+
+            // dbg!(&pos, Name::option(&item));
             commands.spawn((
                 PickingBehavior::IGNORE,
                 Node {
@@ -168,10 +357,9 @@ fn display_tooltip(
                     // border: UiRect::all(Val::Px(10.0)),
                     // align_items: AlignItems::Center,
                     // justify_content: JustifyContent::Center,
-                    
                     ..default()
                 },
-                Text::new("f---"),
+                Text::new(text.show),
                 // TODO MONOSPACE, choose font for corngame
                 BackgroundColor(Color::srgba(0.5, 0.5, 0.5, 0.5)),
                 TextColor(Color::srgba(0.05, 0.05, 0.05, 0.5)),
@@ -200,50 +388,71 @@ fn display_tooltip(
 
 fn handle_key(
     mut keyboard: EventReader<KeyboardInput>,
-    hover: Query<(Entity, &Interactable, &Hover)>,
+    hover: Query<(Entity, &Interactable, &Hover, Option<&InteractionText>)>,
     mut tooltip: Query<(Entity, &mut Tooltip, &mut Text)>,
     mut commands: Commands,
 ) {
-    let txt = "flip";
-    let pattern = "f---";
-
-    'outer: for k in keyboard.read() { 
-        if k.state.is_pressed() && !k.repeat{
+    'outer: for k in keyboard.read() {
+        if k.state.is_pressed() && !k.repeat {
             for h in hover.iter() {
-                if let Some((id, mut tooltip, mut text)) = tooltip.iter_mut().find(|t|t.1.target == h.0){
+                if let Some((id, mut tooltip, mut text)) =
+                    tooltip.iter_mut().find(|t| t.1.target == h.0)
+                {
                     match &k.logical_key {
                         Key::Character(s) => {
                             let s = s.as_str();
-                            if ! s.chars().all(|c|c.is_alphabetic()){
-                                break 'outer;
+                            if !s.chars().all(|c| c.is_alphabetic()) {
+                                continue 'outer;
                             }
+
+                            if "wasd".contains(s) && tooltip.text.is_empty(){
+                                continue 'outer; 
+                            }
+                            
                             tooltip.text += s;
+                        }
+                        Key::Escape => {
+                            tooltip.text.clear();
                         }
                         Key::Backspace => {
                             tooltip.text.pop();
-                        },
-                        _ => break
+                        }
+                        _ => break,
+                    }
+
+                    let conf = h.3.cloned().unwrap_or_default();
+                    let i = tooltip.text.len();
+                    if conf.string.get(i..i+1) == Some(" "){
+                        // support strings with spaces in them, even though we don't type the space
+                        tooltip.text += " ";
                     }
 
                     // trigger event
                     // TODO disable tooltip during animation.
-                    if tooltip.text == txt {
+                    if tooltip.text == conf.string {
                         commands.trigger_targets(Interaction, h.0);
                         commands.entity(id).despawn();
                         return;
                     }
 
                     text.0 = tooltip.text.clone();
-                    if text.0.len() < pattern.len() {
-                        let i = text.0.len();
-                        text.0 += &pattern[i..];
+                    let i = text.0.len();
+                    if i < conf.show.len() {
+                        text.0 += &conf.show[i..]; //TODO greyout suggestions
                     }
-                
+                    if i > conf.show.len() {
+                        let i = conf.show.len();
+                        text.0 = text.0[..i].to_string() // are there really no ergonomic string manipulation fns in rust?
+                    }
 
                     if tooltip.text.len() == 0 {
-                        commands.entity(id).insert(TextColor(Color::srgba(0.05, 0.05, 0.05, 0.5)));
-                    }else{
-                        commands.entity(id).insert(TextColor(Color::srgba(0.05, 0.05, 0.05, 0.9)));
+                        commands
+                            .entity(id)
+                            .insert(TextColor(Color::srgba(0.05, 0.05, 0.05, 0.5)));
+                    } else {
+                        commands
+                            .entity(id)
+                            .insert(TextColor(Color::srgba(0.05, 0.05, 0.05, 0.9)));
                     }
                 }
             }

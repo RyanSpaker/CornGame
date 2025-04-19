@@ -108,7 +108,11 @@ impl Player {
                 Transform{
                     translation: Vec3::new(0.2, -0.2, -0.3),
                     ..default()
-                }
+                },
+                super::interactions::Held,
+                super::interactions::Pickup,
+                RigidBodyDisabled,
+                RigidBody::Dynamic
             )),
 
             // NOTE: not bothering with this yet
