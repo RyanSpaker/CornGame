@@ -1,11 +1,8 @@
-use app::CornAppPlugin;
 use bevy::prelude::*;
-//use ecs::CornGameECSPlugin;
 
 pub mod app;
-//pub mod ecs;
-//pub mod util;
-
+pub mod state;
+pub mod util;
 
 pub struct CornGame;
 impl Plugin for CornGame{
@@ -13,7 +10,7 @@ impl Plugin for CornGame{
         app.add_plugins((
             DefaultPlugins.set(WindowPlugin{
                 primary_window: Some(Window { 
-                    present_mode: bevy::window::PresentMode::AutoVsync,
+                    present_mode: bevy::window::PresentMode::AutoNoVsync,
                     ..default()
                 }),
                 ..default()
@@ -21,7 +18,8 @@ impl Plugin for CornGame{
                 mode: AssetMode::Processed,
                 ..Default::default()
             }),
-            CornAppPlugin
+            app::CornAppPlugin,
+            state::ScenesPlugin
         ));
     }
 }

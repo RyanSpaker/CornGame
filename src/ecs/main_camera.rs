@@ -9,3 +9,6 @@ impl Plugin for MainCameraPlugin{
         app.add_plugins(ExtractComponentPlugin::<MainCamera>::default());
     }
 }
+
+pub fn spawn_main_camera(commands: &mut Commands){
+}

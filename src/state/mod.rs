@@ -1,5 +1,10 @@
+//! This module contains all the per state functionality in the App.
+//! Mainly consists of OnEnter(state) and OnExit(state) functions and spawning entities that are statescoped
+pub mod main_menu;
+pub mod lobby;
+
 use bevy::prelude::*;
-use crate::util::state_set::AppStateSet;
+use crate::app::util::camera::{MainCamera, UICamera};
 
 /// Current stage of the app. Each stage has distinct differences in how the app needs to run.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, States, SystemSet)]
@@ -27,17 +32,29 @@ impl ComputedStates for InGame{
     }
 }
 
-/// Adds app state enum
-#[derive(Default, Debug, Clone, Copy)]
-pub struct AppStatePlugin;
-impl Plugin for AppStatePlugin{
+
+#[derive(Default, Debug, Clone)]
+pub struct ScenesPlugin;
+impl Plugin for ScenesPlugin{
     fn build(&self, app: &mut App) {
         app
             .init_state::<AppStage>()
             .add_computed_state::<InGame>()
-            .configure_state_set(Update, AppStage::MainMenu, AppStage::MainMenu)
-            .configure_state_set(Update, AppStage::Lobby, AppStage::Lobby)
-            .configure_state_set(Update, AppStage::Level, AppStage::Level)
-            .configure_state_set(Update, InGame, InGame);
+            .enable_state_scoped_entities::<AppStage>()
+            .enable_state_scoped_entities::<InGame>()
+            .add_systems(Startup, spawn_global_entities)
+            .add_plugins((
+                main_menu::MainMenuPlugin,
+                lobby::LobbyPlugin
+            ));
     }
+}
+
+fn spawn_global_entities(
+    mut commands: Commands,
+    mut next_state: ResMut<NextState<AppStage>>
+){
+    MainCamera::spawn_main_camera(&mut commands);
+    UICamera::spawn_ui_camera(&mut commands);
+    next_state.set(AppStage::MainMenu);
 }

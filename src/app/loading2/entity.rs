@@ -7,9 +7,10 @@
 //! - Easy way to create blocking load states that wait for loading requirements before entering the state.
 //! - 
 //! 
+//! - Each LoadEntity is an Entity.
+//! - Load Entities can be registered in the app, which auto schedules systems sets that only run when the LoadEntity is loading
 //! 
 use std::{collections::{BTreeMap, BTreeSet}, marker::PhantomData};
-
 use bevy::{ecs::{schedule::{ScheduleLabel, SystemConfigs}, system::{SystemParam, SystemParamItem}}, prelude::*, utils::hashbrown::{HashMap, HashSet}};
 
 /*
@@ -344,15 +345,32 @@ impl LoadingSystem for App{
         let entity = self.world_mut().spawn(LoadEntityStatus::Unloaded).id();
         // Schedule loader systems
         configure_loading_systems(self, loader.loading_init_systems(entity), Update, LoadStage::Init, loader.state_req(), entity);
-        configure_loading_systems(self, loader.loading_update_systems(entity), Update, LoadStage::Update, loader.state_req(), entity);
         configure_loading_systems(self, loader.loading_cleanup_systems(entity), Update, LoadStage::Cleanup, loader.state_req(), entity);
         configure_unloading_systems(self, loader.unloading_init_systems(entity), Update, LoadStage::Init, loader.state_req(), entity);
-        configure_unloading_systems(self, loader.unloading_update_systems(entity), Update, LoadStage::Update, loader.state_req(), entity);
         configure_unloading_systems(self, loader.unloading_cleanup_systems(entity), Update, LoadStage::Cleanup, loader.state_req(), entity);
         // Add state management systems
-        self.add_systems(Update, 
-            LoadEntityIsLoadedFunction::from(loader.is_loaded(entity)).pipe(send_loaded_event(entity))
-        );
+        if let Some(systems) = loader.loading_update_systems(entity) {
+            let set = EntityLoadingSet::Loading(entity, LoadStage::Update);
+            self.add_systems(Update, 
+                (systems, LoadEntityIsLoadedFunction::from(loader.is_loaded(entity)).pipe(send_loaded_event(entity))).in_set(set.clone())
+            ).configure_sets(Update, set.in_set(StateLoadingSet::Loading(loader.state_req())));
+        }else {
+            let set = EntityLoadingSet::Loading(entity, LoadStage::Update);
+            self.add_systems(Update, 
+                LoadEntityIsLoadedFunction::from(loader.is_loaded(entity)).pipe(send_loaded_event(entity)).in_set(set.clone())
+            ).configure_sets(Update, set.in_set(StateLoadingSet::Loading(loader.state_req())));
+        }
+        if let Some(systems) = loader.unloading_update_systems(entity) {
+            let set = EntityLoadingSet::Unloading(entity, LoadStage::Update);
+            self.add_systems(Update, 
+                (systems, LoadEntityIsLoadedFunction::from(loader.is_unloaded(entity)).pipe(send_unloaded_event(entity))).in_set(set.clone())
+            ).configure_sets(Update, set.in_set(StateLoadingSet::Unloading(loader.state_req())));
+        }else {
+            let set = EntityLoadingSet::Unloading(entity, LoadStage::Update);
+            self.add_systems(Update, 
+                LoadEntityIsLoadedFunction::from(loader.is_unloaded(entity)).pipe(send_unloaded_event(entity)).in_set(set.clone())
+            ).configure_sets(Update, set.in_set(StateLoadingSet::Unloading(loader.state_req())));
+        }
         // Add LoadEntity Component
         self.world_mut().entity_mut(entity).insert(loader);
         self
@@ -389,7 +407,7 @@ impl<S: States> Default for LoadingStateTypePlugin<S>{fn default() -> Self {Self
 impl<S: States> Plugin for LoadingStateTypePlugin<S>{
     fn build(&self, app: &mut App) {
         app
-            .add_plugins(LoadingPlugin)
+            .add_plugins((LoadingPlugin, super::AutoLoadPlugin::<S>::default()))
             .init_resource::<StateLoadEntityReqs<S>>()
             .add_systems(PreUpdate, StateLoadEntityReqs::<S>::update)
             .add_systems(PostUpdate, StateLoadEntityReqs::<S>::remove);
@@ -405,7 +423,7 @@ impl Plugin for LoadingPlugin{
             .init_resource::<GlobalLoadEntityState>()
             .add_event::<LoadEntityFinishedEvent>()
             .add_systems(PreUpdate, GlobalLoadEntityState::update)
-            .add_systems(PostUpdate, GlobalLoadEntityState::remove);
+            .add_systems(PostUpdate, (GlobalLoadEntityState::remove, update_load_entity_state));
     }
 }
 
