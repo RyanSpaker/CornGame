@@ -2,3 +2,5 @@
 /.vscode
 /imported_assets
 /assets/**/*.meta
+.envrc
+/.direnv
