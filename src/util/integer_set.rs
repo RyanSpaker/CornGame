@@ -5,19 +5,6 @@ pub trait SubOne {
     fn sub_one(&self) -> Self;
 }
 
-trait Number:
-    Clone
-    + PartialOrd
-    + Ord
-    + Default
-    + Sub<Output = Self>
-    + Add<Output = Self>
-    + SubAssign
-    + AddAssign
-    + SubOne
-{
-}
-
 /// This struct represents a set of Integers
 #[derive(Clone, Debug)]
 pub struct IntegerSet<T> {
@@ -133,7 +120,7 @@ where
             valid_indices.into_iter().for_each(|index| {
                 if sets[index].endpoints[indices[index]] < *min {
                     min = &sets[index].endpoints[indices[index]];
-                    mindices = vec![index];
+                    mindices = vec![index; 1];
                 } else if sets[index].endpoints[indices[index]] == *min {
                     mindices.push(index);
                 }
@@ -201,7 +188,7 @@ where
     /// Mutates self by taking its complement, or inverse. Min and Max represent the Domain [) to use for the operation
     pub fn complement(&mut self, min: T, max: T) -> &mut Self {
         if self.endpoints.len() == 0 {
-            self.endpoints = vec![min, max];
+            self.endpoints = [min, max].to_vec();
             return self;
         }
         let cur_min = &self.min().unwrap();
@@ -295,7 +282,7 @@ where
             Self::default()
         } else {
             Self {
-                endpoints: vec![start.to_owned(), end.to_owned()],
+                endpoints: [start.to_owned(), end.to_owned()].to_vec(),
             }
         }
     }

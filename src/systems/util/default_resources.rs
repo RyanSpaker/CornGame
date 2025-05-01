@@ -1,4 +1,4 @@
-use bevy::{math::primitives, prelude::*};
+use bevy::{math::primitives, prelude::*, color::palettes::basic::*};
 
 #[derive(Debug, Clone, PartialEq, Eq, Reflect, Resource)]
 pub struct SimpleMeshes{
@@ -12,7 +12,7 @@ impl FromWorld for SimpleMeshes{
         let mut simple_meshes = Self{cube: Handle::default(), sphere: Handle::default(), plane: Handle::default()};
         simple_meshes.cube = meshes.add(primitives::Cuboid::default());
         simple_meshes.sphere = meshes.add(primitives::Sphere::default());
-        simple_meshes.plane = meshes.add(primitives::Plane3d::default());
+        simple_meshes.plane = meshes.add(primitives::Plane3d::new(Vec3::Y, Vec2::ONE*0.5));
         simple_meshes
     }
 }
@@ -20,15 +20,17 @@ impl FromWorld for SimpleMeshes{
 #[derive(Debug, Clone, PartialEq, Eq, Reflect, Resource)]
 pub struct SimpleMaterials{
     pub white: Handle<StandardMaterial>,
-    pub black: Handle<StandardMaterial>
+    pub black: Handle<StandardMaterial>,
+    pub red: Handle<StandardMaterial>
 }
 impl FromWorld for SimpleMaterials{
     fn from_world(world: &mut World) -> Self {
         let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
-        let mut simple_materials = Self{white: Handle::default(), black: Handle::default()};
-        simple_materials.white = materials.add(StandardMaterial::from(Color::WHITE));
-        simple_materials.black = materials.add(StandardMaterial::from(Color::BLACK));
-        simple_materials
+        Self{
+            white: materials.add(StandardMaterial::from_color(WHITE)),
+            black: materials.add(StandardMaterial::from_color(BLACK)),
+            red: materials.add(StandardMaterial::from_color(RED))
+        }
     }
 }
 

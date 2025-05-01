@@ -3,7 +3,8 @@ pub mod credits;
 pub mod options;
 
 use bevy::prelude::*;
-use crate::app::{state::AppStage, util::camera::MainCamera};
+use crate::systems::util::camera::MainCamera;
+use super::AppStage;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, States, SystemSet)]
 pub enum MainMenuScreen{
@@ -48,6 +49,7 @@ pub fn setup_main_menu(
     mut commands: Commands
 ){
     commands.spawn((
+        Name::from("Main Menu Scene"),
         Node{display: Display::Block, width: Val::Percent(100.0), height: Val::Percent(100.0), ..Default::default()},
         MainMenuRootNode, 
         StateScoped(AppStage::MainMenu)

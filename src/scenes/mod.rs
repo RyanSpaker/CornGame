@@ -4,7 +4,7 @@ pub mod main_menu;
 pub mod lobby;
 
 use bevy::prelude::*;
-use crate::app::util::camera::{MainCamera, UICamera};
+use crate::systems::util::camera::{MainCamera, UICamera};
 
 /// Current stage of the app. Each stage has distinct differences in how the app needs to run.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, States, SystemSet)]
@@ -34,8 +34,8 @@ impl ComputedStates for InGame{
 
 
 #[derive(Default, Debug, Clone)]
-pub struct ScenesPlugin;
-impl Plugin for ScenesPlugin{
+pub struct CornStatesPlugin;
+impl Plugin for CornStatesPlugin{
     fn build(&self, app: &mut App) {
         app
             .init_state::<AppStage>()

@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, state::state::FreelyMutableState};
 
 #[derive(Debug, Clone, PartialEq, Eq, Reflect, Event)]
 pub struct ButtonEvent(pub Entity, pub Interaction);
@@ -29,6 +29,14 @@ impl Plugin for ButtonPlugin{
             .add_event::<ButtonEvent>()
             .add_systems(Update, send_button_events)
             .add_observer(button_event_observer);
+    }
+}
+
+pub fn on_press_switch_state<S: FreelyMutableState+Clone>(state: S) -> impl FnMut(Trigger<ButtonEvent>, ResMut<NextState<S>>)->() {
+    move |trigger: Trigger<ButtonEvent>, mut next_state: ResMut<NextState<S>>| {
+        match trigger.1 {
+            Interaction::Pressed => {next_state.set(state.clone());} _ => {}
+        }
     }
 }
 
