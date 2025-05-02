@@ -102,18 +102,19 @@ impl Player {
             ),
 
             // Hack to add spot light as child,
-            DehydratedChild::new((
-                BlueprintInfo::from_path("blueprints/flashlight.glb"),
-                SpawnBlueprint, // manditory
-                Transform{
-                    translation: Vec3::new(0.2, -0.2, -0.3),
-                    ..default()
-                },
-                super::interactions::Held,
-                super::interactions::Pickup,
-                RigidBodyDisabled,
-                RigidBody::Dynamic
-            )),
+            // TODO make it so I can specify this as a asset and load it with scene / from commandline (also shpuld be able to disable scene items from command line or console)
+            // DehydratedChild::new((
+            //     BlueprintInfo::from_path("blueprints/flashlight.glb"),
+            //     SpawnBlueprint, // manditory
+            //     Transform{
+            //         translation: Vec3::new(0.2, -0.2, -0.3),
+            //         ..default()
+            //     },
+            //     super::interactions::Held, // TODO rework so this auto attaches to player
+            //     super::interactions::Pickup,
+            //     RigidBodyDisabled,
+            //     RigidBody::Dynamic
+            // )),
 
             // NOTE: not bothering with this yet
             // `TnuaCrouchEnforcer` can be used to prevent the character from standing up when obstructed.

@@ -143,7 +143,7 @@ impl AssetTransformer for CornAssetTransformer{
             let mut lods: Vec<Vec<(Handle<Mesh>, usize)>> = vec![];
             for (_, (label,name)) in named_meshes.iter(){
                 dbg!(&name);
-                let Some((_, tail)) = name.split_once("Corn2LOD") else {continue}; //XXX fixme hardcoded
+                let Some((_, tail)) = name.split_once("CornLOD") else {continue}; //XXX fixme hardcoded
                 let (lod_level, mesh_index) = tail.split_once(".").unwrap_or((tail, "0"));
 
                 let sub_asset = asset.get_labeled::<GltfMesh, str>(label).unwrap();
@@ -170,6 +170,7 @@ impl AssetTransformer for CornAssetTransformer{
                 let label = material_labels.get(&handle).unwrap();
                 let name = asset.named_materials.iter().find(|(_, h)| **h == handle).unwrap().0.clone();
                 let transformed = asset.get_labeled::<StandardMaterial, str>(label.as_str()).unwrap();
+                dbg!(&name);
                 (transformed.get().clone(), name.to_string())
             }).collect();
 

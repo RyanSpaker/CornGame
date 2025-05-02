@@ -191,6 +191,7 @@ pub fn spawn_corn_anchor(
         return;
     }
     let corn_meshes = corn_asset.get(&corn.asset).unwrap();
+    dbg!(corn_meshes.materials.keys());
     if let Some(mat) = std_materials.get(
         corn_meshes
             .materials

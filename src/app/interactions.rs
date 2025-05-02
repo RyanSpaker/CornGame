@@ -1,4 +1,4 @@
-use std::{str::Chars, time::Duration};
+use std::{collections::HashMap, str::Chars, time::Duration};
 
 use avian3d::prelude::{RigidBody, RigidBodyDisabled};
 use bevy::{
@@ -16,7 +16,7 @@ use bevy::{
     window::PrimaryWindow,
 };
 use bevy_editor_pls::egui::TextStyle;
-use blenvy::{BlueprintAnimationPlayerLink, BlueprintAnimations};
+use blenvy::{AnimationMarkerReached, BlueprintAnimationPlayerLink, BlueprintAnimations};
 use frunk::{hlist::HList, Generic};
 
 use super::character::Player;
@@ -33,7 +33,6 @@ impl Plugin for InteractPlugin {
                 display_tooltip,
                 handle_key,
                 ToggleInteractionBlender::handle_animation_done,
-                ToggleInteractionBlender::handle_flip,
             ),
         );
         app.register_type::<Interactable>();
@@ -44,10 +43,25 @@ impl Plugin for InteractPlugin {
         app.register_type::<InteractionText>();
         app.register_type::<Pickup>();
         app.register_type::<Held>();
+        app.register_type::<HashMapTest>();
+        app.register_type::<HashMapTest2>();
+        app.register_type::<HashMapTest3>();
+
         app.add_observer(ToggleInteractionBlender::observer);
         app.add_observer(Pickup::observer);
+        app.add_observer(ToggleInteractionBlender::handle_flip);
     }
 }
+
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+struct HashMapTest(HashMap<String, String>);
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+struct HashMapTest2(HashMap<String, Vec<String>>);
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+struct HashMapTest3(HashMap<String, HashMap<String,String>>);
 
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
@@ -111,7 +125,10 @@ impl Pickup {
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
 pub struct FlipVisible {
-    target: String,
+    vis: bool, 
+    name: String,
+    marker: String,
+    animation: String,
 }
 
 #[derive(Debug, Clone, Default, Component, Reflect)]
@@ -142,23 +159,54 @@ impl ToggleInteractionBlender {
     }
 
     fn handle_flip(
-        query: Query<(&ToggleInteractionState, &FlipVisible), Changed<ToggleInteractionState>>,
+        // NOTE vecs appear broken in blenvy so I can't add AnimationMarkers
+        // TODO revert this back to a component on the breaker
+        event: Trigger<AnimationMarkerReached>,
+        query: Query<&FlipVisible>,
         mut target: Query<(&Name, &mut Visibility)>,
     ) {
-        for item in query.iter() {
-            dbg!(item);
-            if let Some((_, mut vis)) = target
-                .iter_mut()
-                .find(|t| *t.0 == Name::from(item.1.target.clone()))
-            {
-                *vis = match item.0 .0 {
-                    true => Visibility::Visible,
-                    false => Visibility::Hidden,
-                }
-            } else {
-                warn!("could not find {}", item.1.target);
+        let flip = query.get(event.entity());
+        dbg!(event.event(), &query);
+        if let Ok(flip) = flip {
+            let Some((_, mut vis)) = target.iter_mut().find(|n| n.0.as_str() == &flip.name) else {
+                error!("flip target {} not found", flip.name);
+                return
+            };
+            if *vis == Visibility::Hidden {
+                *vis = Visibility::Inherited;
+            }else{
+                *vis = Visibility::Hidden;
             }
         }
+
+        // for ev in events.read() {
+        //     dbg!(&ev);
+
+        //     for flip in query.iter_mut(){
+        //         if target.get(ev.entity).is_ok_and(|n| n.as_str() == &flip.name ) 
+        //             && ( &flip.animation == "" || flip.animation == ev.animation_name) 
+        //             && ( &flip.marker == &ev.marker_name )
+        //         { 
+        //             *vis = match flip.vis {
+        //                 true => Visibility::Visible,
+        //                 false => Visibility::Hidden,
+        //             }
+        //         }
+        //     }
+
+
+        //     // if let Some((_, mut vis)) = target
+        //     //     .iter_mut()
+        //     //     .find(|t| *t.0 == Name::from(item.1.target.clone()))
+        //     // {
+        //     //     *vis = match item.0 .0 {
+        //     //         true => Visibility::Visible,
+        //     //         false => Visibility::Hidden,
+        //     //     }
+        //     // } else {
+        //     //     warn!("could not find {}", item.1.target);
+        //     // }
+        // }
     }
 
     fn observer(
@@ -208,7 +256,7 @@ impl ToggleInteractionBlender {
                 if !s.contains("/") {
                     s.insert_str(0, "sounds/".into());
                 }
-
+                //TODO why doesn't this replace current sound?
                 commands.entity(ev.entity()).insert((
                     AudioPlayer::<AudioSource>(asset_server.load(s)),
                     PlaybackSettings {

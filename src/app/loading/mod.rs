@@ -87,7 +87,8 @@ fn setup_scene(
             far: 200.0,
             ..default()
         }),
-        bevy_edge_detection::EdgeDetection::default(), //post-process shader
+        // TODO need way to specify camera settings as asset, at commandline, or as part of scene
+        // bevy_edge_detection::EdgeDetection::default(), //post-process shader
         VolumetricFog{
             ambient_intensity: 0.0,
             ..default()
@@ -158,15 +159,14 @@ fn setup_scene(
         let path = path.strip_prefix("assets/").unwrap_or(&path);
 
         if path.extension() == Some(OsStr::new("glb")) {
-        commands.spawn((
-            BlueprintInfo::from_path(&path.to_str().unwrap()), //NOTE: I wish there was a language where I could just do path, and it would give a warning but I wouldn't have to do all this type munching
-            SpawnBlueprint,
-            GameWorldTag,
-            // RigidBody::Static // weird things happen if there are colliders with no rigid body
-            // EDIT: weirder things happen with nested RigidBodys
-        ));
-    }
-
+            commands.spawn((
+                BlueprintInfo::from_path(&path.to_str().unwrap()), //NOTE: I wish there was a language where I could just do path, and it would give a warning but I wouldn't have to do all this type munching
+                SpawnBlueprint,
+                GameWorldTag,
+                // RigidBody::Static // weird things happen if there are colliders with no rigid body
+                // EDIT: weirder things happen with nested RigidBodys
+            ));
+        }
     }
 
     commands.spawn(TestCube);

@@ -1,4 +1,6 @@
+use aligned_vec::{AVec, ConstAlign};
 use bevy::render::{mesh::{Indices, Mesh, MeshVertexAttribute, MeshVertexAttributeId, VertexAttributeValues}, render_asset::RenderAssetUsages};
+use bytemuck::pod_collect_to_vec;
 use wgpu_types::{PrimitiveTopology, VertexFormat};
 use super::*;
 
@@ -102,34 +104,34 @@ pub async fn read_attribute<'a>(reader: &'a mut dyn bevy::asset::io::Reader, cou
 
 fn vertex_values_from_fmt(format: VertexFormat, data: Vec<u8>) -> VertexAttributeValues{
     match format{
-        VertexFormat::Uint8x2 => VertexAttributeValues::Uint8x2(bytemuck::cast_slice::<u8, [u8; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Uint8x4 => VertexAttributeValues::Uint8x4(bytemuck::cast_slice::<u8, [u8; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Sint8x2 => VertexAttributeValues::Sint8x2(bytemuck::cast_slice::<u8, [i8; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Sint8x4 => VertexAttributeValues::Sint8x4(bytemuck::cast_slice::<u8, [i8; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Unorm8x2 => VertexAttributeValues::Unorm8x2(bytemuck::cast_slice::<u8, [u8; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Unorm8x4 => VertexAttributeValues::Unorm8x4(bytemuck::cast_slice::<u8, [u8; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Snorm8x2 => VertexAttributeValues::Snorm8x2(bytemuck::cast_slice::<u8, [i8; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Snorm8x4 => VertexAttributeValues::Snorm8x4(bytemuck::cast_slice::<u8, [i8; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Uint16x2 => VertexAttributeValues::Uint16x2(bytemuck::cast_slice::<u8, [u16; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Uint16x4 => VertexAttributeValues::Uint16x4(bytemuck::cast_slice::<u8, [u16; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Sint16x2 => VertexAttributeValues::Sint16x2(bytemuck::cast_slice::<u8, [i16; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Sint16x4 => VertexAttributeValues::Sint16x4(bytemuck::cast_slice::<u8, [i16; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Unorm16x2 => VertexAttributeValues::Unorm16x2(bytemuck::cast_slice::<u8, [u16; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Unorm16x4 => VertexAttributeValues::Unorm16x4(bytemuck::cast_slice::<u8, [u16; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Snorm16x2 => VertexAttributeValues::Snorm16x2(bytemuck::cast_slice::<u8, [i16; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Snorm16x4 => VertexAttributeValues::Snorm16x4(bytemuck::cast_slice::<u8, [i16; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Float32 => VertexAttributeValues::Float32(bytemuck::cast_slice::<u8, f32>(data.as_slice()).to_vec()),
-        VertexFormat::Float32x2 => VertexAttributeValues::Float32x2(bytemuck::cast_slice::<u8, [f32; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Float32x3 => VertexAttributeValues::Float32x3(bytemuck::cast_slice::<u8, [f32; 3]>(data.as_slice()).to_vec()),
-        VertexFormat::Float32x4 => VertexAttributeValues::Float32x4(bytemuck::cast_slice::<u8, [f32; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Uint32 => VertexAttributeValues::Uint32(bytemuck::cast_slice::<u8, u32>(data.as_slice()).to_vec()),
-        VertexFormat::Uint32x2 => VertexAttributeValues::Uint32x2(bytemuck::cast_slice::<u8, [u32; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Uint32x3 => VertexAttributeValues::Uint32x3(bytemuck::cast_slice::<u8, [u32; 3]>(data.as_slice()).to_vec()),
-        VertexFormat::Uint32x4 => VertexAttributeValues::Uint32x4(bytemuck::cast_slice::<u8, [u32; 4]>(data.as_slice()).to_vec()),
-        VertexFormat::Sint32 => VertexAttributeValues::Sint32(bytemuck::cast_slice::<u8, i32>(data.as_slice()).to_vec()),
-        VertexFormat::Sint32x2 => VertexAttributeValues::Sint32x2(bytemuck::cast_slice::<u8, [i32; 2]>(data.as_slice()).to_vec()),
-        VertexFormat::Sint32x3 => VertexAttributeValues::Sint32x3(bytemuck::cast_slice::<u8, [i32; 3]>(data.as_slice()).to_vec()),
-        VertexFormat::Sint32x4 => VertexAttributeValues::Sint32x4(bytemuck::cast_slice::<u8, [i32; 4]>(data.as_slice()).to_vec()),
+        VertexFormat::Uint8x2 => VertexAttributeValues::Uint8x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Uint8x4 => VertexAttributeValues::Uint8x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Sint8x2 => VertexAttributeValues::Sint8x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Sint8x4 => VertexAttributeValues::Sint8x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Unorm8x2 => VertexAttributeValues::Unorm8x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Unorm8x4 => VertexAttributeValues::Unorm8x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Snorm8x2 => VertexAttributeValues::Snorm8x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Snorm8x4 => VertexAttributeValues::Snorm8x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Uint16x2 => VertexAttributeValues::Uint16x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Uint16x4 => VertexAttributeValues::Uint16x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Sint16x2 => VertexAttributeValues::Sint16x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Sint16x4 => VertexAttributeValues::Sint16x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Unorm16x2 => VertexAttributeValues::Unorm16x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Unorm16x4 => VertexAttributeValues::Unorm16x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Snorm16x2 => VertexAttributeValues::Snorm16x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Snorm16x4 => VertexAttributeValues::Snorm16x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Float32 => VertexAttributeValues::Float32(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Float32x2 => VertexAttributeValues::Float32x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Float32x3 => VertexAttributeValues::Float32x3(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Float32x4 => VertexAttributeValues::Float32x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Uint32 => VertexAttributeValues::Uint32(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Uint32x2 => VertexAttributeValues::Uint32x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Uint32x3 => VertexAttributeValues::Uint32x3(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Uint32x4 => VertexAttributeValues::Uint32x4(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Sint32 => VertexAttributeValues::Sint32(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Sint32x2 => VertexAttributeValues::Sint32x2(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Sint32x3 => VertexAttributeValues::Sint32x3(pod_collect_to_vec(data.as_slice())),
+        VertexFormat::Sint32x4 => VertexAttributeValues::Sint32x4(pod_collect_to_vec(data.as_slice())),
         _ => panic!("Vertex Format Invalid")
     }
 }
@@ -153,9 +155,12 @@ pub async fn read_indices<'a>(reader: &'a mut dyn bevy::asset::io::Reader, count
         let indice_count = read_u64(reader, counter).await? as usize;
         let data = read_vector(reader, counter).await?;
         if indice_count == 0 || data.len() / indice_count == 2 {
-            Ok(Some(Indices::U16(bytemuck::cast_slice::<u8, u16>(data.as_slice()).to_vec())))
+            // fun alignment issues
+            let v : Vec<u16> = pod_collect_to_vec(data.as_slice());
+            Ok(Some(Indices::U16(v)))
         }else{
-            Ok(Some(Indices::U32(bytemuck::cast_slice::<u8, u32>(data.as_slice()).to_vec())))
+            let v : Vec<u32> = pod_collect_to_vec(data.as_slice());
+            Ok(Some(Indices::U32(v)))
         }
     }else {Ok(None)}
 }

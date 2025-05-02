@@ -1,4 +1,6 @@
-use bevy::{asset::{Asset, AssetId, Handle}, color::{Color, ColorToComponents, Srgba}};
+use std::any::type_name;
+
+use bevy::{asset::{Asset, AssetId, Handle}, color::{Color, ColorToComponents, Srgba}, log::debug};
 use uuid::Uuid;
 use bytemuck::Pod;
 use futures_lite::{AsyncReadExt, AsyncWriteExt};
@@ -10,22 +12,24 @@ pub mod standard_material_io;
 pub async fn write_string(writer: &mut bevy::asset::io::Writer, counter: &mut usize, string: &String) -> Result<(), std::io::Error>{
     let bytes = string.as_bytes();
     write_u64(bytes.len() as u64, writer, counter).await?;
-    dbg!(&string, &counter);
+    debug!("{}, {}, {}", &string, bytes.len(), &counter);
     writer.write_all(bytes).await?;
     *counter += bytes.len();
     Ok(())
 }
 pub async fn read_string<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<String, std::io::Error>{
     let mut len = read_u64(reader, counter).await?;
-    dbg!((len, &counter));
     if len > 255 {
-        len = 8;
+        panic!();
     }
     let mut string_bytes = vec![0u8; len as usize];
     let bytes = string_bytes.as_mut_slice();
     reader.read_exact(bytes).await?;
+    assert_eq!(bytes.len(), len as usize);
+    let s = String::from_utf8(bytes.to_vec()).unwrap();
+    debug!("{}, {}, {}", &s, len, &counter);
     *counter += bytes.len();
-    Ok(String::from_utf8(bytes.to_vec()).unwrap())
+    Ok(s)
 }
 
 pub async fn write_each<'a, T>(writer: &mut bevy::asset::io::Writer, counter: &mut usize, items: &'a Vec<T>) -> Result<&'a Vec<T>, std::io::Error>{
@@ -42,8 +46,8 @@ pub async fn write_slice<T: Pod>(writer: &mut bevy::asset::io::Writer, counter: 
     let bytes = bytemuck::cast_slice::<T, u8>(slice);
     writer.write_all(&bytemuck::cast::<u64, [u8; 8]>(bytes.len() as u64)).await?;
     *counter += 8;
-    dbg!(writer.write_all(bytes).await?); // XXX it is fucking insane that writer.write doesn't write all the bytes
-    dbg!((bytes.len(), &counter));
+    writer.write_all(bytes).await?; // XXX it is fucking insane that writer.write doesn't write all the bytes
+    debug!("{}: {}[{}], {}", counter, type_name::<T>(), slice.len(), bytes.len());
     *counter += bytes.len();
     Ok(())
 }
@@ -52,20 +56,22 @@ pub async fn write_vector<T: Pod>(vec: &Vec<T>, writer: &mut bevy::asset::io::Wr
     writer.write_all(bytemuck::cast_slice::<u64, u8>(&[bytes.len() as u64])).await?;
     *counter += 8;
     writer.write_all(bytes).await?;
+    debug!("{}: {}[{}], {}", counter, type_name::<T>(), vec.len(), bytes.len());
     *counter += bytes.len();
     Ok(())
 }
-pub async fn read_vector_casted<'a, T: Pod>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Vec<T>, std::io::Error> {
-    let mut len_bytes = [0u8; 8];
-    reader.read_exact(&mut len_bytes).await?;
-    *counter += 8;
-    let vector_len = bytemuck::cast_slice::<u8, u64>(len_bytes.as_slice())[0];
-    let mut data_bytes = vec![0u8; vector_len as usize];
-    let data_slice = data_bytes.as_mut_slice();
-    reader.read_exact(data_slice).await?;
-    *counter += data_slice.len();
-    Ok(bytemuck::cast_slice::<u8, T>(data_slice).to_vec())
-}
+// pub async fn read_vector_casted<'a, T: Pod>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Vec<T>, std::io::Error> {
+//     let mut len_bytes = [0u8; 8];
+//     reader.read_exact(&mut len_bytes).await?;
+//     *counter += 8;
+//     let vector_len = bytemuck::cast_slice::<u8, u64>(len_bytes.as_slice())[0];
+//     let mut data_bytes = vec![0u8; vector_len as usize];
+//     let data_slice = data_bytes.as_mut_slice();
+//     reader.read_exact(data_slice).await?;
+//     debug!("{}: {}[], {}", counter, type_name::<T>(), data_slice.len());
+//     *counter += data_slice.len();
+//     Ok(bytemuck::cast_slice::<u8, T>(data_slice).to_vec())
+// }
 pub async fn read_vector<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Vec<u8>, std::io::Error> {
     let mut len_bytes = [0u8; 8];
     reader.read_exact(&mut len_bytes).await?;
@@ -74,7 +80,7 @@ pub async fn read_vector<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counte
     let mut data_bytes = vec![0u8; vector_len as usize];
     let data_slice = data_bytes.as_mut_slice();
     reader.read_exact(data_slice).await?;
-    dbg!((vector_len, &counter));
+    debug!("{}: {}", counter, data_slice.len());
     *counter += data_slice.len();
     Ok(data_slice.to_vec())
 }

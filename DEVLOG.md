@@ -212,3 +212,70 @@ As far as gameplay, I am implementing a little mechanic where you have to type o
   - try frantically typing "unlock" and "open" while the monsters are catching up. 
 - opens the door to a minor puzzle mechanic. ie "--t---e?"
   - and a secret / easter egg mechanic, instead of "flip"ing the switch, try "feel" to see what you "find"
+
+# Wed Apr 23 12:53:51 PM EDT 2025
+enabled tracy support
+
+https://github.com/wolfpld/tracy
+https://github.com/bevyengine/bevy/blob/main/docs/profiling.md#tracy-profiler
+
+had to use a nix-shell to get it to run on nix without `Failed to initialize OpenGL loader!`
+
+seems usefull for profiling. Not so much for logs. Still need a log viewer.
+
+# Sun Apr 27 11:58:40 PM EDT 2025
+https://www.youtube.com/watch?v=y84bG19sg6U
+
+# Wed Apr 30 11:22:05 AM EDT 2025
+how to store assets. 
+
+Options: 
+1. git lfs with ipfs
+    https://github.com/sameer/git-lfs-ipfs
+    seems janky. last updated 2 years ago
+2. git lfs with s3 (hosted on cloudflare)
+    we are absolutely not using AWS. Cloudflare has a 10gig free tier for r2.
+    https://dbushell.com/2024/07/15/replace-github-lfs-with-cloudflare-r2-proxy/
+3. git lfs hosted on my desktop
+    1. git submodule for assets, regular git lfs and run a git server on my desktop
+    2. git lfs s3 backend, with minio (self-hosted s3)
+4. perforce helix
+    industry standard, free for small teams
+5. **azure devops**
+    free for under 5 users, unlimited storage? (250gb in practice)
+    https://www.anchorpoint.app/blog/version-control-using-git-and-azure-devops-for-game-projects
+5. https://dvc.org/
+    new, designed to deal with ML data, works on top of git
+
+we will use azure devops until if/when it presents a problem. Path of least resistence.
+I'd simply have to play around with any selfhosted and or non-standard git lfs solution before I trust it, and understand it well enough to teach you how to use it and avoid fucking the repo.
+
+To minimize annoyances, I will make assets and art seperate repos, and submodules.
+The code will remain on github for now, along with my forks.
+
+---
+
+azure is bad
+lfs over ssh is not supported. so we have to use https
+
+add git-credential-manager to your nix config
+add this to .git/config
+
+```
+[credential]
+	helper = /run/current-system/sw/bin/git-credential-manager
+	credentialStore = plaintext
+	useHttpPath = true
+```
+
+the first time you clone you should be able to use a password
+see clone->generate git credentials
+
+# Wed Apr 30 04:20:40 PM EDT 2025
+bevy trace breaks asset loader.
+this is known
+https://discord.com/channels/691052431525675048/742569353878437978/1313534904474140764
+
+```
+2025-04-30T20:15:46.837688Z ERROR bevy_asset::processor: Failed to process asset blueprints/breaker.meta.ron: no `AssetLoader` found with the name 'bevy_asset::server::loaders::InstrumentedAssetLoader<bevy_common_assets::ron::RonAssetLoader<blenvy::blueprints::assets::BlueprintPreloadAssets>>'
+```
