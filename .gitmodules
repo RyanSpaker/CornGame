@@ -1,0 +1,15 @@
+[submodule "assets"]
+	path = assets
+	url = https://cowsociety@dev.azure.com/cowsociety/corn%20game/_git/assets
+[submodule "forks/bevy_editor_pls"]
+	path = forks/bevy_editor_pls
+	url = git@github.com:segfault-s-pull-requests/bevy_editor_pls.git
+[submodule "forks/lightyear"]
+	path = forks/lightyear
+	url = git@github.com:segfault-s-pull-requests/lightyear.git
+[submodule "forks/Blenvy"]
+	path = forks/Blenvy
+	url = git@github.com:segfault-s-pull-requests/Blenvy.git
+[submodule "forks/bevy-tnua"]
+	path = forks/bevy-tnua
+	url = git@github.com:segfault-s-pull-requests/bevy-tnua.git
