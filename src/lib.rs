@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 pub mod systems;
 pub mod scenes;
-//pub mod ecs;
+pub mod ecs;
 pub mod util;
 
 pub struct CornGame;
@@ -20,8 +20,8 @@ impl Plugin for CornGame{
                 ..Default::default()
             }),
             systems::CornSystemsPlugin,
-            scenes::CornStatesPlugin,
-           // ecs::CornECSPlugin
+            scenes::CornScenesPlugin,
+            ecs::CornECSPlugin
         ));
     }
 }

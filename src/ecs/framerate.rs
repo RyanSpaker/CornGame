@@ -1,37 +1,50 @@
 use std::collections::VecDeque;
-
-use bevy::{
-    app::{Plugin, Update}, diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, ecs::{component::Component, query::With, system::{Commands, Query, Res}}, prelude::default, reflect::Reflect, render::color::Color, text::{Text, TextSection, TextStyle}, transform::components::{GlobalTransform, Transform}, ui::node_bundles::TextBundle
-};
-
+use bevy::{color::palettes::css::*, diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, prelude::*};
 use super::main_camera::MainCamera;
 
 pub fn update_fps(
     diagnostics: Res<DiagnosticsStore>,
-    mut query: Query<(&mut FPSData, &mut Text)>
+    mut data: Query<(&mut FPSData, &Children)>,
+    mut sections: Query<(&mut TextSpan, &mut TextColor)>
 ){
-    for (mut item, mut text) in query.iter_mut(){
-        item.insert(diagnostics.get(&bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS).unwrap().value().unwrap_or(1.0));
-        text.sections[1].value = format!("{:.2}", item.mean);
-        text.sections[3].value = format!("{:.2}", item.get_min());
-        text.sections[5].value = format!("{:.2}", item.get_max());
-        if item.mean > 50.0 {text.sections[0].style.color = Color::GREEN;}
-        else if item.mean > 20.0 {text.sections[0].style.color = Color::ORANGE;}
-        else {text.sections[0].style.color = Color::RED;}
+    for (mut data, children) in data.iter_mut(){
+        data.insert(diagnostics.get(&bevy::diagnostic::FrameTimeDiagnosticsPlugin::FPS).unwrap().value().unwrap_or(1.0));
+        if let Ok((mut text, _)) = sections.get_mut(children[1]){
+            text.0 = format!("{:.2}", data.mean);
+        }
+        if let Ok((mut text, _)) = sections.get_mut(children[3]){
+            text.0 = format!("{:.2}", data.get_min());
+        }
+        if let Ok((mut text, _)) = sections.get_mut(children[5]){
+            text.0 = format!("{:.2}", data.get_max());
+        }
+        if let Ok((_, mut color)) = sections.get_mut(children[0]){
+            match data.mean{
+                50.0.. => {color.0 = GREEN.into();}
+                20.0..50.0 => {color.0 = ORANGE.into();}
+                _ => {color.0 = RED.into();}
+            }
+        }
+        
     }
 }
 
-#[derive(Component)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component)]
 pub struct DiagPos;
 
 pub fn update_position(
-    mut query: Query<&mut Text, With<DiagPos>>,
+    query: Query<&Children, With<DiagPos>>,
+    mut text_query: Query<&mut Text>,
     camera: Query<(&Transform, &GlobalTransform), With<MainCamera>>
 ){
     if let Ok((t, gt)) = camera.get_single(){
-        for mut text in query.iter_mut(){
-            text.sections[8].value = format!("{}", t.translation);
-            text.sections[10].value = format!("{}", gt.translation());
+        for children in query.iter(){
+            if let Ok(mut text) = text_query.get_mut(children[8]){
+                text.0 = format!("{}", t.translation);
+            }
+            if let Ok(mut text) = text_query.get_mut(children[10]){
+                text.0 = format!("{}", gt.translation());
+            }
         }
     }
 }
@@ -41,6 +54,7 @@ impl Plugin for FrameRatePlugin{
     fn build(&self, app: &mut bevy::prelude::App) {
         app
             .register_type::<FPSData>()
+            .register_type::<DiagPos>()
             .add_plugins(FrameTimeDiagnosticsPlugin)
             .add_systems(Update, update_fps)
             .add_systems(Update, update_position);
@@ -48,24 +62,22 @@ impl Plugin for FrameRatePlugin{
 }
 
 pub fn spawn_fps_text(mut commands: Commands){
-    commands.spawn((TextBundle::from_sections([
-        TextSection::new("FPS:", TextStyle{font_size: 20.0, color: Color::GOLD, ..default()}),
-        TextSection::from_style(TextStyle{font_size: 20.0, color: Color::GOLD, ..default()}),
-        TextSection::new(" [", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
-        TextSection::from_style(TextStyle{font_size: 15.0, color: Color::ORANGE_RED, ..default()}),
-        TextSection::new("-", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
-        TextSection::from_style(TextStyle{font_size: 15.0, color: Color::BLUE, ..default()}),
-        TextSection::new("]", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
-
-        TextSection::new(" Local: ", TextStyle{font_size: 20.0, color: Color::GOLD, ..default()}),
-        TextSection::new("- ", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
-
-        TextSection::new(" Global: ", TextStyle{font_size: 20.0, color: Color::GOLD, ..default()}),
-        TextSection::new("- ", TextStyle{font_size: 15.0, color: Color::WHITE, ..default()}),
-    ]), FPSData::default(), DiagPos));
+    commands.spawn((TextLayout::default(), FPSData::default(), DiagPos)).with_children(|parent| {
+        parent.spawn((TextSpan("FPS:".into()), TextFont{font_size: 20.0, ..Default::default()}, TextColor(GOLD.into())));
+        parent.spawn((TextSpan("".into()), TextFont{font_size: 20.0, ..Default::default()}, TextColor(GOLD.into())));
+        parent.spawn((TextSpan(" [".into()), TextFont{font_size: 15.0, ..Default::default()}, TextColor(WHITE.into())));
+        parent.spawn((TextSpan("".into()), TextFont{font_size: 15.0, ..Default::default()}, TextColor(ORANGE_RED.into())));
+        parent.spawn((TextSpan("-".into()), TextFont{font_size: 15.0, ..Default::default()}, TextColor(WHITE.into())));
+        parent.spawn((TextSpan("".into()), TextFont{font_size: 15.0, ..Default::default()}, TextColor(BLUE.into())));
+        parent.spawn((TextSpan("]".into()), TextFont{font_size: 15.0, ..Default::default()}, TextColor(WHITE.into())));
+        parent.spawn((TextSpan(" Local: ".into()), TextFont{font_size: 20.0, ..Default::default()}, TextColor(GOLD.into())));
+        parent.spawn((TextSpan("- ".into()), TextFont{font_size: 15.0, ..Default::default()}, TextColor(WHITE.into())));
+        parent.spawn((TextSpan(" Global: ".into()), TextFont{font_size: 20.0, ..Default::default()}, TextColor(GOLD.into())));
+        parent.spawn((TextSpan("- ".into()), TextFont{font_size: 15.0, ..Default::default()}, TextColor(WHITE.into())));
+    });
 }
 
-#[derive(Clone, Debug, Reflect, Component)]
+#[derive(Debug, Clone, PartialEq, Reflect, Component)]
 pub struct FPSData{
     node_queue: VecDeque<f64>,
     pub mean: f64,
@@ -79,8 +91,8 @@ impl Default for FPSData{
         Self { 
             node_queue: VecDeque::from(vec![1.0; 100]), 
             mean: 1.0, 
-            max_vals: VecDeque::from(vec![99]), 
-            min_vals: VecDeque::from(vec![99]), 
+            max_vals: VecDeque::from([99]), 
+            min_vals: VecDeque::from([99]), 
             index_sub: 0, 
             window_size: 100 
         }

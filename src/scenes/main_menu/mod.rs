@@ -3,22 +3,26 @@ pub mod credits;
 pub mod options;
 
 use bevy::prelude::*;
-use crate::systems::util::camera::MainCamera;
-use super::AppStage;
+use title::TitleScene;
+use crate::systems::{scenes::{CornScene, CurrentScene, OnDespawnScene, OnSpawnScene, SceneEntity, SceneTransitionApp}, util::camera::{MainCamera, UICamera}};
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, States, SystemSet)]
-pub enum MainMenuScreen{
-    #[default] Title,
-    Credits,
-    Options
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
+pub struct MainMenuScene;
+impl CornScene for MainMenuScene{
+    fn get_bundle(self) -> impl Bundle {
+        (self, SceneEntity, Name::from("Main Menu Scene"), Node{
+            display: Display::Block, width: Val::Percent(100.0), height: Val::Percent(100.0), ..Default::default()
+        })
+    }
 }
-impl SubStates for MainMenuScreen{
-    type SourceStates = AppStage;
-    fn should_exist(sources: Self::SourceStates) -> Option<Self> {
-        match sources{
-            AppStage::MainMenu => Some(MainMenuScreen::default()),
-            AppStage::Level | AppStage::Lobby | AppStage::Init => None
-        }
+impl MainMenuScene{
+    pub fn spawn_scene(
+        mut commands: Commands,
+        parent: Res<CurrentScene>
+    ){
+        commands.entity(parent.0).with_children(|parent|{
+            parent.spawn(TitleScene.get_bundle());
+        });
     }
 }
 
@@ -27,31 +31,13 @@ pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin{
     fn build(&self, app: &mut App) {
         app
-            .add_sub_state::<MainMenuScreen>()
-            .enable_state_scoped_entities::<MainMenuScreen>()
-            .add_plugins((
-                title::TitleScreenPlugin, 
-                credits::CreditScreenPlugin, 
-                options::OptionScreenPlugin
-            ))
-            .add_systems(OnEnter(AppStage::MainMenu), (
+            .register_type::<MainMenuScene>()
+            .init_scene::<MainMenuScene>()
+            .add_systems(OnSpawnScene(MainMenuScene), (
+                MainMenuScene::spawn_scene,
                 MainCamera::disable_main_camera,
-                setup_main_menu
-            ))
-            .add_systems(OnExit(AppStage::MainMenu), MainCamera::enable_main_camera);
+                UICamera::enable_ui_camera
+            )).add_systems(OnDespawnScene(MainMenuScene), MainCamera::enable_main_camera);
+        app.add_plugins((title::TitleScreenPlugin, credits::CreditScreenPlugin, options::OptionScreenPlugin));
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Reflect, Component)]
-pub struct MainMenuRootNode;
-
-pub fn setup_main_menu(
-    mut commands: Commands
-){
-    commands.spawn((
-        Name::from("Main Menu Scene"),
-        Node{display: Display::Block, width: Val::Percent(100.0), height: Val::Percent(100.0), ..Default::default()},
-        MainMenuRootNode, 
-        StateScoped(AppStage::MainMenu)
-    ));
 }

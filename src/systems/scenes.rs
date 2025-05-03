@@ -1,27 +1,24 @@
+//! # SceneTransition Module:
+//! ## Spawning: 
+//! - SpawnScene(component): Send this event. Spawning happens during the next frame between StateTransition and Update.
+//! - Spawn Entity: Spawn with (SceneEntity, Scene), automatically detected. OnSpawnScene is run, and Transform/Visibility auto added if needed.
+//!
+//! ## Despawning:
+//! - Send DespawnScene(Entity): Despawns Specific Entity. OnDespawnScene is run, then SceneEntity is despawned
+//! - Send DespawnSceneMany(component): Despawns all scenes matching component. OnDespawnScene is run many times, then SceneEntities are despawned
+//! - Delete SceneEntity: Due to parent/child heiarchy entities autodespawned. Next frame OnDespawnScene is run, but scene already gone.
+//!
+//! ## OnSpawnScene, OnDespawnScene: 
+//! Schedules run when scenes are spawned or despawned. Loading/Unloading code should go here.
+
 use std::{hash::Hash, marker::PhantomData};
-
-use bevy::{ecs::{entity::EntityHashSet, schedule::ScheduleLabel}, prelude::*, utils::hashbrown::HashSet};
-
-/*
-    Spawning: 
-    - 1: Send Event: No knowledge of which entity refers to that scene
-    - 2: Spawn Entity with (SceneEntity, Scene): w
-
-    Despawning:
-    - 1: Send Event: Despawns all of specific type
-    - 2: Send Event2: Despawns Specific Entity
-    - 3: Delete Entity: Despawns any entity of the scene. With parent/child most entities should auto despawn. DOES NOT RUN SCHEDULES
-
-    OnEnter/OnExit: 
-    - Run once for every Spawn/Despawn,
-    - CurrentScene resource holds the entity id of the current scene being spawned/despawned
-    - OnExit: Runs before entities of the scene are deleted if possible.
-
-    After spawning, send events for Spawned/Despawned, containing root entity id, for the scenes
-*/
+use bevy::{app::MainScheduleOrder, ecs::{entity::EntityHashSet, schedule::ScheduleLabel}, prelude::*, utils::hashbrown::HashSet};
+use crate::util::observer_ext::*;
 
 /// Trait used to identify components that are Scene identifying tags
-pub trait Scene: Component+Clone+Eq+std::fmt::Debug+std::hash::Hash{}
+pub trait CornScene: Component+Clone+PartialEq+Eq+std::fmt::Debug+std::hash::Hash{
+    fn get_bundle(self) -> impl Bundle {return (SceneEntity, self)}
+}
 /// Tag Component for Scene Entities. 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Reflect, Component)]
 pub struct SceneEntity;
@@ -31,49 +28,66 @@ pub struct SceneEntity;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Reflect, Resource)]
 pub struct CurrentScene(pub Entity);
 /// Schedule run during SceneTransition Whenever the specified scene is spawned
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, ScheduleLabel)]
-pub struct OnSpawnScene<S: Scene>(pub S);
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, ScheduleLabel)]
+pub struct OnSpawnScene<S: CornScene>(pub S);
 /// Schedule run during SceneTransition Whenever the specified scene is despawned
-#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, ScheduleLabel)]
-pub struct OnDespawnScene<S: Scene>(pub S);
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, ScheduleLabel)]
+pub struct OnDespawnScene<S: CornScene>(pub S);
 
 /// Event Which Despawns all scenes of S
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Reflect, Event)]
-pub struct DespawnSceneMany<S: Scene>(pub S);
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Event)]
+pub struct DespawnCornSceneMany<S: CornScene>(pub S);
 /// Event for despawning a single scene
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Reflect, Event)]
-pub struct DespawnScene(pub Entity);
+pub struct DespawnCornScene(pub Entity);
 /// Event for spawning a single scene
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Reflect, Event)]
-pub struct SpawnScene<S: Scene>(pub S);
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Event)]
+pub struct SpawnCornScene<S: CornScene>(pub S);
 
+/// Returns a run condition which only passes when a scene is loaded
+pub fn scene_loaded<S: CornScene>(scene: S) -> impl FnMut(Query<&S>)->bool{
+    move |query: Query<&S>| {
+        query.iter().any(|s| *s==scene)
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component)]
+struct SceneObservers;
+impl ObserverParent for SceneObservers{fn get_name(&self) -> Name {Name::from("Scene Observers")}}
 
 /// Event Sent whenever a Spawn Schedule should be run
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Event)]
-struct RunSpawnSchedule<S: Scene>(pub Entity, PhantomData<S>);
+struct RunSpawnSchedule<S: CornScene>(pub Entity, PhantomData<S>);
 /// Event Sent whenever a Despawn Schedule should be run
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Event)]
-struct RunDespawnSchedule<S: Scene>(pub Entity, pub S);
+struct RunDespawnSchedule<S: CornScene>(pub Entity, pub S);
 /// Resurce which tracks loaded scenes of type S
-#[derive(Debug, Clone, PartialEq, Eq, Reflect, Resource)]
-struct SceneTracker<S: Scene>{
+#[derive(Debug, Clone, PartialEq, Eq, Resource)]
+struct SceneTracker<S: CornScene>{
     loaded: EntityHashSet,
     _phantom_data: PhantomData<S>
 }
-impl<S: Scene> Default for SceneTracker<S>{fn default() -> Self {Self{loaded: EntityHashSet::default(), _phantom_data: PhantomData::default()}}}
-impl<S: Scene> SceneTracker<S>{
-    /// Observer run whenever scenes are spawned. Sends events for the SceneTransition Schedule to react to
+impl<S: CornScene> Default for SceneTracker<S>{fn default() -> Self {Self{loaded: EntityHashSet::default(), _phantom_data: PhantomData::default()}}}
+impl<S: CornScene> SceneTracker<S>{
+    /// Observer run whenever scenes are spawned. Sends events for the SceneTransition Schedule to react to. Also ensures invariants on Scene Entities
     fn observe_scene_spawn(
         trigger: Trigger<OnAdd, S>,
         res: Res<Self>,
-        mut event_writer: EventWriter<RunSpawnSchedule<S>>
+        mut event_writer: EventWriter<RunSpawnSchedule<S>>,
+        query: Query<Entity, Or<(Without<Transform>, Without<Visibility>, Without<SceneEntity>)>>,
+        mut commands: Commands
     ){
         if res.loaded.contains(&trigger.entity()) {return;}
         event_writer.send(RunSpawnSchedule(trigger.entity(), PhantomData::default()));
+        if let Ok(entity) = query.get(trigger.entity()){
+            commands.entity(entity).insert_if_new((
+                SceneEntity, Transform::default(), Visibility::Visible
+            ));
+        }
     }
-    /// Observer run whenever scenes are spawned. Sends events for the SceneTransition Schedule to react to
+    /// Observer run whenever scenes are despawned. Sends events for the SceneTransition Schedule to react to
     fn observe_scene_despawn(
-        trigger: Trigger<OnAdd, S>,
+        trigger: Trigger<OnRemove, S>,
         query: Query<&S>,
         res: Res<Self>,
         mut event_writer: EventWriter<RunDespawnSchedule<S>>
@@ -100,23 +114,35 @@ enum SceneTransitionSteps{
 pub struct SceneTransition;
 impl Plugin for SceneTransition{
     fn build(&self, app: &mut App) {
-        app.init_schedule(Self);
-        app.add_event::<DespawnScene>();
-        app.configure_sets(SceneTransition, (
+        app
+            .register_type::<SceneEntity>()
+            .register_type::<CurrentScene>()
+            .register_type::<DespawnCornScene>()
+            .register_type::<SceneTransitionSteps>()
+            .register_type::<SceneTransition>()
+            .register_type::<SceneObservers>()
+            .init_schedule(Self);
+        app.add_event::<DespawnCornScene>();
+
+        let mut schedule_order = app.world_mut().resource_mut::<MainScheduleOrder>();
+        schedule_order.insert_after(StateTransition, SceneTransition);
+        let mut schedule = Schedule::new(SceneTransition);
+        schedule.configure_sets((
             (
                 SceneTransitionSteps::DespawnEventHandling, 
-                SceneTransitionSteps::GenericDespawnEventHandling.run_if(on_event::<DespawnScene>)
+                SceneTransitionSteps::GenericDespawnEventHandling.run_if(on_event::<DespawnCornScene>)
             ),
             SceneTransitionSteps::DespawnSchedules,
             SceneTransitionSteps::Despawn,
             SceneTransitionSteps::Spawn,
             SceneTransitionSteps::SpawnSchedules
         ).chain());
+        app.add_schedule(schedule);
     }
 }
 impl SceneTransition{
-    fn handle_despawn_all_events<S: Scene>(
-        mut events: EventReader<DespawnSceneMany<S>>,
+    fn handle_despawn_all_events<S: CornScene>(
+        mut events: EventReader<DespawnCornSceneMany<S>>,
         query: Query<(Entity, &S)>,
         res: Res<SceneTracker<S>>,
         mut writer: EventWriter<RunDespawnSchedule<S>>
@@ -129,55 +155,59 @@ impl SceneTransition{
             else {None}
         }));
     }
-    fn handle_despawn_single_events<S: Scene>(
-        mut event_reader: EventReader<DespawnScene>,
+    fn handle_despawn_single_events<S: CornScene>(
+        mut event_reader: EventReader<DespawnCornScene>,
         query: Query<&S>,
         res: Res<SceneTracker<S>>,
         mut event_writer: EventWriter<RunDespawnSchedule<S>>
     ){
-        event_writer.send_batch(event_reader.read().into_iter().filter_map(|DespawnScene(entity)| {
+        event_writer.send_batch(event_reader.read().into_iter().filter_map(|DespawnCornScene(entity)| {
             if !res.loaded.contains(entity) {return None;}
             let Ok(comp) = query.get(*entity) else {return None;};
             Some(RunDespawnSchedule(*entity, comp.to_owned()))
         }));
     }
 
-    fn get_despawn_entities<S: Scene>(
+    fn get_despawn_entities<S: CornScene>(
         mut events: EventReader<RunDespawnSchedule<S>>
     )  -> Vec<(Entity, S)> {
-        return events.read().into_iter().map(|e| (e.0, e.1.to_owned())).collect()
+        let mut entities = vec![];
+        for RunDespawnSchedule(entity, comp) in events.read(){
+            entities.push((*entity, comp.to_owned()));
+        }
+        return entities;
     }
-    pub fn run_despawn_schedules<S: Scene>(
+    pub fn run_despawn_schedules<S: CornScene>(
         In(scenes): In<Vec<(Entity, S)>>,
         world: &mut World
     ){
         for (entity, component) in scenes{
             world.insert_resource(CurrentScene(entity));
-            world.run_schedule(OnDespawnScene(component.clone()));
+            let _ = world.try_run_schedule(OnDespawnScene(component.clone()));
         }
     }
-    
-    fn despawn_scenes<S: Scene>(
+
+    fn despawn_scenes<S: CornScene>(
         mut commands: Commands, 
         mut res: ResMut<SceneTracker<S>>,
         mut events: EventReader<RunDespawnSchedule<S>>
     ) {
         for RunDespawnSchedule(entity, _) in events.read(){
             if res.loaded.remove(entity) {
-                commands.entity(*entity).despawn_recursive();
+                // A parent scene unloading could make entity not exist
+                if let Some(com) = commands.get_entity(*entity) {com.despawn_recursive();}
             }
         }
     }
 
-
-    fn spawn_scenes<S: Scene>(
+    fn spawn_scenes<S: CornScene>(
         mut commands: Commands,
         mut res: ResMut<SceneTracker<S>>,
-        mut new_scenes: EventReader<SpawnScene<S>>,
+        mut new_scenes: EventReader<SpawnCornScene<S>>,
         mut event_writer: EventWriter<RunSpawnSchedule<S>>
     ){
         let mut events = vec![];
-        for SpawnScene(scene) in new_scenes.read(){
+        for SpawnCornScene(scene) in new_scenes.read(){
             let entity = commands.spawn((
                 SceneEntity, scene.to_owned()
             )).id();
@@ -186,66 +216,58 @@ impl SceneTransition{
         }
         event_writer.send_batch(events);
     }
-    fn add_scene_components<S: Scene>(
+
+    fn get_spawn_entities<S: CornScene>(
         mut events: EventReader<RunSpawnSchedule<S>>,
-        mut commands: Commands
-    ){
-        for RunSpawnSchedule(entity, _) in events.read(){
-            commands.entity(*entity).insert_if_new((
-                Transform::default(),
-                Visibility::Visible
-            ));
-        }
-    }
-    
-    fn get_spawn_entities<S: Scene>(
-        mut events: EventReader<RunSpawnSchedule<S>>,
+        mut tracker: ResMut<SceneTracker<S>>,
         query: Query<&S>
     ) -> Vec<(Entity, S)> {
         let mut scenes = vec![];
         for RunSpawnSchedule(entity, _) in events.read(){
             let Ok(comp) = query.get(*entity) else {continue;};
+            tracker.loaded.insert(*entity);
             scenes.push((*entity, comp.to_owned()));
         }
         return scenes;
     }
-    fn run_spawn_schedules<S: Scene>(
+    fn run_spawn_schedules<S: CornScene>(
         In(scenes): In<Vec<(Entity, S)>>,
         world: &mut World
     ){
         for (entity, component) in scenes{
             world.insert_resource(CurrentScene(entity));
-            world.run_schedule(OnSpawnScene(component.clone()));
+            let _ = world.try_run_schedule(OnSpawnScene(component.clone()));
         }
     }
 }
 
 /// Creates a scene register command for app which setups scene transition systems for that scene
 pub trait SceneTransitionApp{
-    fn init_scene<S: Scene>(&mut self) -> &mut Self;
+    fn init_scene<S: CornScene>(&mut self) -> &mut Self;
 }
 impl SceneTransitionApp for App{
-    fn init_scene<S: Scene>(&mut self) -> &mut Self{
-        self.add_plugins(InitScenePlugin::<S>::default())
+    fn init_scene<S: CornScene>(&mut self) -> &mut Self{
+        if !self.is_plugin_added::<InitScenePlugin<S>>() {self.add_plugins(InitScenePlugin::<S>::default());}
+        self
     }
 }
 #[derive(Debug, Clone)]
-struct InitScenePlugin<S: Scene>(pub PhantomData<S>);
-impl<S: Scene> Default for InitScenePlugin<S>{fn default() -> Self {Self(PhantomData::default())}}
-impl<S: Scene> Plugin for InitScenePlugin<S>{
+struct InitScenePlugin<S: CornScene>(pub PhantomData<S>);
+impl<S: CornScene> Default for InitScenePlugin<S>{fn default() -> Self {Self(PhantomData::default())}}
+impl<S: CornScene> Plugin for InitScenePlugin<S>{
     fn build(&self, app: &mut App) {
         app.add_event::<RunSpawnSchedule<S>>()
             .add_event::<RunDespawnSchedule<S>>()
             .init_resource::<SceneTracker<S>>()
-            .add_observer(SceneTracker::<S>::observe_scene_spawn)
-            .add_observer(SceneTracker::<S>::observe_scene_despawn);
-
-        app.add_event::<DespawnSceneMany<S>>()
-            .add_event::<SpawnScene<S>>();
-
-        app.add_systems(SceneTransition, (
+            .add_observer_as(SceneTracker::<S>::observe_scene_spawn, SceneObservers)
+            .add_observer_as(SceneTracker::<S>::observe_scene_despawn, SceneObservers)
+            
+            .add_event::<DespawnCornSceneMany<S>>()
+            .add_event::<SpawnCornScene<S>>()
+            
+            .add_systems(SceneTransition, (
             SceneTransition::handle_despawn_all_events::<S>
-                .run_if(on_event::<DespawnSceneMany<S>>)
+                .run_if(on_event::<DespawnCornSceneMany<S>>)
                 .in_set(SceneTransitionSteps::DespawnEventHandling),
             SceneTransition::handle_despawn_single_events::<S>
                 .in_set(SceneTransitionSteps::GenericDespawnEventHandling),
@@ -257,9 +279,6 @@ impl<S: Scene> Plugin for InitScenePlugin<S>{
             ).run_if(on_event::<RunDespawnSchedule<S>>),
             (
                 SceneTransition::spawn_scenes::<S>
-                    .in_set(SceneTransitionSteps::Spawn),
-                SceneTransition::add_scene_components::<S>
-                    .after(SceneTransition::spawn_scenes::<S>)
                     .in_set(SceneTransitionSteps::Spawn),
                 SceneTransition::get_spawn_entities::<S>.pipe(SceneTransition::run_spawn_schedules::<S>)
                     .in_set(SceneTransitionSteps::SpawnSchedules)

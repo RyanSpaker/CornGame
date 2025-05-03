@@ -7,7 +7,7 @@ pub struct CornSystemsPlugin;
 impl Plugin for CornSystemsPlugin{
     fn build(&self, app: &mut App) {
         app
-            .add_plugins(util::AppUtilPlugin);
+            .add_plugins((util::AppUtilPlugin, scenes::SceneTransition));
     }
 }
 

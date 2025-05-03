@@ -1,14 +1,13 @@
-use bevy::{app::{App, Plugin}, ecs::component::Component, render::extract_component::{ExtractComponent, ExtractComponentPlugin}};
+use bevy::{prelude::*, render::extract_component::{ExtractComponent, ExtractComponentPlugin}};
 
-#[derive(Component, Clone, ExtractComponent)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component, ExtractComponent)]
 pub struct MainCamera;
 
 pub struct MainCameraPlugin;
 impl Plugin for MainCameraPlugin{
     fn build(&self, app: &mut App) {
-        app.add_plugins(ExtractComponentPlugin::<MainCamera>::default());
+        app
+            .register_type::<MainCamera>()
+            .add_plugins(ExtractComponentPlugin::<MainCamera>::default());
     }
-}
-
-pub fn spawn_main_camera(commands: &mut Commands){
 }
