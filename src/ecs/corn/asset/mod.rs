@@ -1,5 +1,5 @@
 pub mod processing;
-pub mod voxel_auto_lod;
+//pub mod voxel_auto_lod;
 
 use bevy::{
     asset::processor::LoadTransformAndSave, 
@@ -26,7 +26,7 @@ impl Plugin for CornAssetPlugin{
             .register_type::<CornAsset>()
             .register_type::<CornMeshLod>()
             .add_systems(Startup, spawn_corn_asset)
-            .add_systems(Update, CornModel::enable_asset.run_if(on_event::<AssetEvent<CornAsset>>()))
+            .add_systems(Update, CornModel::enable_asset.run_if(on_event::<AssetEvent<CornAsset>>))
             .sub_app_mut(RenderApp)
                 .init_resource::<CornModel>()
                 .add_systems(ExtractSchedule, CornModel::clone_corn_resource);
@@ -34,7 +34,8 @@ impl Plugin for CornAssetPlugin{
 }
 /// Loads the corn model from the assets folder. Runs when the app starts
 pub fn spawn_corn_asset(mut corn_res: ResMut<CornModel>, assets: Res<AssetServer>){
-    corn_res.asset = assets.load("models/Corn.gltf");
+    corn_res.asset = assets.load("models/Corn.glb");
+    // corn_res.asset = assets.load("models/corn2.glb");
 }
 
 /// Resource which holds some commonly accessed data about the corn Model, as well as a handle to the [`CornAsset`]
@@ -47,7 +48,7 @@ pub struct CornModel{
 impl CornModel{
     fn enable_asset(mut corn: ResMut<CornModel>, assets: Res<Assets<CornAsset>>, mut events: EventReader<AssetEvent<CornAsset>>){
         if !events.read().any(|event| event.is_loaded_with_dependencies(corn.asset.id())) {return;}
-        if let Some(asset) = assets.get(corn.asset.clone()){
+        if let Some(asset) = assets.get(&corn.asset){
             corn.loaded = true;
             corn.lod_count = asset.lod_count;
         }
@@ -69,19 +70,20 @@ pub struct CornAsset{
     pub textures: HashMap<String, Handle<Image>>
 }
 impl RenderAsset for CornAsset{
-    type PreparedAsset = Self;
+    type SourceAsset = Self;
 
     type Param = ();
 
-    fn asset_usage(&self) -> RenderAssetUsages {
+    fn asset_usage(_source_asset: &Self::SourceAsset) -> RenderAssetUsages {
         RenderAssetUsages::all()
     }
 
     fn prepare_asset(
-        self,
+        source_asset: Self::SourceAsset,
         _param: &mut bevy::ecs::system::SystemParamItem<Self::Param>,
-    ) -> Result<Self::PreparedAsset, bevy::render::render_asset::PrepareAssetError<Self>> {
-        Ok(self)
+    ) -> Result<Self, bevy::render::render_asset::PrepareAssetError<Self>> {
+        // NOTE: classic example where rust needs conditional default impls in traits, I should not have to write this function
+        Ok(source_asset)
     }
 }
 /// Holds info about a specific corn lod
@@ -106,7 +108,7 @@ impl CornMeshLod{
         }
         Ok(())
     }
-    pub async fn read<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<Self, std::io::Error>{
+    pub async fn read<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<Self, std::io::Error>{
         let start_vertex = read_u64(reader, counter).await? as usize;
         let total_vertices = read_u64(reader, counter).await? as usize;
         let mut sub_mesh_data: Vec<(usize, usize)> = vec![];

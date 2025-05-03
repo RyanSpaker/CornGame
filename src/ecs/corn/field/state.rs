@@ -1,10 +1,7 @@
 use std::marker::PhantomData;
 use bevy::{
-    utils::hashbrown::HashSet, 
-    ecs::{
-        component::Component, entity::Entity, event::{EventWriter, Event}, schedule::IntoSystemConfigs, system::{Commands, Local, Query, ResMut, Resource}}, 
-    render::{Extract, ExtractSchedule, Render, RenderApp, RenderSet}, 
-    app::{Plugin, App}
+    app::{App, Plugin}, ecs::{
+        component::Component, entity::Entity, event::{Event, EventWriter}, schedule::IntoSystemConfigs, system::{Commands, Local, Query, ResMut, Resource}}, render::{extract_component::{ExtractComponent, ExtractComponentPlugin}, sync_world::RenderEntity, Extract, ExtractSchedule, Render, RenderApp, RenderSet}, utils::{hashbrown::HashSet, info}
 };
 use super::RenderableCornFieldID;
 
@@ -16,7 +13,7 @@ pub trait CornAssetState: Component{
 }
 
 /// A component containing state information for a corn field
-#[derive(Default, Debug, Clone, Component)]
+#[derive(Default, Debug, Clone, Component, ExtractComponent)]
 pub struct CornFieldState{
     /// whether the assets needed by the corn field for initialization and/or rendering have been loaded
     assets_loaded: bool
@@ -36,10 +33,11 @@ impl CornFieldState{
         fields.iter_mut().for_each(|(field, mut state)| state.set_asset_state(field.assets_ready()));
     }
     /// Function responsible for adding corn field state components to corn field entities in thge extract schedule
+    /// EAS: as of 0.15 the render world and main world entity id's are decoupled. Which was causing issues here.
     pub fn add_state_component<T: CornAssetState>(
         mut commands: Commands,
         mut previous_len: Local<usize>,
-        query: Extract<Query<(Entity, &T)>>
+        query: Extract<Query<(RenderEntity, &T)>>
     ){
         let mut values = Vec::with_capacity(*previous_len);
         for (entity, _) in &query {
@@ -49,8 +47,6 @@ impl CornFieldState{
         commands.insert_or_spawn_batch(values);
     }
 }
-
-
 
 /// This event means that the specified field is now stale data
 #[derive(Debug, Clone, Event)]
@@ -122,5 +118,6 @@ impl Plugin for MasterCornFieldStatePlugin{
             .add_event::<NewCornFieldEvent>()
             .add_event::<StaleCornFieldEvent>()
             .add_systems(Render, PreviousFrameCornFields::send_field_events.in_set(RenderSet::PrepareAssets));
+        //app.add_plugins(ExtractComponentPlugin::<CornFieldState>::default()); //Move here because we only need one.
     }
 }

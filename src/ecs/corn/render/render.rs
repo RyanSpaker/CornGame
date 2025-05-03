@@ -9,11 +9,12 @@ use bevy::{
     asset::{Asset, Assets}, ecs::system::{lifetimeless::SRes, Commands, Res, ResMut, SystemParamItem}, pbr::{
         ExtendedMaterial, MaterialExtension, MaterialMeshBundle, RenderMeshInstances, StandardMaterial
     }, prelude::*, reflect::Reflect, render::{
-        batching::NoAutomaticBatching, mesh::{GpuBufferInfo, Mesh}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, 
+        batching::NoAutomaticBatching, mesh::{allocator::MeshAllocator, Mesh, RenderMesh, RenderMeshBufferInfo}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, 
         render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}, view::NoFrustumCulling
     }
 };
 use wgpu::{vertex_attr_array, PushConstantRange, ShaderStages};
+
 
 /// Corn rendering uses a Special Material which expands upon the `StandardMaterial` adding instancing support.
 /// We add this material to the app with a special Material Plugin called `SpecializedMaterialPlugin`, which allows us to override the Draw commands used by the Material.
@@ -67,7 +68,7 @@ impl MaterialExtension for CornMaterialExtension {
     fn specialize(
         _pipeline: &bevy::pbr::MaterialExtensionPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _layout: &bevy::render::mesh::MeshVertexBufferLayout,
+        _layout: &bevy::render::mesh::MeshVertexBufferLayoutRef,
         _key: bevy::pbr::MaterialExtensionKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         descriptor
@@ -95,9 +96,10 @@ pub struct DrawCorn;
 impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
     type Param = (
         SRes<Time>,
-        SRes<RenderAssets<Mesh>>,
+        SRes<RenderAssets<RenderMesh>>,
         SRes<RenderMeshInstances>,
         SRes<CornInstanceBuffer>,
+        SRes<MeshAllocator>,
     );
     type ViewQuery = ();
     type ItemQuery = ();
@@ -106,9 +108,12 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
         item: &P,
         _view: (),
         _item_query: Option<()>,
-        (time, meshes, mesh_instances, corn_instance_buffer): SystemParamItem<'w, '_, Self::Param>,
+        (time, meshes, mesh_instances, corn_instance_buffer, mesh_allocator): SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        // A borrow check workaround.
+        let mesh_allocator = mesh_allocator.into_inner();
+
         if !corn_instance_buffer.ready_to_render() {
             return RenderCommandResult::Success;
         }
@@ -116,13 +121,20 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
         let mesh_instances = mesh_instances.into_inner();
         let corn_instance_buffer = corn_instance_buffer.into_inner();
 
-        let Some(mesh_instance) = mesh_instances.get(&item.entity()) else {
-            return RenderCommandResult::Failure;
+        let Some(mesh_instance) = mesh_instances.render_mesh_queue_data(item.main_entity()) else {
+            return RenderCommandResult::Failure("unknown");
         };
-        let Some(gpu_mesh) = meshes.get(mesh_instance.mesh_asset_id) else {
-            return RenderCommandResult::Failure;
+        let Some(gpu_mesh) = meshes.get(mesh_instance.shared.mesh_asset_id) else {
+            return RenderCommandResult::Failure("unknown");
         };
-        pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+
+        let Some(buffer) = mesh_allocator.mesh_vertex_slice(&mesh_instance.mesh_asset_id) else {
+            return RenderCommandResult::Failure("unknown");
+        };
+
+        // https://docs.rs/bevy/latest/src/custom_shader_instancing/custom_shader_instancing.rs.html#283
+
+        pass.set_vertex_buffer(0, buffer.buffer.slice(..));
         pass.set_vertex_buffer(
             1,
             corn_instance_buffer.get_sorted_buffer().unwrap().slice(..),
@@ -136,20 +148,25 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
             &(batch_range.start as i32).to_le_bytes(),
         );
         
-        pass.set_push_constants(ShaderStages::VERTEX, 4, &time.elapsed_seconds().to_le_bytes());
+        pass.set_push_constants(ShaderStages::VERTEX, 4, &time.elapsed_secs().to_le_bytes());
 
         match &gpu_mesh.buffer_info {
-            GpuBufferInfo::Indexed {
-                buffer,
+            RenderMeshBufferInfo::Indexed {
                 index_format,
                 count: _,
             } => {
-                pass.set_index_buffer(buffer.slice(..), 0, *index_format);
+                let Some(index_buffer_slice) =
+                    mesh_allocator.mesh_index_slice(&mesh_instance.mesh_asset_id)
+                else {
+                    return RenderCommandResult::Skip;
+                };
+
+                pass.set_index_buffer(index_buffer_slice.buffer.slice(..), 0, *index_format);
                 for i in 0..corn_instance_buffer.lod_count {
                     pass.draw_indexed_indirect(indirect_buffer, (i * 20).into());
                 }
             }
-            GpuBufferInfo::NonIndexed => {
+            RenderMeshBufferInfo::NonIndexed => {
                 pass.multi_draw_indirect(indirect_buffer, 0, corn_instance_buffer.lod_count as u32);
             }
         }
@@ -169,28 +186,25 @@ pub fn spawn_corn_anchor(
 ) {
     if !events
         .read()
-        .any(|event| event.is_loaded_with_dependencies(corn.asset.clone()))
+        .any(|event| event.is_loaded_with_dependencies(&corn.asset))
     {
         return;
     }
-    let corn_meshes = corn_asset.get(corn.asset.clone()).unwrap();
+    let corn_meshes = corn_asset.get(&corn.asset).unwrap();
+    dbg!(corn_meshes.materials.keys());
     if let Some(mat) = std_materials.get(
         corn_meshes
             .materials
             .get(&"CornLeaves".to_string())
-            .unwrap()
-            .clone(),
+            .unwrap(),
     ) {
         commands.spawn((
-            MaterialMeshBundle::<CornMaterial> {
-                mesh: corn_meshes.master_mesh.clone(),
-                material: materials.add(CornMaterial {
-                    base: mat.clone(),
-                    extension: CornMaterialExtension::default(),
-                }),
-                //material: std_materials.add(StandardMaterial::from(Color::RED)),
-                ..default()
-            },
+            Mesh3d(corn_meshes.master_mesh.clone()),
+            MeshMaterial3d( materials.add(CornMaterial {
+                base: mat.clone(),
+                extension: CornMaterialExtension::default(),
+            })),
+            //std_materials.add(StandardMaterial::from(Color::RED)),
             NoFrustumCulling,
             NoAutomaticBatching {},
         ));
@@ -207,7 +221,7 @@ impl Plugin for CornRenderPlugin {
         >::default())
             .add_systems(
                 Update,
-                spawn_corn_anchor.run_if(on_event::<AssetEvent<CornAsset>>()),
+                spawn_corn_anchor.run_if(on_event::<AssetEvent<CornAsset>>),
             );
         //.insert_resource(DirectionalLightShadowMap { size: 4096 });
         // TODO heirarchical shadow maps? antialiasing?

@@ -1,8 +1,9 @@
 use core::panic;
-use std::{collections::hash_map::DefaultHasher, hash::{Hasher, Hash}};
+use std::{collections::hash_map::DefaultHasher, default, hash::{Hash, Hasher}};
 use bevy::{
-    app::Update, asset::{Assets, Handle}, ecs::{component::Component, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, texture::Image}, transform::components::GlobalTransform
+    app::Update, asset::{Assets, Handle}, ecs::{component::Component, reflect::ReflectComponent, system::{Query, Res}}, math::{Vec2, Vec3, Vec4}, reflect::Reflect, render::{render_resource::*, sync_world::SyncToRenderWorld, texture::GpuImage}, transform::components::GlobalTransform
 };
+use bevy::prelude::*;
 use bytemuck::{Pod, Zeroable};
 use wgpu::{util::BufferInitDescriptor, SamplerBindingType};
 use crate::ecs::corn::data_pipeline::{operation_executor::{CreateInitBindgroupStructures, CreateInitBufferStructures, IntoCornPipeline, IntoOperationResources}, operation_manager::IntoBufferOperation};
@@ -85,9 +86,11 @@ pub struct CornSensor{
     pub is_in_corn: f32
 }
 
+
 /// This is a Corn Field with a path carved out based on a input image. Any corn stalks on a pixel with red are kept, corn on a pixel without red are discarded
 /// The corn is placed in a hexagonal pattern, making stright line patterns less common
 #[derive(Clone, Component, Debug, Reflect)]
+#[require(SyncToRenderWorld)] // NOTE: this would not be needed if we used the normal ExtractPlugin
 pub struct ImageCarvedHexagonalCornField{
     /// World Space center of the corn field
     center: Vec3,
@@ -160,7 +163,7 @@ impl ImageCarvedHexagonalCornField{
         images: Res<Assets<Image>>
     ){
         for field in fields.iter_mut(){
-            if !field.image_ready && images.get(field.image.clone()).is_some() {
+            if !field.image_ready && images.get(&field.image).is_some() {
                 field.into_inner().image_ready = true;
             }
         }
@@ -179,7 +182,7 @@ impl ImageCarvedHexagonalCornField{
         }
 
         for field in fields.iter(){
-            if let Some(image) = images.get(field.image.clone()){
+            if let Some(image) = images.get(&field.image){
                 let im = image.clone().try_into_dynamic().unwrap(); // XXX doing this every frame
                 //let px = image.texture_descriptor.format.pixel_size();
 
@@ -191,16 +194,20 @@ impl ImageCarvedHexagonalCornField{
 
                     // &image.data[i..(i+px)];
                         
-                    let pixel = image::imageops::sample_bilinear(&im, u, v).unwrap();
-                    //dbg!(relative, u, v, pixel);
-
-                    thing.is_in_corn = pixel[0] as f32 / 255.0;
+                    match image::imageops::sample_bilinear(&im, u, v) {
+                        Some(pixel) => {
+                            thing.is_in_corn = pixel[0] as f32 / 255.0
+                        }
+                        None => {
+                            thing.is_in_corn = 0.0;
+                        }
+                    };
                 }
             }
         }
-        
     }
 }
+
 impl CornAssetState for ImageCarvedHexagonalCornField{
     fn assets_ready(&self) -> bool {
         return self.image_ready;
@@ -240,7 +247,7 @@ impl IntoOperationResources for ImageCarvedHexagonalCornField{
             let Some((buffer, _)) = data.buffers.iter().filter(|(_, val)| val.as_ref().is_some_and(|val| *val == id)).next() else{
                 return None;
             };
-            let Some(image) = data.images.get(field.image.clone()) else {return None;};
+            let Some(image) = data.images.get(&field.image) else {return None;};
             let init_bind_group = data.render_device.create_bind_group(
                 Some("Image Carved Corn Init Bind Group".into()),
                 data.layout,

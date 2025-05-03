@@ -8,7 +8,7 @@
     mesh_view_bindings::{view, previous_view_proj},
     view_transformations::position_world_to_clip
 }
-#import bevy_render::maths::affine_to_square
+#import bevy_render::maths::affine3_to_square
 #import corn_game::wind::wind
 
 #import bevy_render::globals::Globals
@@ -21,11 +21,11 @@ fn get_instance_index(instance_index: u32) -> u32 {
 }
 
 fn get_model_matrix(instance_index: u32) -> mat4x4<f32> {
-    return affine_to_square(mesh[get_instance_index(instance_index)].model);
+    return affine3_to_square(mesh[get_instance_index(instance_index)].world_from_local);
 }
 
 fn get_previous_model_matrix(instance_index: u32) -> mat4x4<f32> {
-    return affine_to_square(mesh[get_instance_index(instance_index)].previous_model);
+    return affine3_to_square(mesh[get_instance_index(instance_index)].previous_world_from_local);
 }
 
 #ifdef DEFERRED_PREPASS

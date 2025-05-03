@@ -4,9 +4,10 @@ use bevy::{
     gltf::{Gltf, GltfMesh}, 
     prelude::*, 
     render::{mesh::{Indices, MeshVertexAttribute, VertexAttributeValues}, render_asset::RenderAssetUsages}, 
-    utils::{hashbrown::HashMap, Uuid}
+    utils::{hashbrown::HashMap}
 };
-use wgpu::VertexFormat;
+use uuid::Uuid;
+use wgpu_types::VertexFormat;
 use super::{CornMeshLod, CornAsset};
 use crate::util::asset_io::{*, mesh_io::{save_mesh, read_mesh}, image_io::{save_image, read_image}, standard_material_io::{read_standard_material, save_standard_material}};
 
@@ -20,6 +21,7 @@ pub struct RawCornAsset{
 }
 
 /// Takes a [`Gltf`] Asset, extracts the corn model, and turns it into a [`RawCornAsset`] to be saved
+#[derive(Debug, Reflect)]
 pub struct CornAssetTransformer;
 impl CornAssetTransformer{
     /// Given a vector of lods, each a vector of Mesh Label, material index, Combine the meshes into a single master mesh, and track vertex information, returning both.
@@ -133,14 +135,17 @@ impl AssetTransformer for CornAssetTransformer{
             // Handle -> Label, Name
             let mut named_meshes: HashMap<Handle<GltfMesh>, (String, String)> = HashMap::default();
             for (name, handle) in asset.named_meshes.iter(){
-                named_meshes.insert(handle.to_owned(), (gltf_mesh_labels.get(handle).unwrap().to_owned(), name.to_owned()));
+                named_meshes.insert(handle.to_owned(), (gltf_mesh_labels.get(handle).unwrap().to_owned(), name.to_string()));
             }
             // List of Materials used by the corn mesh
             let mut used_materials: Vec<Handle<StandardMaterial>> = vec![];
             // List of Lods each a list of meshes and the index of the material that mesh uses
             let mut lods: Vec<Vec<(Handle<Mesh>, usize)>> = vec![];
-            for (_, (label, name)) in named_meshes.iter(){
-                if name[..7] != *"CornLOD" {continue;}
+            for (_, (label,name)) in named_meshes.iter(){
+                dbg!(&name);
+                let Some((_, tail)) = name.split_once("CornLOD") else {continue}; //XXX fixme hardcoded
+                let (lod_level, mesh_index) = tail.split_once(".").unwrap_or((tail, "0"));
+
                 let sub_asset = asset.get_labeled::<GltfMesh, str>(label).unwrap();
                 let gltf_mesh = sub_asset.get();
                 let primitive = &gltf_mesh.primitives[0];
@@ -150,8 +155,8 @@ impl AssetTransformer for CornAssetTransformer{
                     used_materials.push(mat.to_owned());
                     used_materials.len() - 1
                 };
-                let lod_level = name[7..8].parse::<usize>().unwrap();
-                let mesh_index = if name.len() == 8 {0} else {name[11..12].parse::<usize>().unwrap()};
+                let lod_level = lod_level.parse::<usize>().unwrap(); 
+                let mesh_index = mesh_index.parse::<usize>().unwrap();
                 while lods.len() <= lod_level {lods.push(vec![]);}
                 while lods[lod_level].len() <= mesh_index {lods[lod_level].push((Handle::default(), 0));}
                 lods[lod_level][mesh_index] = (mesh, pos);
@@ -165,7 +170,8 @@ impl AssetTransformer for CornAssetTransformer{
                 let label = material_labels.get(&handle).unwrap();
                 let name = asset.named_materials.iter().find(|(_, h)| **h == handle).unwrap().0.clone();
                 let transformed = asset.get_labeled::<StandardMaterial, str>(label.as_str()).unwrap();
-                (transformed.get().clone(), name)
+                dbg!(&name);
+                (transformed.get().clone(), name.to_string())
             }).collect();
 
             let (master_mesh, vertex_counts) = Self::combine_corn_mesh(lods, &mut asset).await;
@@ -242,12 +248,14 @@ impl AssetSaver for CornAssetSaver{
 
     type Error = std::io::Error;
 
-    fn save<'a>(
-        &'a self,
-        writer: &'a mut bevy::asset::io::Writer,
-        asset: bevy::asset::saver::SavedAsset<'a, Self::Asset>,
-        _settings: &'a Self::Settings,
-    ) -> bevy::utils::BoxedFuture<'a, Result<<Self::OutputLoader as bevy::asset::AssetLoader>::Settings, Self::Error>> {
+    fn save(
+        &self,
+        writer: &mut bevy::asset::io::Writer,
+        asset: bevy::asset::saver::SavedAsset<'_, Self::Asset>,
+        settings: &Self::Settings,
+    ) -> impl bevy::utils::ConditionalSendFuture<
+        Output = Result<<Self::OutputLoader as AssetLoader>::Settings, Self::Error>,
+    > {
         Box::pin(async move {
             let mut byte_count: usize = 0;
             byte_count += save_mesh(&asset.master_mesh, writer).await?;
@@ -260,10 +268,10 @@ impl AssetSaver for CornAssetSaver{
             }
             for (tex, name) in write_each(writer, &mut byte_count, &asset.textures).await?.into_iter(){
                 write_string(writer, &mut byte_count, name).await?;
-                byte_count += save_image(tex, writer).await?;
+                save_image(tex, writer, &mut byte_count).await?;
             }
             return Ok(());
-        })
+        })        
     }
 }
 
@@ -276,12 +284,12 @@ impl AssetLoader for CornAssetLoader{
 
     type Error = std::io::Error;
 
-    fn load<'a>(
-        &'a self,
-        reader: &'a mut bevy::asset::io::Reader,
-        _settings: &'a Self::Settings,
-        load_context: &'a mut bevy::asset::LoadContext,
-    ) -> bevy::utils::BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    fn load(
+        &self,
+        reader: &mut dyn bevy::asset::io::Reader,
+        settings: &Self::Settings,
+        load_context: &mut bevy::asset::LoadContext,
+    ) -> impl bevy::utils::ConditionalSendFuture<Output = Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut byte_counter: usize = 0;
             let mesh = read_mesh(reader, &mut byte_counter).await?;
@@ -299,8 +307,10 @@ impl AssetLoader for CornAssetLoader{
             }
             let tex_number = read_u64(reader, &mut byte_counter).await? as usize;
             let mut textures: Vec<(Image, String)> = Vec::with_capacity(tex_number);
-            for _ in 0..tex_number{
+            for i in 0..tex_number{
+                dbg!(i, tex_number);
                 let name = read_string(reader, &mut byte_counter).await?;
+                dbg!(&name);
                 let image = read_image(reader, &mut byte_counter).await?;
                 textures.push((image, name));
             }

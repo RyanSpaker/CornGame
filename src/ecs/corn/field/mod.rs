@@ -6,11 +6,14 @@ use std::marker::PhantomData;
 use bevy::{
     prelude::*,
     reflect::GetTypeRegistration,
-    render::{Extract, RenderApp}
+    render::{sync_world::RenderEntity, Extract, RenderApp}
 };
+use blenvy::GltfComponentsSet;
 use cf_image_carved::ImageCarvedHexagonalCornField;
 use cf_simple::{SimpleHexagonalCornField, SimpleRectangularCornField};
+use serde::Deserialize;
 use state::{CornAssetState, MasterCornFieldStatePlugin};
+use wgpu::core::device::resource;
 use self::state::CornFieldStatePlugin;
 use super::data_pipeline::{operation_executor::{IntoCornPipeline, IntoOperationResources}, operation_manager::IntoBufferOperation, CornFieldPipelinePlugin};
 
@@ -50,7 +53,7 @@ impl From<u64> for RenderableCornFieldID{
 pub fn extract_renderable_corn_field<T: RenderableCornField>(
     mut commands: Commands,
     mut previous_len: Local<usize>,
-    query: Extract<Query<(Entity, &T)>>
+    query: Extract<Query<(RenderEntity, &T)>>
 ){
     let mut values = Vec::with_capacity(*previous_len);
     for (entity, query_item) in &query {
@@ -83,6 +86,50 @@ impl<T: RenderableCornField> Plugin for RenderableCornFieldPlugin<T>{
     }
 }
 
+#[derive(Component, Reflect, Default, Debug, Deserialize)]
+#[reflect(Component)]
+/// test component for loading cornfields from blender
+pub struct CornTestGltf(String);
+
+fn init_gltf_cornfield(
+    corn: Query<(Entity, &CornTestGltf, &Children,  &GlobalTransform), Without<ImageCarvedHexagonalCornField>>,
+    mut children: Query<(&MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
+    a_materials: Res<Assets<StandardMaterial>>,
+    mut commands: Commands
+){
+    for (id, _corn, child, transform) in corn.iter() {
+        info!("initializing gltf loaded cornfield entity {}", id);
+
+        let (h_mat, mut visible) = children.get_mut(*child.first().unwrap()).unwrap();
+
+        // hide the reference plane
+        *visible = Visibility::Hidden;
+
+        let Some(material) = a_materials.get(h_mat) else { break };
+        let h_image = material.base_color_texture.clone().unwrap();
+
+        // NOTE: we use the transform of corn object. 
+        // This means that you CANNOT apply the transform in blender
+        // we fully assume the plane of the model is 1x1
+        // NOTE: rotation not supported yet.
+        // TODO: actually use the mesh in corn render.
+        // TODO: should use global transform
+
+        let transform = transform.compute_transform();
+        let center = transform.translation + Vec3::new(0.0, 0.0, 0.0); 
+
+        let half_extents = transform.scale.xz();
+        dbg!(half_extents, center);
+
+        commands.entity(id).insert(
+            ImageCarvedHexagonalCornField::new(
+                center, half_extents, 
+                0.75, Vec2::new(1.1, 1.3), 0.2, 
+                h_image,
+            )
+        );
+    }
+}
 
 pub struct CornFieldsPlugin;
 impl Plugin for CornFieldsPlugin{
@@ -93,5 +140,9 @@ impl Plugin for CornFieldsPlugin{
             RenderableCornFieldPlugin::<ImageCarvedHexagonalCornField>::new(),
             MasterCornFieldStatePlugin
         ));
+
+        app.add_systems(Update, init_gltf_cornfield.after(GltfComponentsSet::Injection) );
+
+        app.register_type::<CornTestGltf>(); // needed for loading from gltf
     }
 }

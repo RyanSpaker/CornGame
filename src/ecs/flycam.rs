@@ -1,5 +1,4 @@
-use bevy::{input::mouse::MouseMotion, prelude::*};
-
+use bevy::{input::mouse::MouseMotion, prelude::*, window::CursorGrabMode};
 use crate::{scenes::CharacterScene, util::scene_set::{AppSceneSet, SceneSet}};
 
 #[derive(Component, Debug, Default, Clone, Reflect)]
@@ -38,7 +37,7 @@ impl Default for FlyCamKeybinds{
             move_right: KeyCode::KeyD, 
             move_ascend: KeyCode::Space, 
             move_descend: KeyCode::ShiftLeft,
-            cursor_grab: KeyCode::Backquote
+            cursor_grab: KeyCode::Backquote,
         }
     }
 }
@@ -68,12 +67,24 @@ fn toggle_focused(
     mut commands: Commands,
     query: Query<(Entity, Option<&Focused>)>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut windows: Query<&mut Window, (With<PrimaryWindow>, Without<FlyCam>)>,
     keybinds: Res<FlyCamKeybinds>
 ){
     if keyboard_input.just_released(keybinds.cursor_grab) {
+        let mut focus = false;
         for (entity, focus) in query.iter(){
-            if focus.is_some() {commands.entity(entity).remove::<Focused>();}
-            else {commands.entity(entity).insert(Focused);}
+            if focus.is_some() {
+                commands.entity(entity).remove::<Focused>();
+            }
+            else {
+                commands.entity(entity).insert(Focused);
+                focus = true;
+            }
+        }
+        for mut window in windows.iter_mut(){
+            window.cursor_options.grab_mode = if focus {CursorGrabMode::Locked} else {CursorGrabMode::None};
+            window.cursor_options.visible = !focus;
+            if focus {window.set_cursor_position(Some(window.size()/2.0));}
         }
     }
 }
@@ -85,7 +96,7 @@ fn read_flycam_button_inputs(
     keybinds: Res<FlyCamKeybinds>,
     config: Res<FlyCamConfig>,
     time: Res<Time>,
-    mut cameras: Query<&mut Transform, (With<Focused>, With<FlyCam>)>
+    mut cameras: Query<&mut Transform, (With<Focused>, With<FlyCam>)>,
 ){
     
     let mut movement: Vec3 = Vec3::ZERO;

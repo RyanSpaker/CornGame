@@ -1,5 +1,5 @@
-use bevy::pbr::{AlphaMode, OpaqueRendererMethod, ParallaxMappingMethod, StandardMaterial};
-use wgpu::Face;
+use bevy::{pbr::{OpaqueRendererMethod, ParallaxMappingMethod, StandardMaterial}, prelude::AlphaMode};
+use wgpu_types::Face;
 use super::*;
 
 /*
@@ -23,7 +23,7 @@ pub async fn save_standard_material(material: &StandardMaterial, writer: &mut be
     write_f32(material.lightmap_exposure, writer, &mut byte_counter).await?;
     write_byte(material.deferred_lighting_pass_id, writer, &mut byte_counter).await?;
     write_color(material.base_color, writer, &mut byte_counter).await?;
-    write_color(material.emissive, writer, &mut byte_counter).await?;
+    write_color(material.emissive.into(), writer, &mut byte_counter).await?;
     write_color(material.attenuation_color, writer, &mut byte_counter).await?;
     write_bool(material.flip_normal_map_y, writer, &mut byte_counter).await?;
     write_bool(material.double_sided, writer, &mut byte_counter).await?;
@@ -44,7 +44,7 @@ pub async fn save_standard_material(material: &StandardMaterial, writer: &mut be
     return Ok(byte_counter);
 }
 /// Reads a StandardMaterial from the reader. Returns the total number of bytes read.
-pub async fn read_standard_material<'a>(reader: &'a mut bevy::asset::io::Reader::<'a>, counter: &mut usize) -> Result<StandardMaterial, std::io::Error>{
+pub async fn read_standard_material<'a>(reader: &'a mut dyn  bevy::asset::io::Reader, counter: &mut usize) -> Result<StandardMaterial, std::io::Error>{
     let perceptual_roughness = read_f32(reader, counter).await?;
     let metallic = read_f32(reader, counter).await?;
     let reflectance = read_f32(reader, counter).await?;
@@ -80,7 +80,7 @@ pub async fn read_standard_material<'a>(reader: &'a mut bevy::asset::io::Reader:
     return Ok(StandardMaterial{ 
         base_color, 
         base_color_texture, 
-        emissive, 
+        emissive: emissive.to_linear(), 
         emissive_texture, 
         perceptual_roughness, 
         metallic, 
@@ -107,7 +107,8 @@ pub async fn read_standard_material<'a>(reader: &'a mut bevy::asset::io::Reader:
         max_parallax_layer_count, 
         lightmap_exposure, 
         opaque_render_method, 
-        deferred_lighting_pass_id 
+        deferred_lighting_pass_id,
+        ..Default::default() // XXX definately wrong
     });
 }
 
