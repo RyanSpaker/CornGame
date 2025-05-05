@@ -1,5 +1,4 @@
 use std::{collections::HashMap, str::Chars, time::Duration};
-
 use avian3d::prelude::{RigidBody, RigidBodyDisabled};
 use bevy::{
     audio::Volume,
@@ -18,7 +17,6 @@ use bevy::{
 use bevy_editor_pls::egui::TextStyle;
 use blenvy::{AnimationMarkerReached, BlueprintAnimationPlayerLink, BlueprintAnimations};
 use frunk::{hlist::HList, Generic};
-
 use super::character::Player;
 
 pub struct InteractPlugin;

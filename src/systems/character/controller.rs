@@ -8,8 +8,8 @@ use bevy_tnua::builtins::{TnuaBuiltinCrouch, TnuaBuiltinDash};
 
 use leafwing_input_manager::action_state::ActionState;
 use serde::{Deserialize, Serialize};
-use crate::app::physics::ColliderFor;
-use crate::ecs::main_camera::MainCamera;
+use crate::systems::physics::ColliderFor;
+use crate::ecs::cameras::MainCamera;
 
 use super::input::Action;
 
@@ -67,10 +67,10 @@ pub fn input_handler(
             &mut TnuaController,
             &CornGameCharController,
         ),
-        Without<crate::ecs::main_camera::MainCamera>,
+        Without<crate::ecs::cameras::MainCamera>,
     >,
     mut colliders: Query<(&ColliderParent, &mut Collider, &mut Transform), (Without<CornGameCharController>, Without<MainCamera>)>,
-    mut camera: Query<&mut Transform, With<crate::ecs::main_camera::MainCamera>>,
+    mut camera: Query<&mut Transform, With<crate::ecs::cameras::MainCamera>>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     let Ok(mut camera) = camera.get_single_mut() else {

@@ -4,19 +4,14 @@ pub mod ecs;
 pub mod util;
 
 use std::path::PathBuf;
-use app::CornAppPlugin;
-use bevy::{prelude::*, reflect, render::{sync_world::RenderEntity, RenderApp}};
-use bevy_editor_pls::EditorPlugin;
+use bevy::{prelude::*, render::{sync_world::RenderEntity, RenderApp}};
 use clap::Parser;
-use ecs::CornGameECSPlugin;
-use lightyear::prelude::AppMessageExt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, clap::Parser, Default, Reflect, Serialize, Deserialize, Resource)]
 #[reflect(Resource)]
 struct Cli {
     scenes: Vec<PathBuf>,
-
     #[arg(short, long)]
     client: bool,
     #[arg(short, long)]

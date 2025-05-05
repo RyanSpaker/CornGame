@@ -4,7 +4,7 @@ pub mod options;
 
 use bevy::prelude::*;
 use title::TitleScene;
-use crate::systems::{scenes::{CornScene, CurrentScene, OnDespawnScene, OnSpawnScene, SceneEntity, SceneTransitionApp}, util::camera::{MainCamera, UICamera}};
+use crate::{ecs::cameras::{MainCamera, UICamera}, systems::scenes::{CornScene, CurrentScene, OnDespawnScene, OnSpawnScene, SceneEntity, SceneTransitionApp}};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
 pub struct MainMenuScene;

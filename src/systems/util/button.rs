@@ -82,6 +82,24 @@ pub fn on_press_swap_scene<S1: CornScene, S2: CornScene>(old_scene: S1, new_scen
     }
 }
 
+/// Runs a function when pressed
+pub fn on_press_run_command<C>(command: C) -> impl FnMut(Trigger<ButtonEvent>, Commands)->() 
+where C: Fn(Entity, &mut World) + Send + 'static + Clone
+{
+    move |
+        trigger: Trigger<ButtonEvent>,
+        mut commands: Commands, 
+    | {
+        match trigger.1 {Interaction::Pressed => {
+            let entity = trigger.entity();
+            let func = command.clone();
+            commands.queue(move |world: &mut World| {
+                func(entity, world);
+            });
+        } _ => {}}
+    }
+}
+
 fn button_event_observer(
     trigger: Trigger<ButtonEvent>,
     mut background_query: Query<(&mut BackgroundColor, &BackgroundSelectedColors)>,

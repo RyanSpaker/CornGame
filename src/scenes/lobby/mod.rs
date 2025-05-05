@@ -1,5 +1,8 @@
-use bevy::prelude::*;
-use crate::systems::{scenes::{CornScene, CurrentScene, OnSpawnScene, SceneTransitionApp}, util::{camera::{MainCamera, UICamera}, default_resources::{SimpleMaterials, SimpleMeshes}}};
+use std::ffi::OsStr;
+use avian3d::prelude::{Collider, RigidBody};
+use bevy::{pbr::FogVolume, prelude::*};
+use blenvy::{BlueprintInfo, GameWorldTag, SpawnBlueprint};
+use crate::{ecs::{cameras::{MainCamera, UICamera}, test_cube::TestCube}, systems::{scenes::{CornScene, CurrentScene, OnSpawnScene, SceneTransitionApp}, util::default_resources::{SimpleMaterials, SimpleMeshes}}, Cli};
 
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
@@ -14,14 +17,17 @@ impl LobbyScene{
         mut commands: Commands,
         parent: Res<CurrentScene>,
         shapes: Res<SimpleMeshes>,
-        materials: Res<SimpleMaterials>
+        materials: Res<SimpleMaterials>,
+        cli: Res<Cli>
     ){
         commands.entity(parent.0).with_children(|parent| {
             parent.spawn((
                 Name::from("Floor"),
                 Transform::from_scale(Vec3::new(10.0, 0.0, 10.0)),
+                Collider::cuboid(1.0, 0.1, 1.0),
                 Mesh3d(shapes.plane.clone()),
-                MeshMaterial3d(materials.white.clone())
+                MeshMaterial3d(materials.white.clone()),
+                RigidBody::Static
             ));
             parent.spawn((
                 Name::from("Box"),
@@ -32,6 +38,29 @@ impl LobbyScene{
                 DirectionalLight::default(), 
                 Transform::from_translation(Vec3::ONE).looking_at(Vec3::ZERO, Vec3::Y)
             ));
+            parent.spawn((
+                Name::from("Fog Volume"),
+                FogVolume{ density_factor:0.0001, ..default() },
+                Transform::from_scale(Vec3::splat(35.0)),
+            ));
+        
+            for path in cli.scenes.iter() {
+                let path = path.strip_prefix("assets/").unwrap_or(&path);
+        
+                if path.extension() == Some(OsStr::new("glb")) {
+                    // TODO: Try inserting on parent instead to get rid of extra nesting level when loading 1 scene
+                    parent.spawn((
+                        Name::from("Level from: ".to_string() + &path.to_str().unwrap()),
+                        BlueprintInfo::from_path(&path.to_str().unwrap()), //NOTE: I wish there was a language where I could just do path, and it would give a warning but I wouldn't have to do all this type munching
+                        SpawnBlueprint,
+                        GameWorldTag,
+                        // RigidBody::Static // weird things happen if there are colliders with no rigid body
+                        // EDIT: weirder things happen with nested RigidBodys
+                    ));
+                }
+            }
+        
+            parent.spawn(TestCube);
         });
     }
 }

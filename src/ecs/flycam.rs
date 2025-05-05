@@ -1,5 +1,5 @@
-use bevy::{input::mouse::MouseMotion, prelude::*, window::CursorGrabMode};
-use crate::{scenes::CharacterScene, util::scene_set::{AppSceneSet, SceneSet}};
+use bevy::{input::mouse::MouseMotion, prelude::*, window::{CursorGrabMode, PrimaryWindow}};
+use crate::{scenes::FirstPersonScene, util::scene_set::{AppSceneSet, SceneSet}};
 
 #[derive(Component, Debug, Default, Clone, Reflect)]
 pub struct FlyCam;
@@ -42,6 +42,9 @@ impl Default for FlyCamKeybinds{
     }
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Event)]
+pub struct FlyCamMoveEvent;
+
 #[derive(Default, Debug, Clone)]
 pub struct FlyCamPlugin;
 impl Plugin for FlyCamPlugin{
@@ -51,14 +54,16 @@ impl Plugin for FlyCamPlugin{
             .register_type::<Focused>()
             .register_type::<FlyCamConfig>()
             .register_type::<FlyCamKeybinds>()
+            .register_type::<FlyCamMoveEvent>()
 
+            .add_event::<FlyCamMoveEvent>()
             .init_resource::<FlyCamConfig>()
             .init_resource::<FlyCamKeybinds>()
-            .configure_scene_set(Update, CharacterScene, SceneSet(CharacterScene))
+            .configure_scene_set(Update, FirstPersonScene, SceneSet(FirstPersonScene))
             
             .add_systems(Update, (
-                toggle_focused.in_set(SceneSet(CharacterScene)),
-                read_flycam_button_inputs.in_set(SceneSet(CharacterScene))
+                toggle_focused.in_set(SceneSet(FirstPersonScene)),
+                read_flycam_button_inputs.in_set(SceneSet(FirstPersonScene))
             ));
     }
 }
@@ -71,20 +76,20 @@ fn toggle_focused(
     keybinds: Res<FlyCamKeybinds>
 ){
     if keyboard_input.just_released(keybinds.cursor_grab) {
-        let mut focus = false;
+        let mut any_focused = false;
         for (entity, focus) in query.iter(){
             if focus.is_some() {
                 commands.entity(entity).remove::<Focused>();
             }
             else {
                 commands.entity(entity).insert(Focused);
-                focus = true;
+                any_focused = true;
             }
         }
         for mut window in windows.iter_mut(){
-            window.cursor_options.grab_mode = if focus {CursorGrabMode::Locked} else {CursorGrabMode::None};
-            window.cursor_options.visible = !focus;
-            if focus {window.set_cursor_position(Some(window.size()/2.0));}
+            window.cursor_options.grab_mode = if any_focused {CursorGrabMode::Locked} else {CursorGrabMode::None};
+            window.cursor_options.visible = !any_focused;
+            if any_focused {let center = Some(window.size()/2.0); window.set_cursor_position(center);}
         }
     }
 }
@@ -97,6 +102,7 @@ fn read_flycam_button_inputs(
     config: Res<FlyCamConfig>,
     time: Res<Time>,
     mut cameras: Query<&mut Transform, (With<Focused>, With<FlyCam>)>,
+    mut move_events: EventWriter<FlyCamMoveEvent>
 ){
     
     let mut movement: Vec3 = Vec3::ZERO;
@@ -107,7 +113,12 @@ fn read_flycam_button_inputs(
     if keyboard_input.pressed(keybinds.move_ascend) {movement.y += 1.0;}
     if keyboard_input.pressed(keybinds.move_descend) {movement.y -= 1.0;}
     let mouse: Vec2 = mouse_input.read().map(|e| e.delta).sum();
-    movement = if movement == Vec3::ZERO {Vec3::ZERO} else {movement.normalize()};
+    movement = if movement == Vec3::ZERO {
+        Vec3::ZERO
+    } else {
+        move_events.send(FlyCamMoveEvent);
+        movement.normalize()
+    };
     if mouse == Vec2::ZERO && movement == Vec3::ZERO {return;}
     // Move cameras
     for mut cam in cameras.iter_mut(){

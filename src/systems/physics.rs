@@ -1,26 +1,43 @@
-
 use std::f32::consts::PI;
-
-use bevy::prelude::*;
+use bevy::{ecs::component::StorageType, prelude::*};
 use avian3d::prelude::*;
 use serde::{Deserialize, Serialize};
 
-pub struct MyPhysicsPlugin;
-impl Plugin for MyPhysicsPlugin {
-    fn build(&self, app: &mut App) {
-        // init physics plugins
-        app.add_plugins((
-            PhysicsPlugins::default(),
-            // PhysicsDebugPlugin::default(),
-            
-            //PhysicsDiagnosticsPlugin,
-            //PhysicsDiagnosticsUiPlugin,
-        ));
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
+#[reflect(Component)]
+#[require(
+    MaxAngularSpeed(|| MaxAngularSpeed(4.0*PI)), 
+    MaxLinearSpeed(|| MaxLinearSpeed(10.0)), 
+    LinearDamping(|| LinearDamping(1.0)), 
+    AngularDamping(|| AngularDamping(2.0))
+)]
+pub struct DampedPhysics;
 
-        // gltf loading
-        app.register_type::<ColliderFor>();
-        app.add_systems(PreUpdate, attach_colliders);
-        app.add_systems(Update, default_damping);
+#[derive(Debug, Reflect, Serialize, Deserialize)]
+#[reflect(Component)]
+pub enum ColliderFor{
+    Parent
+}
+impl Component for ColliderFor{
+    const STORAGE_TYPE: StorageType = StorageType::Table;
+    fn register_component_hooks(hooks: &mut bevy::ecs::component::ComponentHooks) {
+        hooks.on_add(|mut world, entity, id| {
+            let Some(comp) = world.get::<Self>(entity) else {return;};
+            info!("{id:?} added to {entity} with value {comp:?}");
+            match comp{
+                Self::Parent => {
+                    warn!("seriously broken don't use me");
+                    let parent = match world.get::<Parent>(entity) {Some(p) => p.get(), None => {return;}};
+                    let Some(mesh) = world.get::<Mesh3d>(entity) else {return;};
+                    let Some(meshes) = world.get_resource::<Assets<Mesh>>() else {return;};
+                    let Some(mesh_data) = meshes.get(&mesh.0) else {return;};
+                    let Some(collider) = Collider::trimesh_from_mesh(mesh_data) else {return;};
+                    if let Some(mut parent) = world.commands().get_entity(parent){
+                        parent.insert((Visibility::Hidden, collider));
+                    }
+                }
+            }
+        });
     }
 }
 
@@ -28,45 +45,15 @@ impl Plugin for MyPhysicsPlugin {
 #[reflect(Resource)]
 struct DebugRender(bool);
 
-
-fn default_damping(
-    mut commands: Commands,
-    bodies: Query<(Entity, &RigidBody), Added<RigidBody>>
-){
-    for b in bodies.iter().filter(|b| *b.1 == RigidBody::Dynamic) {
-        commands.entity(b.0).insert_if_new((
-            MaxAngularSpeed(2.0*PI * 2.0),
-            MaxLinearSpeed(10.0),
-            LinearDamping(1.0),
-            AngularDamping(2.0),
-        ));
+pub struct CornPhysicsPlugin;
+impl Plugin for CornPhysicsPlugin {
+    fn build(&self, app: &mut App) {
+        // init physics plugins
+        app
+            .add_plugins(PhysicsPlugins::default())
+            .register_type::<ColliderFor>()
+            .register_type::<DebugRender>()
+            .register_type::<DampedPhysics>()
+            .init_resource::<DebugRender>();
     }
-}
-
-
-#[derive(Debug, Component, Reflect, Serialize, Deserialize)]
-#[reflect(Component)]
-pub enum ColliderFor{
-    Parent
-}
-
-fn attach_colliders(
-    mut commands: Commands,
-    world: &World, 
-    asset: Res<Assets<Mesh>>,
-    mut items: Query<(Entity, &Mesh3d, &ColliderFor), Added<ColliderFor>>
-){
-    for (id, mesh, item) in &mut items {
-        let e = world.entity(id);
-        match item {
-            ColliderFor::Parent => {
-                warn!("seriously broken don't use me");
-                let p = e.get::<Parent>();
-                let mesh = asset.get(&mesh.0).unwrap();
-                commands.entity(p.unwrap().get())
-                    .insert(Visibility::Hidden)
-                    .insert(Collider::trimesh_from_mesh(mesh).unwrap());
-            }
-        }
-    }  
 }

@@ -117,7 +117,7 @@ pub fn start_server(
     };
 
     // Here we only provide a single net config, but you can provide multiple!
-    config.net = vec![net_config];
+    config.net = [net_config].to_vec();
     //config.shared.mode = Mode::HostServer;
 
     client_config.net = client::NetConfig::Local { id: std::process::id() as u64 };

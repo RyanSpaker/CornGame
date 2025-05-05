@@ -1,7 +1,7 @@
 use bevy::prelude::*;
-use crate::{scenes::lobby::LobbyScene, systems::{
-    scenes::{CornScene, CurrentScene, OnSpawnScene, SceneEntity, SceneTransitionApp}, 
-    util::button::{on_press_swap_scene, BackgroundSelectedColors}
+use crate::{scenes::{lobby::LobbyScene, FirstPersonScene}, systems::{
+    scenes::{CornScene, CurrentScene, DespawnCornSceneMany, OnSpawnScene, SceneEntity, SceneTransitionApp}, 
+    util::button::{on_press_run_command, on_press_swap_scene, BackgroundSelectedColors}
 }, util::observer_ext::*};
 use super::{credits::CreditsScene, options::OptionsScene, MainMenuScene};
 
@@ -37,7 +37,10 @@ impl TitleScene{
                 TextFont{font_size: 32.0, ..Default::default()},
                 BackgroundColor(Color::WHITE),
                 BackgroundSelectedColors{selected: bevy::color::palettes::basic::GRAY.into(), unselected: Color::WHITE},
-            )).observe_as(on_press_swap_scene(MainMenuScene, LobbyScene), TitleSceneObservers);
+            )).observe_as(on_press_run_command(|_, world| {
+                world.send_event(DespawnCornSceneMany(MainMenuScene));
+                world.spawn(FirstPersonScene.get_bundle()).with_child(LobbyScene.get_bundle());
+            }), TitleSceneObservers);
             parent.spawn((
                 Button,
                 Text::new("Options"),

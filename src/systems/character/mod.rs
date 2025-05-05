@@ -27,7 +27,7 @@ use controller::CornGameCharController;
 use leafwing_input_manager::plugin::InputManagerPlugin;
 use leafwing_input_manager::InputManagerBundle;
 
-use crate::ecs::main_camera::MainCamera;
+use crate::ecs::cameras::MainCamera;
 
 use self::input::Action;
 

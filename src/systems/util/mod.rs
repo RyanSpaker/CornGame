@@ -1,4 +1,3 @@
-pub mod camera;
 pub mod default_resources;
 pub mod button;
 
