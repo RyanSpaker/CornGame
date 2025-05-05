@@ -34,6 +34,7 @@ impl Plugin for FrameRatePlugin{
 pub fn spawn_fps_text(mut commands: Commands){
     commands
             .spawn((
+                Name::from("FPS Display"),
                 Text::new("FPS: "),
                 TextFont {
                     font_size: 20.0,
@@ -42,7 +43,7 @@ pub fn spawn_fps_text(mut commands: Commands){
                 TextColor(css::GOLD.into()), 
             ))
             .with_children(|builder|{
-                let fps = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS));
+                let fps = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS), DiagnosticMode::Smoothed);
                 let fps_range = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS), DiagnosticMode::Function(|d|{
                     // TODO for the love of god, this should not be this complicated and it shouldn't take me 5 minutes to write fucking max()
 
@@ -81,14 +82,14 @@ struct TextFromDiagnostic(DiagnosticPath);
 
 fn update_diagnostics(
     diagnostics: Res<DiagnosticsStore>,
-    mut query: Query<(&TextFromDiagnostic, Option<&DiagnosticMode>, &mut Text)>
+    mut query: Query<(&TextFromDiagnostic, Option<&DiagnosticMode>, &mut TextSpan)>
 ){
-    for (path,mode, _) in &mut query {
+    for (path,mode, mut text) in &mut query {
         let mode = mode.unwrap_or(&DiagnosticMode::Smoothed);
-        let _ = match diagnostics.get(&path.0) {
+        text.0 = match diagnostics.get(&path.0) {
             Some(path) => match mode {
-                DiagnosticMode::Smoothed => match path.smoothed(){
-                    Some(f) => f.to_string(),
+                DiagnosticMode::Smoothed => match path.average(){
+                    Some(f) => format!("{f:.2}"),
                     None => "n/a".into(),
                 },
                 DiagnosticMode::Function(foo) => foo(path),

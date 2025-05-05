@@ -23,8 +23,8 @@ impl Plugin for CornSystemsPlugin{
                 audio::CornAudioPlugin,
                 //ui::editor::MyEditorPlugin,
                 network::CornNetworkingPlugin,
-                //character::MyCharacterPlugin, 
-                //interactions::InteractPlugin,
+                character::MyCharacterPlugin, 
+                interactions::InteractPlugin,
                
             ))
             .add_plugins((

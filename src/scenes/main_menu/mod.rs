@@ -4,7 +4,7 @@ pub mod options;
 
 use bevy::prelude::*;
 use title::TitleScene;
-use crate::{ecs::cameras::{MainCamera, UICamera}, systems::scenes::{CornScene, CurrentScene, OnDespawnScene, OnSpawnScene, SceneEntity, SceneTransitionApp}};
+use crate::systems::scenes::{CornScene, CurrentScene, OnSpawnScene, SceneEntity, SceneTransitionApp};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
 pub struct MainMenuScene;
@@ -33,11 +33,7 @@ impl Plugin for MainMenuPlugin{
         app
             .register_type::<MainMenuScene>()
             .init_scene::<MainMenuScene>()
-            .add_systems(OnSpawnScene(MainMenuScene), (
-                MainMenuScene::spawn_scene,
-                MainCamera::disable_main_camera,
-                UICamera::enable_ui_camera
-            )).add_systems(OnDespawnScene(MainMenuScene), MainCamera::enable_main_camera);
+            .add_systems(OnSpawnScene(MainMenuScene), MainMenuScene::spawn_scene);
         app.add_plugins((title::TitleScreenPlugin, credits::CreditScreenPlugin, options::OptionScreenPlugin));
     }
 }

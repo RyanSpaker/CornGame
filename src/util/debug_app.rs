@@ -1,4 +1,7 @@
-use bevy::{app::Plugins, ecs::schedule::ScheduleLabel, prelude::*};
+use bevy::{app::Plugins, ecs::schedule::ScheduleLabel, prelude::*, render::extract_component::ExtractComponent};
+
+#[derive(Component, Clone, ExtractComponent)]
+pub struct DebugTag{}
 
 /// Trait that adds conditional functiosn for app that add functionality only for debug mode
 pub trait DebugApp{

@@ -1,8 +1,8 @@
 use std::{ops::AddAssign, time::Duration};
 use bevy::{audio::Volume, ecs::{component::ComponentId, entity::EntityHashMap, world::DeferredWorld}, prelude::*};
 use crate::{
-    ecs::{corn::field::cf_image_carved::CornSensor, flycam::FlyCamMoveEvent, cameras::MainCamera},
-    util::lerp,
+    ecs::{cameras::MainCamera, corn::field::cf_image_carved::CornSensor, flycam::FlyCamMoveEvent},
+    util::{math::lerp, observer_ext::{ObserveAsAppExt, ObserverParent}},
 };
 
 pub struct CornAudioPlugin;
@@ -17,12 +17,22 @@ impl Plugin for CornAudioPlugin {
             .register_type::<FadeKeepOnEnd>()
             .register_type::<FadePauseOnEnd>()
             .register_type::<Ambient>()
+            .register_type::<AudioObservers>()
             .configure_sets(Update, AudioSystems.run_if(AudioSystems::should_run))
             .add_systems(Update, (
                 (WindNoise::adjust_wind, Footsteps::adjust_footsteps, Fade::update_fade),
                 AudioFactor::calculate_volume
             ).chain().in_set(AudioSystems))
-            .add_observer(Fade::fade_despawn_observer);
+            .add_observer_as(Fade::fade_despawn_observer, AudioObservers);
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
+#[reflect(Component)] 
+pub struct AudioObservers;
+impl ObserverParent for AudioObservers{
+    fn get_name(&self) -> Name {
+        Name::from("Audio Observers")
     }
 }
 

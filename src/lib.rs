@@ -25,7 +25,7 @@ impl Plugin for CornGame{
             DefaultPlugins
             .set(WindowPlugin{
                     primary_window: Some(Window { 
-                        present_mode: bevy::window::PresentMode::AutoVsync,
+                        present_mode: bevy::window::PresentMode::Mailbox,
                         ..default()
                     }),
                     ..default()

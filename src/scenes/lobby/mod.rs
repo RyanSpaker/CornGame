@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use avian3d::prelude::{Collider, RigidBody};
 use bevy::{pbr::FogVolume, prelude::*};
 use blenvy::{BlueprintInfo, GameWorldTag, SpawnBlueprint};
-use crate::{ecs::{cameras::{MainCamera, UICamera}, test_cube::TestCube}, systems::{scenes::{CornScene, CurrentScene, OnSpawnScene, SceneTransitionApp}, util::default_resources::{SimpleMaterials, SimpleMeshes}}, Cli};
+use crate::{ecs::{cameras::MainCamera, test_cube::TestCube}, systems::{scenes::{CornScene, CurrentScene, OnSpawnScene, SceneTransitionApp}, util::default_resources::{SimpleMaterials, SimpleMeshes}}, Cli};
 
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
@@ -79,9 +79,7 @@ impl Plugin for LobbyPlugin{
             .init_scene::<LobbyScene>()
             .add_systems(OnSpawnScene(LobbyScene), (
                 LobbyScene::spawn_scene,
-                position_camera,
-                MainCamera::enable_main_camera,
-                UICamera::disable_ui_camera
+                position_camera
             ));
     }
 }

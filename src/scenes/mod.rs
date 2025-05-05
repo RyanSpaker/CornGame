@@ -4,7 +4,7 @@ pub mod main_menu;
 pub mod lobby;
 
 use bevy::{core_pipeline::{bloom::Bloom, tonemapping::Tonemapping}, pbr::{ScreenSpaceReflections, VolumetricFog}, prelude::*};
-use crate::{ecs::{cameras::{MainCamera, UICamera}, corn::field::cf_image_carved::CornSensor, flycam::FlyCam, framerate::spawn_fps_text}, systems::scenes::{CornScene, SceneTransitionApp}};
+use crate::{ecs::{cameras::MainCamera, corn::field::cf_image_carved::CornSensor, flycam::FlyCam, framerate::spawn_fps_text}, systems::scenes::{CornScene, SceneTransitionApp}};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
 #[reflect(Component)]
@@ -52,11 +52,10 @@ fn spawn_global_entities(mut commands: Commands) {
         },
         ScreenSpaceReflections::default(),
         CornSensor::default(),
-        FlyCam
+        FlyCam,
+        IsDefaultUiCamera
     ));
-    let cam = UICamera::spawn_ui_camera(&mut commands);
-    commands.entity(cam).insert(IsDefaultUiCamera);
     
     commands.spawn(main_menu::MainMenuScene.get_bundle());
-    commands.insert_resource(UiScale(2.0));
+    commands.insert_resource(UiScale(1.0));
 }
