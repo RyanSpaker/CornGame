@@ -37,6 +37,10 @@ impl Plugin for FrameRatePlugin{
 }
 
 pub fn spawn_fps_text(mut commands: Commands){
+
+    let mut node = Node::default();
+    node.margin.top = Val::Px(10.0);
+
     commands
             .spawn((
                 Text::new("FPS: "),
@@ -45,9 +49,12 @@ pub fn spawn_fps_text(mut commands: Commands){
                     ..default()
                 },
                 TextColor(css::GOLD.into()), 
+                node
             ))
             .with_children(|builder|{
-                let fps = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS));
+                let fps = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS), DiagnosticMode::Function(|d|{
+                    format!("{:.2}", d.smoothed().unwrap_or_default())
+                }));
                 let fps_range = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS), DiagnosticMode::Function(|d|{
                     // TODO for the love of god, this should not be this complicated and it shouldn't take me 5 minutes to write fucking max()
 
@@ -67,11 +74,13 @@ pub fn spawn_fps_text(mut commands: Commands){
                 }
                 ));
 
-                let pos = (TextSpan::default(), DiagPos);
 
                 builder.spawn(fps);
                 builder.spawn(fps_range);
-                builder.spawn(pos);
+
+                builder.spawn((Text::new("\nPos: "))).with_children(|builder|{
+                    builder.spawn((TextSpan::default(), DiagPos));    
+                }); 
             });
 }
 
@@ -86,11 +95,11 @@ struct TextFromDiagnostic(DiagnosticPath);
 
 fn update_diagnostics(
     diagnostics: Res<DiagnosticsStore>,
-    mut query: Query<(&TextFromDiagnostic, Option<&DiagnosticMode>, &mut Text)>
+    mut query: Query<(&TextFromDiagnostic, Option<&DiagnosticMode>, &mut TextSpan)>
 ){
-    for (path,mode, text) in &mut query {
+    for (path,mode, mut text) in &mut query {
         let mode = mode.unwrap_or(&DiagnosticMode::Smoothed);
-        let text = match diagnostics.get(&path.0) {
+        *text = match diagnostics.get(&path.0) {
             Some(path) => match mode {
                 DiagnosticMode::Smoothed => match path.smoothed(){
                     Some(f) => f.to_string(),
@@ -99,6 +108,6 @@ fn update_diagnostics(
                 DiagnosticMode::Function(foo) => foo(path),
             },
             None => "None".to_owned(),
-        };
+        }.into();
     }
 }
