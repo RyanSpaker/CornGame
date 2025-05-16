@@ -78,7 +78,7 @@ pub fn spawn_fps_text(mut commands: Commands){
                 builder.spawn(fps);
                 builder.spawn(fps_range);
 
-                builder.spawn((Text::new("\nPos: "))).with_children(|builder|{
+                builder.spawn((TextSpan::new("\nPos: "))).with_children(|builder|{
                     builder.spawn((TextSpan::default(), DiagPos));    
                 }); 
             });

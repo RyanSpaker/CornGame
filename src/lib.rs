@@ -1,8 +1,20 @@
 use std::path::PathBuf;
 
 use app::CornAppPlugin;
-use bevy::{prelude::*, reflect, render::{sync_world::RenderEntity, RenderApp}};
-use bevy_editor_pls::EditorPlugin;
+use bevy::{
+    log::{
+        tracing_subscriber::{Layer, Registry},
+        BoxedLayer,
+        LogPlugin,
+    },
+    prelude::*,
+    reflect,
+    render::{sync_world::RenderEntity, RenderApp},
+};
+use bevy_editor_pls::{
+    default_windows::{logging::TracingDynamicSubscriber},
+    EditorPlugin,
+};
 use clap::Parser;
 use ecs::CornGameECSPlugin;
 use lightyear::prelude::AppMessageExt;
@@ -24,51 +36,55 @@ struct Cli {
 }
 
 pub struct CornGame;
-impl Plugin for CornGame{
+impl Plugin for CornGame {
     fn build(&self, app: &mut bevy::prelude::App) {
+        // fn custom_layer(app: &mut App) -> Option<BoxedLayer> {
+        //     let logger = TracingDynamicSubscriber::default();
+        //     app.insert_resource(logger.clone());
+        //     Some(logger.boxed())
+        // }
+
         app.add_plugins(
             DefaultPlugins
-            .set(WindowPlugin{
-                    primary_window: Some(Window { 
-                        present_mode: bevy::window::PresentMode::AutoVsync,
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        present_mode: bevy::window::PresentMode::Mailbox,
                         ..default()
                     }),
                     ..default()
                 })
-            .set(AssetPlugin{
+                .set(AssetPlugin {
                     mode: AssetMode::Processed,
                     ..default()
-                }
-            )
-            // .set(bevy::log::LogPlugin {
-            //     level: bevy::log::Level::DEBUG,
-            //     filter: "debug,wgpu_hal=error,wgpu_core=error,corn_game=debug".to_string(),
-            //     ..default()
-            // })
+                })
+                // .set(LogPlugin {
+                //     level: bevy::log::Level::TRACE,
+                //     filter: "info,wgpu_hal=error,wgpu_core=error,corn_game=debug".to_string(),
+                //     custom_layer,
+                //     ..Default::default()
+                // }),
+                .disable::<LogPlugin>(),
         );
-        app.add_plugins((
-            CornAppPlugin,
-            CornGameECSPlugin
-        ));
+        app.add_plugins(bevy_editor_pls::default_windows::utils::log_plugin::LogPlugin::default());
+        app.add_plugins((CornAppPlugin, CornGameECSPlugin));
 
         app.insert_resource(Cli::parse());
-        app.sub_app_mut(RenderApp).add_systems(Startup, crank_render_generations);
+        app.sub_app_mut(RenderApp)
+            .add_systems(Startup, crank_render_generations);
         app.add_systems(Update, warn_synced_ids);
     }
 }
 
 /// deliberately desync render world and main world Entities to catch migration bugs faster.
 /// XXX have not been able to confirm this makes any difference
-fn crank_render_generations(world: &mut World){
-    let v : Vec<_> = (0..100).map(|_| world.spawn(()).id()).collect();
+fn crank_render_generations(world: &mut World) {
+    let v: Vec<_> = (0..100).map(|_| world.spawn(()).id()).collect();
     for e in v {
         world.despawn(e);
     }
 }
 
-fn warn_synced_ids(
-    query: Query<(Entity, &RenderEntity), Changed<RenderEntity>>
-){
+fn warn_synced_ids(query: Query<(Entity, &RenderEntity), Changed<RenderEntity>>) {
     for (id, r_id) in query.iter() {
         if id == r_id.id() {
             warn!("render world id's sync'd for {} don't rely on this", id);

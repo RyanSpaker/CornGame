@@ -2,10 +2,13 @@ use core::panic;
 use std::cell::RefCell;
 use std::time::Duration;
 
+use animation::MyAnimationState;
+use avian3d::math::PI;
 use bevy::ecs::bundle::DynamicBundle;
 use bevy::ecs::query::{QueryData, QuerySingleError, WorldQuery};
 use bevy::ecs::system::SystemParam;
 use bevy::gizmos::GizmoRenderSystem;
+use bevy::input::InputSystem;
 use bevy::pbr::LightEntity;
 /// This will implement the character controller and animations.
 /// 
@@ -23,9 +26,15 @@ use bevy::pbr::LightEntity;
 
 use bevy::{prelude::*, transform};
 use avian3d::prelude::*;
-use controller::CornGameCharController;
+use controller::{look_handler, CornGameCharController};
+use frunk::labelled::chars::Q;
 use leafwing_input_manager::plugin::InputManagerPlugin;
 use leafwing_input_manager::InputManagerBundle;
+use lightyear::prelude::client::ReplicateToServer;
+use lightyear::prelude::server::SyncTarget;
+use lightyear::prelude::{AppComponentExt, ClientReplicate, HasAuthority, ParentSync, ReplicateHierarchy, Replicated};
+use lightyear::shared::replication::components::InitialReplicated;
+use serde::{Deserialize, Serialize};
 
 use crate::ecs::main_camera::MainCamera;
 
@@ -58,6 +67,11 @@ impl Plugin for MyCharacterPlugin{
             FixedUpdate, // Update was causing jitter. but it might have just been gizmos.
             self::controller::input_handler.in_set(bevy_tnua::TnuaUserControlsSystemSet),
         );
+        app.add_systems(
+            FixedUpdate, // Update was causing jitter. but it might have just been gizmos.
+            self::controller::round_velocity.in_set(lightyear::client::input::InputSystemSet::WriteClientInputs),
+        );
+        app.add_systems(Update, look_handler);
         app.add_systems(Update, animation_test);
         app.add_observer(spawn_dehydrated_child_obs);
 
@@ -74,8 +88,19 @@ impl Plugin for MyCharacterPlugin{
                 commands.trigger(SpawnPlayerEvent::default());
             }
         });
+
+        app.register_type::<Character>();
+        app.register_component::<Character>(lightyear::prelude::ChannelDirection::Bidirectional);
+        app.add_systems(FixedPostUpdate, Player::init_network_character);
+
+        app.add_plugins(animation::plugin);
     }
 }
+
+/// current or networked player
+#[derive(Debug,Clone, Component, Reflect, Serialize, Deserialize, PartialEq)]
+#[reflect(Component)]
+pub struct Character;
 
 /// Anything that moves via tnua character controller -- might be NPC, might be other players
 #[derive(Debug, Component)]
@@ -84,10 +109,12 @@ impl Player {
     pub fn bundle() -> impl Bundle {
         (
             Player,
+            Character,
             Name::new("Player"),
             RigidBody::Dynamic,
             bevy_tnua::controller::TnuaController::default(),
-            bevy_tnua::TnuaAnimatingState::<self::animation::AnimationState>::default(),
+            //bevy_tnua::TnuaAnimatingState::<self::animation::AnimationState>::default(), // This doesn't seem to provide anything over rolling your own
+            MyAnimationState::Idle,
             bevy_tnua_avian3d::TnuaAvian3dSensorShape(Collider::cylinder(0.2, 0.0)), //XXX configure this in CornGameCharacterController
             CornGameCharController{
                 // height: 2.0,
@@ -96,10 +123,29 @@ impl Player {
                 // crouch_float:0.1,
                 ..default()
             },
+            // MaxAngularSpeed(2.0*PI * 10.0),
             
             InputManagerBundle::with_map(
                 Action::default_input_map(),
             ),
+
+            // BlueprintInfo::from_path("blueprints/construction_worker.glb"),
+            // SpawnBlueprint,
+            DehydratedChild::new(|_| (
+                Transform::from_xyz(0.0, -1.5, 0.0),
+                BlueprintInfo::from_path("blueprints/construction_worker.glb"),
+                SpawnBlueprint,
+                ReplicateOtherClients(true),
+            )),
+
+            ReplicateOtherClients(false),
+            // SyncTarget {
+            //     interpolation: lightyear::prelude::NetworkTarget::All,
+            //     ..default()
+            // },
+
+            // How to get other clients to attach RigidBody and collider
+
 
             // Hack to add spot light as child,
             // TODO make it so I can specify this as a asset and load it with scene / from commandline (also shpuld be able to disable scene items from command line or console)
@@ -123,6 +169,17 @@ impl Player {
             //         Collider::cylinder(0.0, 0.5)));
             // })
         )
+    }
+
+    pub fn init_network_character(
+        mut commands: Commands,
+        query: Query<Entity, (Added<Character>, With<Replicated>)>
+    ){
+        for entity in query.iter() {
+            commands.entity(entity).insert(
+                RigidBody::Kinematic
+            );
+        }
     }
 }
 
@@ -208,15 +265,15 @@ fn move_player_to_spawn_obs(
 
 #[derive(Component)]
 pub struct DehydratedChild {
-    bundle_factory: Option<Box<dyn FnOnce(&mut Commands) -> Entity + Send + Sync>>,
+    bundle_factory: Option<Box<dyn FnOnce(&mut Commands, Entity) -> Entity + Send + Sync>>,
 }
 
 impl DehydratedChild {
-    pub fn new<B: Bundle + Send + Sync + 'static>(bundle: B) -> Self {
+    pub fn new<B:Bundle, F: (Fn(Entity) -> B) + Send + Sync + 'static>(bundle:F) -> Self {
         Self {
-            bundle_factory: Some(Box::new( move |commands: &mut Commands| {
-                            commands.spawn(bundle).id()
-                        })),
+            bundle_factory: Some(Box::new( move |commands: &mut Commands, parent: Entity| {
+                commands.entity(parent).with_child(bundle(parent)).id()
+            })),
         }
     }
 }
@@ -229,8 +286,8 @@ fn spawn_dehydrated_child_obs(
 ) {
     let mut dehydrated_child = query.get_mut(trigger.entity()).expect("bad trigger?");
     let bundle_factory = dehydrated_child.bundle_factory.take().expect("should have callback");
-    let child = bundle_factory(&mut commands);
-    commands.entity(trigger.entity()).add_child(child).remove::<DehydratedChild>();
+    bundle_factory(&mut commands, trigger.entity());
+    commands.entity(trigger.entity()).remove::<DehydratedChild>();
 }
 
 
@@ -238,6 +295,7 @@ use blenvy::{BlueprintAnimationPlayerLink, BlueprintInfo, SpawnBlueprint};
 use blenvy::BlueprintAnimations;
 
 use super::interactions::Interactable;
+use super::network::ReplicateOtherClients;
 
 /// KEEP this, default behavior should be to play animations
 pub fn animation_test(

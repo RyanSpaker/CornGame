@@ -279,3 +279,101 @@ https://discord.com/channels/691052431525675048/742569353878437978/1313534904474
 ```
 2025-04-30T20:15:46.837688Z ERROR bevy_asset::processor: Failed to process asset blueprints/breaker.meta.ron: no `AssetLoader` found with the name 'bevy_asset::server::loaders::InstrumentedAssetLoader<bevy_common_assets::ron::RonAssetLoader<blenvy::blueprints::assets::BlueprintPreloadAssets>>'
 ```
+
+# Sun May  4 09:06:45 PM EDT 2025
+I would like to use the tumblin rushmeier tone mapping
+acerola: https://youtu.be/wbn5ULLtkHs?si=xLd-cEB3MxlnKweV
+
+cool point map lidar shader that was used in a backrooms game and reminds me of Zarn from lotl
+https://www.youtube.com/watch?v=YE5wwWFYWeE
+
+# Wed May  7 03:42:54 PM EDT 2025 
+There is a bug which causes the animation state to occasionally not get replicated to the server.
+1. Transform is still being updated
+2. I have confirmed the server doesn't receive the update. (either that or it thinks the value hasn't changed) 
+
+I've updated to the latest main branch of lightyear and have not been able to replicate the problem... so far.
+
+---
+
+I am switching to 10hz network rate. This makes the the lack of interpolation very noticable. However, that is weird, because I *am* replicating Velocity, at least I think I am... 
+
+OH! I'm probably not replicating rigid_body, so physics isn't even running on it. I should probably treat it as a kinematic body on receiving end, since it won't have the character controller to back it up.
+
+I notice the game runs exceptionally poorly when two instances are open.
+I have not profiled to determine why. It must be graphical. I have plenty of space cores. Happens even with networking disabled. As a sideffect physics is very borked.
+
+Actually the borked physics seems to be related to related to networking as I can't replicate it on the client (EDIT: I have replicated it on the client it is happens when framerate dips below ~20). Although it is often hard to replicate on the server. **it may have had to do with the using ReplicateToServer on a hostserver**. Commenting out velocity truncation seems to have also helped, but not totally prevented it.  Osciliations can occur in linear or angular velocity, but normally it's one or the other.
+
+---
+
+HAHAHAHAHAH I tried to screen record the vertical oscilations an it immediately crashed my gpu. I was able to screen record it later though.
+
+# Sat May 10 06:22:32 PM EDT 2025
+
+I am working on improving the inspector egui.
+I have an idea to make it more retained mode by gaving every window be a entity.
+
+annoyances:
+- dyn Trait doesn't allow const methods. so I had to make trait take &self
+  but &self points to a clone (i guess technically you could store some usefull info there)
+- fundemental problem with wanting to iterate over `Vec<Entity>` and do something with `&mut World` inside the loop, if the vec lives in the World
+
+- [x] make EditorWindows Components
+- [ ] make function to draw window a system
+- [ ] SystemParam for Link and resource fallback
+- [ ] better handle the aliased mutability problem
+  - sub app? something needs to copy the data only when needed, in both directions
+- [ ] register camera controls
+- [ ] seperate window mode checkbox
+- [x] make Game view a normal window.
+- [ ] views
+  - [x] gameview window
+  - [ ] build debug menu with avian3d collider checkbox
+  - [ ] filter presets in Hierarchy window
+  - [x] metrics view
+  - [ ] animation-graph-view
+  - [ ] logs view
+  - [ ] system/render graph view
+    - blocked on 0.16 due to transative deps needed to use bevy_mod_debugdump with graphviz and petgraph
+  - [x] log settings
+- [ ] GizmoConfigStore should be reflect
+
+NOTE: https://github.com/joseph-gio/bevy-trait-query/issues/77 
+breaks with bevy_ecs/track_change_detection
+
+- [ ] BUG: why does having editor open disable the flip-breaker interaction unless I hold click?
+- [ ] BUG: why do controls on additional cameras not do anything.
+- [ ] BUG: game camera tab doesn't get name until visible, 
+  - b/c it's target is set in ui()
+- [ ] FEATURE: checkbox for whether to remember folding per entity or for all entities? (per archetype?)
+- [x] BUG: crash when clicking on entities? 
+  - can't reproduce, seems something I did fixed it.
+
+- [ ] FEATURE: much better gizmos
+
+# Tue May 13 11:19:39 PM EDT 2025
+Some fun unsafe stuff for bevy_editor_pls. Got some help in the discord.
+https://discord.com/channels/691052431525675048/742569353878437978/1371946114554658817
+￼
+https://github.com/segfault-s-pull-requests/bevy_editor_pls/blob/588543f679989d7c592263c20eacedb3eb8cf2bf/crates/bevy_editor_pls_core/src/editor_window.rs#L53-L70
+
+# Fri May 16 04:54:41 PM EDT 2025
+okay I need to get back to work on the actual game.
+
+Needed for demo:
+- [ ] merge ryan
+- [ ] menu -> networking (mock up up with egui)
+  - [ ] level (un)loading / starting for server
+- [ ] interaction networking (just use message ie. by hand)
+  - [ ] picking up items? 
+- [ ] light switch (reimplement old simple behavior)
+- [ ] monster (networked)
+- [ ] death screen (networked?)
+- [ ] win screen (escape the maze) fadeout screen effect and car noise? wind? hmm...
+  - "you get a feeling he isn't coming"
+- [ ] audio chat
+  
+Then 0.16
+Then get it working in the browser?
+Then cleanup?

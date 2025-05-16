@@ -44,7 +44,7 @@ impl Plugin for CornAppPlugin{
             .add_plugins((
                 MyEditorPlugin,
                 //MyConsolePlugin,
-                bevy_inspector_egui::quick::WorldInspectorPlugin::new(),
+                // bevy_inspector_egui::quick::WorldInspectorPlugin::new(),
                 bevy::remote::RemotePlugin::default(),
                 bevy::remote::http::RemoteHttpPlugin::default(),
                 bevy_remote_inspector::RemoteInspectorPlugins
@@ -67,7 +67,7 @@ impl Plugin for CornAppPlugin{
                     CornGameState::Gameplay,
                     CornGameState::Exit
                 ),
-                // MyAudioPlugin // TODO need way to enable disable plugins with config/cli args/env vars
+                MyAudioPlugin // TODO need way to enable disable plugins with config/cli args/env vars
             ))
             
             .add_plugins((physics::MyPhysicsPlugin, character::MyCharacterPlugin, interactions::InteractPlugin));

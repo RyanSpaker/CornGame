@@ -34,6 +34,7 @@
             vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
             lutris
             xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr # To use the x11 feature
+            wayland
             libxkbcommon
           ];
       in
@@ -74,7 +75,7 @@
 
           # https://github.com/rust-lang/rustc_codegen_cranelift
           #CARGO_PROFILE_DEV_CODEGEN_BACKEND = "cranelift";
-          RUSTFLAGS = "-C link-arg=-fuse-ld=mold -C linker=clang";
+          RUSTFLAGS = "--cfg tracing_unstable -C link-arg=-fuse-ld=mold -C linker=clang";
         };
       }
     );

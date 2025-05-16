@@ -61,3 +61,12 @@ bevy_console continually grows, probably a bug in that.
 
 crazy client flickering of physics when networking
 - seems that moving name_sync_test system to preupdate fixed this.
+
+## controller
+- [ ] don't send data when player isn't moving
+  - either round velocity or switch to networking inputs.
+- [ ] why does game sometimes run really badly when two instances are open?
+  - [ ] why does character physics break (oscillations) at low frame rates.
+- [x] test client->server->otherclient replication for character
+  - DONE: although testing was limited as I was getting 5fps per above issue.
+  - [ ] test with hierarchy

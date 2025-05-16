@@ -1,5 +1,6 @@
 use avian3d::math::PI;
-use avian3d::prelude::{collider, Collider, ColliderParent, ColliderTransform};
+use avian3d::prelude::{collider, Collider, ColliderParent, ColliderTransform, LinearVelocity};
+use bevy::math::VectorSpace;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 use bevy_tnua::prelude::*;
@@ -11,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::app::physics::ColliderFor;
 use crate::ecs::main_camera::MainCamera;
 
+use super::animation::MyAnimationState;
 use super::input::Action;
 
 #[derive(Debug, Component, Reflect, Serialize, Deserialize)]
@@ -54,6 +56,43 @@ impl Default for CornGameCharController {
     }
 }
 
+pub fn look_handler(
+    mut query: Query<
+        &ActionState<Action>,
+        ( 
+            Without<crate::ecs::main_camera::MainCamera>, 
+            With<CornGameCharController> 
+        )
+    >,
+    mut camera: Query<&mut Transform, With<crate::ecs::main_camera::MainCamera>>,
+    window: Query<&mut Window, With<PrimaryWindow>>,
+){
+        let Ok(mut camera) = camera.get_single_mut() else {
+            return;
+        };
+
+        let Ok(mut input) = query.get_single_mut() else {
+            return;
+        };
+
+        let mut mouse = input.axis_pair(&Action::Pan);
+        if let Ok(window) = window.get_single(){
+            if window.cursor_options.grab_mode != CursorGrabMode::Locked {
+                mouse = default();
+            }
+        }
+
+        let sensitivity = 0.002;
+        let (mut yaw, mut pitch, _) = camera.rotation.to_euler(EulerRot::YXZ);
+        yaw -= sensitivity * mouse.x;
+        pitch -= sensitivity * mouse.y;
+        pitch = pitch.clamp(-1.54, 1.54);
+
+        let yaw_rot = Quat::from_rotation_y(yaw);
+        camera.rotation = yaw_rot * Quat::from_rotation_x(pitch);
+
+}
+
 // controls the main camera and the Player entity (these are intractibly linked)
 // camera should not be a child of player, you need flexibility to decouple these
 // the player *can* have a mesh, but it might not (on other clients for example), but lets assume for now character controller only runs for player and server
@@ -66,6 +105,7 @@ pub fn input_handler(
             &ActionState<Action>,
             &mut TnuaController,
             &CornGameCharController,
+            &mut MyAnimationState,
         ),
         Without<crate::ecs::main_camera::MainCamera>,
     >,
@@ -77,7 +117,8 @@ pub fn input_handler(
         return;
     };
 
-    for (id, transform, input, mut controller, config) in query.iter_mut() {
+    assert!( query.iter().count() <= 1);
+    for (id, transform, input, mut controller, config, mut anim_state) in query.iter_mut() {
         let collider = colliders.iter_mut().find(|c|c.0.get() == id);
         
         if collider.is_none() {
@@ -87,31 +128,29 @@ pub fn input_handler(
 
         let (_, mut collider, mut c_trans) = collider.unwrap();
 
-        let mut mouse = input.axis_pair(&Action::Pan);
         let mut direction = input.clamped_axis_pair(&Action::Move);
+
+        if direction == Vec2::ZERO {
+            anim_state.set_if_neq(MyAnimationState::Idle);
+        }else{
+            anim_state.set_if_neq(MyAnimationState::Walk(direction));
+        }
 
         // Only allow input when cursor is grabbed
         // TODO, we should do this on the input side instead of here.
         // TODO need a generic framework for claiming inputs
         if let Ok(window) = window.get_single(){
             if window.cursor_options.grab_mode != CursorGrabMode::Locked {
-                mouse = default();
                 direction = default();
             }
         }
 
-        let sensitivity = 0.002;
-        let (mut yaw, mut pitch, _) = camera.rotation.to_euler(EulerRot::YXZ);
-        yaw -= sensitivity * mouse.x;
-        pitch -= sensitivity * mouse.y;
-        pitch = pitch.clamp(-1.54, 1.54);
-
-        let yaw_rot = Quat::from_rotation_y(yaw);
-        camera.rotation = yaw_rot * Quat::from_rotation_x(pitch);
         camera.translation = transform.translation + Vec3::new(0., 0.0, 0.);
 
         let mut direction = direction.extend(0.0).xzy();
         direction.z = -direction.z;
+        let (yaw,_,_) = camera.rotation.to_euler(EulerRot::YXZ);
+        direction = Quat::from_euler(EulerRot::YXZ, yaw, 0.0, 0.0) * direction;
 
         let speed = match input.pressed(&Action::Run) {
             true => config.dash_speed,
@@ -122,7 +161,7 @@ pub fn input_handler(
         let forward = camera.forward().reject_from(Vec3::Y).normalize_or_zero();
 
         let basis = TnuaBuiltinWalk {
-            desired_velocity: yaw_rot * direction * speed,
+            desired_velocity: direction * speed,
             desired_forward: forward.try_into().ok(),
             acceleration: config.acceleration,
             float_height: config.eye_height,
@@ -155,6 +194,20 @@ pub fn input_handler(
             //     controller.action(TnuaBuiltinDash::default());
             // }
         }
-
     }
 }
+
+pub fn round_velocity(
+    mut query: Query<&mut LinearVelocity, With<CornGameCharController> >
+){
+    for mut v in query.iter_mut(){
+        if v.0 != Vec3::ZERO && v.length() < 0.0001 {
+            // v.0 = Vec3::ZERO;
+        }
+    }
+}
+                // |q:Query<(Entity, &LinearVelocity), With<CornGameCharController>>|{ 
+                //     for (i,v) in q.iter(){
+                //         info!("{} {:?}", i, v);
+                //     }
+                // }

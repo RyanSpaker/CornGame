@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = { version = "0.15.3", default-features = true, features = ["dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher", "default_font", "jpeg", "track_change_detection", "bevy_remote"] }
+# NOTE: https://github.com/joseph-gio/bevy-trait-query/issues/77 breaks with bevy_ecs/track_change_detection
+bevy = { version = "0.15.3", default-features = true, features = ["trace_tracy", "track_change_detection", "dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher", "default_font", "jpeg", "bevy_remote"] }
 blenvy = { path = "./forks/Blenvy/crates/blenvy"}
 
 bevy_editor_pls = "0.11" #minimal editor
@@ -25,7 +26,7 @@ image = "0.25.5"
 bevy-tnua = "0.21.0"
 bevy-tnua-avian3d = "0.2.0"
 avian3d = { version = "0.2.1", features = ["serialize"]}
-lightyear = {version="0.19", features = ["avian3d", "track_change_detection"]}
+lightyear = {version="0.19", features = ["avian3d", "track_change_detection", "metrics"]}
 leafwing-input-manager = "0.16.0"
 macaw = "0.19.1"
 #bevy_console = "0.13.1"
@@ -40,6 +41,8 @@ bevy_easings = "0.15.0"
 frunk = "0.4.3"
 bevy_asset_loader = "0.22.0"
 aligned-vec = "0.6.4"
+bevy_metrics_dashboard = { version = "0.6", features = ["bevy_egui"]}
+bevy-trait-query = { version = "*", features = ["track_change_detection"]}
 
 [profile.dev]
 opt-level = 1
@@ -53,4 +56,7 @@ transform-gizmo-bevy = { git = "https://github.com/ActuallyHappening/transform-g
 bevy-tnua-avian3d = { path = "./forks/bevy-tnua/avian3d" }
 bevy-tnua-physics-integration-layer = { path = "./forks/bevy-tnua/physics-integration-layer" }
 lightyear = { path = "forks/lightyear/lightyear" }
+bevy-inspector-egui = { path = "forks/bevy-inspector-egui/crates/bevy-inspector-egui" }
+bevy-trait-query = { path = "forks/bevy-trait-query/bevy-trait-query" }
+egui_dock = { path = "forks/egui-dock/" }
 #avian3d = {git = "https://github.com/Jondolf/avian.git"}

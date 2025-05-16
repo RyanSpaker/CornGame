@@ -18,6 +18,8 @@ use bevy::{
 use bevy_editor_pls::egui::TextStyle;
 use blenvy::{AnimationMarkerReached, BlueprintAnimationPlayerLink, BlueprintAnimations};
 use frunk::{hlist::HList, Generic};
+use lightyear::prelude::{server::ServerTriggerExt, AppTriggerExt, ChannelDirection};
+use serde::{Deserialize, Serialize};
 
 use super::character::Player;
 
@@ -43,6 +45,10 @@ impl Plugin for InteractPlugin {
         app.register_type::<InteractionText>();
         app.register_type::<Pickup>();
         app.register_type::<Held>();
+
+        app.register_trigger::<Interaction>(ChannelDirection::Bidirectional);
+
+        // for debugging a blenvy issue
         app.register_type::<HashMapTest>();
         app.register_type::<HashMapTest2>();
         app.register_type::<HashMapTest3>();
@@ -94,7 +100,6 @@ impl Pickup {
         mut player: Query<(Entity, &Player)>,
     ) {
         // HERE need to handle rigidbody, and add damping to outer rocket
-
         let Ok((entity, pickup, mut interactable, gt)) = query.get_mut(ev.entity()) else {
             return;
         };
@@ -223,6 +228,10 @@ impl ToggleInteractionBlender {
         state.0 = !state.0;
         debug!("{} toggle {}", ev.entity(), state.0);
 
+        //HERE just send lightyear message with Uid or even just Name
+        // with a manual handler which sends it to all other clients (on server)
+        // and triggers this (on client). With something to prevent resending to server. (EventId doesn't exist for Trigger?)
+
         if let Ok((link, animations)) = animated.get(ev.entity()) {
             let (mut animation_player, mut animation_transitions) =
                 animation_players.get_mut(link.0).unwrap();
@@ -302,7 +311,7 @@ pub struct Interactable {
     active: bool,
 }
 
-#[derive(Debug, Clone, Event, Reflect)]
+#[derive(Debug, Clone, Event, Reflect, Serialize, Deserialize)]
 pub struct Interaction;
 
 #[derive(Debug, Clone, Component, Reflect)]
