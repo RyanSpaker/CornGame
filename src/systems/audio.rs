@@ -1,7 +1,7 @@
 use std::{ops::AddAssign, time::Duration};
 use bevy::{audio::Volume, ecs::{component::ComponentId, entity::EntityHashMap, world::DeferredWorld}, prelude::*};
 use crate::{
-    ecs::{cameras::MainCamera, corn::field::cf_image_carved::CornSensor, flycam::FlyCamMoveEvent},
+    ecs::{cameras::MainCamera, corn::CornSensor, flycam::FlyCamMoveEvent},
     util::{math::lerp, observer_ext::{ObserveAsAppExt, ObserverParent}},
 };
 
@@ -204,11 +204,11 @@ impl Footsteps{
     fn adjust_footsteps(
         time: Res<Time>,
         move_events: EventReader<FlyCamMoveEvent>,
-        camera: Query<(&CornSensor, &Transform), With<MainCamera>>,
+        camera: Query<(&Transform, &CornSensor), With<MainCamera>>,
         mut factors: Query<(&mut AudioFactor, &mut Self)>
     ){
         let moving = !move_events.is_empty();
-        let Ok((sensor, t)) = camera.get_single() else {
+        let Ok((t, sensor)) = camera.get_single() else {
             return;
         };
         let flying = t.translation.y > 2.0; //MOVEME

@@ -4,7 +4,7 @@ pub mod main_menu;
 pub mod lobby;
 
 use bevy::{core_pipeline::{bloom::Bloom, tonemapping::Tonemapping}, pbr::{ScreenSpaceReflections, VolumetricFog}, prelude::*};
-use crate::{ecs::{cameras::MainCamera, corn::field::cf_image_carved::CornSensor, flycam::FlyCam, framerate::spawn_fps_text}, systems::scenes::{CornScene, SceneTransitionApp}};
+use crate::{ecs::{cameras::MainCamera, corn::CornSensor, flycam::FlyCam, framerate::spawn_fps_text}, systems::scenes::{CornScene, SceneTransitionApp}};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
 #[reflect(Component)]
