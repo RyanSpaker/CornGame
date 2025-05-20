@@ -46,7 +46,6 @@ impl Plugin for CornGame{
             scenes::CornScenesPlugin,
             ecs::CornECSPlugin
         ));
-
         app.insert_resource(Cli::parse());
         app.sub_app_mut(RenderApp).add_systems(Startup, crank_render_generations);
         app.add_systems(Update, warn_synced_ids);

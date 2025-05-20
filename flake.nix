@@ -34,6 +34,7 @@
           vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
           lutris
           xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr # To use the x11 feature
+          wayland
           libxkbcommon
         ];
       in
@@ -49,7 +50,9 @@
             rust-analyzer
             rust.complete.toolchain
             pkg-config
+            linuxPackages_latest.perf
 
+            cargo-udeps
             cargo-limit # cargo lcheck, prioritize errors
             cargo-machete #check for unused deps in cargo.toml
             cargo-llvm-lines #info on generic function copies
@@ -74,7 +77,7 @@
 
           # https://github.com/rust-lang/rustc_codegen_cranelift
           #CARGO_PROFILE_DEV_CODEGEN_BACKEND = "cranelift";
-          RUSTFLAGS = "-C link-arg=-fuse-ld=mold -C linker=clang";
+          RUSTFLAGS = "-C link-arg=-fuse-ld=mold -C linker=clang -Clink-arg=-Wl,--no-rosegment";
         };
       }
     );

@@ -1,18 +1,18 @@
 pub mod shader;
 pub mod init;
 pub mod scan_prepass;
-pub mod mesh;
+pub mod asset;
+pub mod render;
 
 use bevy::{prelude::*, render::{
-    extract_component::{ExtractComponent, ExtractComponentPlugin}, 
-    extract_resource::{ExtractResource, ExtractResourcePlugin}, 
-    render_resource::*, renderer::RenderDevice, Render, RenderApp, RenderSet
+    batching::NoAutomaticBatching, extract_component::{ExtractComponent, ExtractComponentPlugin}, extract_resource::{ExtractResource, ExtractResourcePlugin}, render_resource::*, renderer::RenderDevice, view::NoFrustumCulling, Render, RenderApp, RenderSet
 }};
 use bytemuck::{Pod, Zeroable};
 use init::{simple::SimpleInitShader, CornInitializationPlugin};
-use mesh::CornModelPlugin;
+use asset::CornModelPlugin;
+use render::CornRenderPlugin;
 use scan_prepass::ScanPrepassPlugin;
-use crate::{scenes::lobby::LobbyScene, systems::scenes::OnSpawnScene};
+use crate::{scenes::lobby::LobbyScene, systems::{scenes::OnSpawnScene, util::default_resources::SimpleMaterials}, util::observer_ext::ObserverParent};
 
 pub const LOD_COUNT: u32 = 5;
 
@@ -33,13 +33,14 @@ pub struct CornData{
 }
 impl CornData{
     pub const DATA_SIZE: u64 = 32;
+    pub const VERTEX_DATA_SIZE: u64 = 64;
 }
 
 /// Top level Tag Component for Corn Fields. 
 /// Each entity with a CornField and CornPositionInitializer Component has a corresponding Buffer of corn stalk instances in the render app.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component, ExtractComponent)]
 #[reflect(Component)]
-#[require(Transform, Visibility)]
+#[require(Transform, Visibility, NoFrustumCulling, NoAutomaticBatching(|| NoAutomaticBatching))]
 pub struct CornField;
 
 /// Global resource for lod cutoffs
@@ -142,6 +143,16 @@ impl VertexInstanceBuffer{
     }
 }
 
+/// Parent entity for all corn field observers
+#[derive(Debug, Default, Clone, PartialEq, Eq, Reflect, Component)]
+pub struct CornFieldObserver;
+impl ObserverParent for CornFieldObserver{
+    fn get_name(&self) -> Name {
+        Name::from("Corn Field Observers")
+    }
+}
+
+/// Adds all corn field functionality to the app
 pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin{
     fn build(&self, app: &mut App) {
@@ -162,7 +173,7 @@ impl Plugin for CornFieldComponentPlugin{
             .sub_app_mut(RenderApp).add_systems(Render, (
                 IndirectBuffer::spawn_indirect, VertexInstanceBuffer::spawn_vertex_buffer
             ).in_set(RenderSet::PrepareResources));
-        app.add_plugins((CornInitializationPlugin, ScanPrepassPlugin, CornModelPlugin));
+        app.add_plugins((CornInitializationPlugin, ScanPrepassPlugin, CornModelPlugin, CornRenderPlugin));
 
         app.add_systems(OnSpawnScene(LobbyScene), test_init);
     }
@@ -174,7 +185,8 @@ pub struct CornSensor{
 }
 
 pub fn test_init(
-    mut commands: Commands
+    mut commands: Commands,
+    default_resources: Res<SimpleMaterials>
 ){
     commands.spawn((
         CornField,
@@ -184,6 +196,8 @@ pub fn test_init(
             UVec2::new(11, 11), 
             Vec2::new(0.9, 1.1), 
             0.0
-        )
+        ),
+        Transform::from_xyz(0.0, 2.0, 0.0),
+        MeshMaterial3d(default_resources.red.clone())
     ));
 }

@@ -14,6 +14,7 @@ clap = {version = "*", features = ["derive"]}
 rand = "0.9.0"
 bytemuck = "1.14.1"
 futures-lite = "2.2.0"
+async-channel = "2.3.1"
 uuid = "*"
 
 wgpu-types = "23"
@@ -25,19 +26,13 @@ bevy-tnua-avian3d = "0.2.0"
 avian3d = { version = "0.2.1", features = ["serialize"]}
 lightyear = {version="0.19", features = ["avian3d", "track_change_detection"]}
 leafwing-input-manager = "0.16.0"
-macaw = "0.19.1"
-#bevy_console = "0.13.1"
 prse = "1.2.1"
 auto_enums = "0.8.5"
-bevy_animation_graph = "0.6.0"
 bevy_edge_detection = "0.15.4"
-i-cant-believe-its-not-bsn = "0.3.0"
 bevy_remote_inspector = "0.1.0"
 bevy-inspector-egui = "*"
 bevy_easings = "0.15.0"
 frunk = "0.4.3"
-bevy_asset_loader = "0.22.0"
-aligned-vec = "0.6.4"
 
 [profile.dev]
 opt-level = 1
@@ -45,10 +40,12 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
+[profile.dev.package.corn_game]
+opt-level = 1
+
 [patch.crates-io]
 bevy_editor_pls = { path = "forks/bevy_editor_pls/crates/bevy_editor_pls/" }
 transform-gizmo-bevy = { git = "https://github.com/ActuallyHappening/transform-gizmo" }
 bevy-tnua-avian3d = { path = "./forks/bevy-tnua/avian3d" }
 bevy-tnua-physics-integration-layer = { path = "./forks/bevy-tnua/physics-integration-layer" }
 lightyear = { path = "forks/lightyear/lightyear" }
-#avian3d = {git = "https://github.com/Jondolf/avian.git"}

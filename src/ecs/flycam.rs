@@ -70,7 +70,7 @@ impl Plugin for FlyCamPlugin{
 
 fn toggle_focused(
     mut commands: Commands,
-    query: Query<(Entity, Option<&Focused>)>,
+    query: Query<(Entity, Option<&Focused>), With<FlyCam>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut windows: Query<&mut Window, (With<PrimaryWindow>, Without<FlyCam>)>,
     keybinds: Res<FlyCamKeybinds>

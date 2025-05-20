@@ -14,8 +14,6 @@
 #import bevy_render::globals::Globals
 @group(0) @binding(1) var<uniform> globals: Globals;
 
-var<push_constant> base_instance: i32;
-
 fn get_instance_index(instance_index: u32) -> u32 {
     return u32(base_instance) + instance_index;
 }
@@ -61,9 +59,10 @@ struct Vertex {
 #endif
 
 #ifdef CORN_INSTANCED
-    @location(8) offset_scale: vec4<f32>,
-    @location(9) rotation: vec2<f32>,
-    @location(10) id: vec2<u32>,
+    @location(8) corn_col1: vec4<f32>,
+    @location(9) corn_col2: vec4<f32>,
+    @location(10) corn_col3: vec4<f32>,
+    @location(11) corn_col4: vec4<f32>,
 #endif
 
 #ifdef MORPH_TARGETS

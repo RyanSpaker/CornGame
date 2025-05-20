@@ -16,13 +16,6 @@
 #import bevy_render::globals::Globals
 @group(2) @binding(100) var<uniform> time: f32;
 
-struct PushConstants {
-    base_instance: i32,
-    time: f32
-}
-
-var<push_constant> push_constants: PushConstants;
-
 fn get_instance_index(instance_index: u32) -> u32 {
     return u32(push_constants.base_instance) + instance_index;
 }
@@ -56,9 +49,10 @@ struct Vertex {
     @location(7) joint_weights: vec4<f32>,
 #endif
 #ifdef CORN_INSTANCED
-    @location(8) offset_scale: vec4<f32>,
-    @location(9) rotation: vec2<f32>,
-    @location(10) id: vec2<u32>,
+    @location(8) corn_col1: vec4<f32>,
+    @location(9) corn_col2: vec4<f32>,
+    @location(10) corn_col3: vec4<f32>,
+    @location(11) corn_col4: vec4<f32>,
 #endif
 #ifdef MORPH_TARGETS
     @builtin(vertex_index) index: u32,
