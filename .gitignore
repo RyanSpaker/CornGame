@@ -2,5 +2,6 @@
 /.vscode
 /imported_assets
 /assets/**/*.meta
+/shaders/**/*.meta
 /.direnv
 .envrc
