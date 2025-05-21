@@ -1,18 +1,11 @@
 use crate::util::{observer_ext::ObserveAsAppExt, specialized_material::{SpecializedDrawMaterial, SpecializedDrawPrepass, SpecializedMaterialPlugin}};
 use super::{CornData, CornField, CornFieldObserver, CornLoaded, IndirectBuffer, VertexInstanceBuffer, LOD_COUNT};
 use bevy::{
-    asset::Asset, 
-    ecs::{query::ROQueryItem, system::{lifetimeless::{Read, SRes}, SystemParamItem}}, 
-    pbr::{ExtendedMaterial, MaterialExtension, RenderMeshInstances, StandardMaterial}, 
-    prelude::*, reflect::Reflect, 
-    render::{
-        render_asset::RenderAssets,
-        mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo}, 
-        render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, 
-        render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}
-    }
+    asset::Asset, ecs::{query::ROQueryItem, system::{lifetimeless::{Read, SRes}, SystemParamItem}}, log::Level, pbr::{ExtendedMaterial, MaterialExtension, RenderMeshInstances, StandardMaterial}, prelude::*, reflect::Reflect, render::{
+        mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}
+    }, utils::tracing::event
 };
-use wgpu::vertex_attr_array;
+use wgpu::{vertex_attr_array, IndexFormat, PushConstantRange, ShaderStages};
 
 /// Corn rendering uses a Special Material which expands upon the `StandardMaterial` adding instancing support.
 /// We add this material to the app with `SpecializedMaterialPlugin`, which allows us to override the Draw commands used by the Material.
@@ -20,8 +13,8 @@ use wgpu::vertex_attr_array;
 /// This makes it so that we can Draw the corn instanced, while using the Standard Material by remaking the vertex shader, and overriding the draw command.
 
 mod shaders {
-    pub const INSTANCED_VERTEX: &str = "shaders/corn/render/instanced_vertex.wgsl";
-    pub const PREPASS_INSTANCED_VERTEX: &str = "shaders/corn/render/prepass_instanced_vertex.wgsl";
+    pub const INSTANCED_VERTEX: &str = "shaders/corn/render/vertex.wgsl";
+    pub const PREPASS_INSTANCED_VERTEX: &str = "shaders/corn/render/prepass.wgsl";
 }
 
 /// The material type of the corn anchor asset
@@ -83,6 +76,7 @@ impl MaterialExtension for CornMaterialExtension {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: vertex_attr_array![8 => Float32x4, 9 => Float32x4, 10 => Float32x4, 11 => Float32x4].to_vec(),
         });
+        descriptor.push_constant_ranges.push(PushConstantRange{stages: ShaderStages::VERTEX, range: 0..4});
         Ok(())
     }
 }
@@ -125,6 +119,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
 
         pass.set_vertex_buffer(0, vertex_buffer_slice.buffer.slice(..));
         pass.set_vertex_buffer(1, instance_buffer.slice(..));
+        pass.set_push_constants(ShaderStages::VERTEX, 0, bytemuck::cast_slice(&[item.batch_range().start]));
 
         // Draw either directly or indirectly, as appropriate.
         match &gpu_mesh.buffer_info {
@@ -133,11 +128,20 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
             } => {
                 let Some(index_buffer_slice) = mesh_allocator.mesh_index_slice(&mesh_asset_id)
                 else {return RenderCommandResult::Skip;};
-                pass.set_index_buffer(index_buffer_slice.buffer.slice(..), 0, *index_format);
-
+                let (start, end) = match index_format{
+                    IndexFormat::Uint16 => {
+                        (index_buffer_slice.range.start as u64*2, index_buffer_slice.range.end as u64*2)
+                    },
+                    IndexFormat::Uint32 => {
+                        (index_buffer_slice.range.start as u64*4, index_buffer_slice.range.end as u64*4)
+                    }
+                };
+                pass.set_index_buffer(index_buffer_slice.buffer.slice(start..end), 0, *index_format);
+                event!(Level::TRACE, "Rendering Corn, indexed: {}", true);
                 pass.multi_draw_indexed_indirect(indirect_buffer, 0, LOD_COUNT);
             }
             RenderMeshBufferInfo::NonIndexed => {
+                event!(Level::TRACE, "Rendering Corn, indexed: {}", false);
                 pass.multi_draw_indirect(indirect_buffer, 0, LOD_COUNT);
             }
         }

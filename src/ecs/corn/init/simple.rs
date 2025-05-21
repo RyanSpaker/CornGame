@@ -117,7 +117,8 @@ impl AsCornInitShader for SimpleInitShader{
     }
     
     fn get_invocation_count(settings: &Self::Settings) -> UVec3 {
-        UVec3::new(settings.resolution.x.div_ceil(16), settings.resolution.y.div_ceil(16), 1)
+        let count = Self::get_instance_count(settings);
+        UVec3::new(count.div_ceil(256) as u32, 1, 1)
     }
 }
 impl From<&SimpleInitShader> for SimpleInitShaderSettings{
@@ -241,6 +242,7 @@ impl AsCornInitShader for SimpleHexagonalInitShader{
     }
     
     fn get_invocation_count(settings: &Self::Settings) -> UVec3 {
+        todo!();
         let (width, height) = settings.get_resolution();
         UVec3::new(width.div_ceil(16) as u32, height.div_ceil(16) as u32, 1)
     }

@@ -1,12 +1,13 @@
 //! Traditional Scan Prepass Algorithm. Data is stored in an instance buffer, voted on, and then copied to a vertex buffer
 use std::num::NonZero;
 use bevy::{
-    core_pipeline::core_3d::graph::Core3d, pbr::graph::NodePbr, prelude::*, 
+    core_pipeline::core_3d::graph::Core3d, 
+    ecs::system::lifetimeless::Read, 
+    pbr::{graph::NodePbr, RenderMeshInstances}, 
+    prelude::*, 
     render::{
-        extract_component::{ExtractComponent, ExtractComponentPlugin}, 
-        render_graph::*, render_resource::*, 
-        renderer::{RenderContext, RenderDevice}, 
-        view::ExtractedView, Render, RenderApp, RenderSet
+        extract_component::{ExtractComponent, ExtractComponentPlugin}, mesh::allocator::MeshAllocator, render_graph::*, render_resource::*, 
+        renderer::{RenderContext, RenderDevice}, sync_world::MainEntity, view::ExtractedView, Render, RenderApp, RenderSet
     }
 };
 use bytemuck::{Pod, Zeroable};
@@ -14,6 +15,15 @@ use wgpu::{BindGroupLayoutEntry, BindingType, BufferBindingType, ShaderStages};
 use wgpu_types::BufferDescriptor;
 use crate::ecs::{cameras::MainCamera, corn::CornField};
 use super::super::{CornLoaded, GlobalLodCutoffs, IndirectBuffer, InstanceBuffer, VertexInstanceBuffer, LOD_COUNT};
+
+#[derive(Default, Debug, Clone, PartialEq, Reflect, Component)]
+pub struct CornFieldTransform(pub Transform);
+impl ExtractComponent for CornFieldTransform{
+    type Out = Self;
+    type QueryData = Read<GlobalTransform>;
+    type QueryFilter = ();
+    fn extract_component(item: bevy::ecs::query::QueryItem<'_, Self::QueryData>) -> Option<Self::Out> {Some(Self(item.compute_transform()))}
+}
 
 /// Struct mirroring the config data needed for the vote-scan-compact shaders. Passed in as a buffer
 #[derive(Clone, Copy, Default, Debug, Zeroable, Pod, ShaderType)]
@@ -57,7 +67,7 @@ impl FromWorld for VoteScanPipelineResources{
             pipelines.push(cache.queue_compute_pipeline(ComputePipelineDescriptor{
                 label: Some("Scan Prepass Vote Stage".into()),
                 layout: vec![layout.clone()],
-                push_constant_ranges: vec![PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*LOD_COUNT)}],
+                push_constant_ranges: vec![PushConstantRange{stages: ShaderStages::COMPUTE, range: 0..(4*LOD_COUNT+4)}],
                 shader: shader.clone(),
                 shader_defs: vec![
                     ShaderDefVal::UInt("OVERRIDE_LOD_COUNT".to_string(), LOD_COUNT)
@@ -144,7 +154,7 @@ impl VoteScanBuffers{
         }
     }
     fn update_config(
-        mut query: Query<(&mut Self, &GlobalTransform)>,
+        mut query: Query<(&mut Self, &CornFieldTransform)>,
         camera: Query<&ExtractedView, With<MainCamera>>,
         render_device: Res<RenderDevice>
     ){
@@ -153,7 +163,7 @@ impl VoteScanBuffers{
         let w2c = view.clip_from_view*view.world_from_view.compute_matrix().inverse();
 
         for (mut buffers, transform) in query.iter_mut(){
-            let field_to_world = transform.compute_matrix();
+            let field_to_world = transform.0.compute_matrix();
             let field_to_clip = w2c*field_to_world;
             let cam_pos_field = field_to_world.inverse().mul_vec4(cam_pos);
             buffers.data_upload = render_device.create_buffer_with_data(&BufferInitDescriptor { 
@@ -196,7 +206,6 @@ impl VoteScanBindGroup{
     }
 }
 
-
 /// Render Graph Label for Init Operations
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq, RenderLabel)]
 struct VoteScanStage;
@@ -214,8 +223,10 @@ impl bevy::render::render_graph::Node for VoteScanNode{
         &self, _graph: &mut RenderGraphContext, render_context: &mut RenderContext<'w>, world: &'w World,
     ) -> Result<(), NodeRunError> {
         let global_cutoffs = world.resource::<GlobalLodCutoffs>();
-        // Get corn field data. Bind Group, dispatch count, Lod Push Constants, Config Buffer src/dst
-        let field_data: Vec<(BindGroup, [u32; 4], Vec<u8>, (Buffer, Buffer))> = self.ready_entities.iter().filter_map(|entity| {
+        let mesh_instances = world.resource::<RenderMeshInstances>();
+        let allocator = world.resource::<MeshAllocator>();
+        // Get corn field data. Bind Group, dispatch count, vertex offset, Lod Push Constants, Config Buffer src/dst
+        let field_data: Vec<(BindGroup, [u32; 4], u32, Vec<u8>, (Buffer, Buffer))> = self.ready_entities.iter().filter_map(|entity| {
             let Some(VoteScanBindGroup(bindgroup, dispatch)) = world.get::<VoteScanBindGroup>(*entity) else {return None;};
             let Some(buffers) = world.get::<VoteScanBuffers>(*entity) else {return None;};
             let lods = match world.get::<PerFieldLodCutoffs>(*entity) {
@@ -224,7 +235,13 @@ impl bevy::render::render_graph::Node for VoteScanNode{
                 Some(PerFieldLodCutoffs::Global) => global_cutoffs.0.clone()
             };
             let bytes = bytemuck::cast_slice::<f32, u8>(&lods).to_owned();
-            Some((bindgroup.clone(), dispatch.to_owned(), bytes, (buffers.data_upload.clone(), buffers.config.clone())))
+            // Get vertex offset
+            let Some(main_entity) = world.get::<MainEntity>(*entity) else {return None;};
+            let Some(instance) = mesh_instances.render_mesh_queue_data(*main_entity) else {return None;};
+            let Some(vertex_buffer) = allocator.mesh_vertex_slice(&instance.mesh_asset_id) else {return None;};
+            let vertex_offset = vertex_buffer.range.start;
+            // return
+            Some((bindgroup.clone(), dispatch.to_owned(), vertex_offset, bytes, (buffers.data_upload.clone(), buffers.config.clone())))
         }).collect();
         if field_data.is_empty() {return Ok(());}
         // Get resources
@@ -237,7 +254,7 @@ impl bevy::render::render_graph::Node for VoteScanNode{
             pipelines.push(pipeline);
         }
         // Copy Buffers
-        for (_, _, _, (src, dst)) in field_data.iter(){
+        for (_, _, _, _, (src, dst)) in field_data.iter(){
             render_context.command_encoder().copy_buffer_to_buffer(
                 src, 0, dst, 0, src.size()
             );
@@ -248,30 +265,34 @@ impl bevy::render::render_graph::Node for VoteScanNode{
         });
         // Vote
         compute_pass.set_pipeline(pipelines[0]);
-        for (bindgroup, dispatch, bytes, _) in field_data.iter(){
+        for (bindgroup, dispatch, offset, bytes, _) in field_data.iter(){
             compute_pass.set_bind_group(0, bindgroup, &[]);
-            compute_pass.set_push_constants(0, bytes.as_slice());
+            compute_pass.set_push_constants(0, bytemuck::cast_slice(&[*offset]));
+            compute_pass.set_push_constants(4, bytes.as_slice());
             compute_pass.dispatch_workgroups(dispatch[0], 1, 1);
         }
         // Group 1
         compute_pass.set_pipeline(pipelines[1]);
-        for (bindgroup, dispatch, bytes, _) in field_data.iter(){
+        for (bindgroup, dispatch, offset, bytes, _) in field_data.iter(){
             compute_pass.set_bind_group(0, bindgroup, &[]);
-            compute_pass.set_push_constants(0, bytes.as_slice());
+            compute_pass.set_push_constants(0, bytemuck::cast_slice(&[*offset]));
+            compute_pass.set_push_constants(4, bytes.as_slice());
             compute_pass.dispatch_workgroups(dispatch[1], 1, 1);
         }
         // Group 2
         compute_pass.set_pipeline(pipelines[2]);
-        for (bindgroup, dispatch, bytes, _) in field_data.iter(){
+        for (bindgroup, dispatch, offset, bytes, _) in field_data.iter(){
             compute_pass.set_bind_group(0, bindgroup, &[]);
-            compute_pass.set_push_constants(0, bytes.as_slice());
+            compute_pass.set_push_constants(0, bytemuck::cast_slice(&[*offset]));
+            compute_pass.set_push_constants(4, bytes.as_slice());
             compute_pass.dispatch_workgroups(dispatch[2], 1, 1);
         }
         // Compact
         compute_pass.set_pipeline(pipelines[3]);
-        for (bindgroup, dispatch, bytes, _) in field_data.iter(){
+        for (bindgroup, dispatch, offset, bytes, _) in field_data.iter(){
             compute_pass.set_bind_group(0, bindgroup, &[]);
-            compute_pass.set_push_constants(0, bytes.as_slice());
+            compute_pass.set_push_constants(0, bytemuck::cast_slice(&[*offset]));
+            compute_pass.set_push_constants(4, bytes.as_slice());
             compute_pass.dispatch_workgroups(dispatch[3], 1, 1);
         }
         Ok(())
@@ -285,6 +306,7 @@ impl Plugin for VoteScanPlugin{
         app
             .register_type::<PerFieldLodCutoffs>()
             .add_plugins(ExtractComponentPlugin::<PerFieldLodCutoffs>::default())
+            .add_plugins(ExtractComponentPlugin::<CornFieldTransform>::default())
         .sub_app_mut(RenderApp)
             .add_systems(Render, (
                 PerFieldLodCutoffs::insert_default.in_set(RenderSet::Prepare),

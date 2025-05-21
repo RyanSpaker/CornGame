@@ -27,7 +27,7 @@ pub struct CornMeshSender(pub Handle<Gltf>, pub Sender<Vec<Vec<Mesh>>>);
 pub struct CornModel{
     gltf_handle: Handle<Gltf>,
     pub mesh_handle: Handle<Mesh>,
-    // List of (# of vtcs, start vtx) for each lod.
+    /// List of (# of vtcs, start vtx) for each lod.
     pub lod_info: Vec<(usize, usize)>
 }
 impl CornModel{
@@ -73,8 +73,10 @@ impl CornModel{
             }).collect();
             // Sort lods
             lods.sort_by(|(a, _), (b, _)| b.cmp(a));
-            // Get Vertex counts
-            let vertex_counts: Vec<usize> = lods.iter().map(|(count, _)| *count).collect();
+            // Get Index counts
+            let vertex_counts: Vec<usize> = lods.iter().map(|(_, mesh)| {
+                mesh.iter().map(|m| m.indices().unwrap().len()).sum()
+            }).collect();
             let lod_data = vertex_counts.iter().fold((vec![], 0), | (mut lod_data, sum), val| {
                 lod_data.push((*val, sum));
                 (lod_data, sum+val)
