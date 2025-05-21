@@ -18,7 +18,7 @@ pub async fn write_string(writer: &mut bevy::asset::io::Writer, counter: &mut us
     Ok(())
 }
 pub async fn read_string<'a>(reader: &'a mut dyn bevy::asset::io::Reader, counter: &mut usize) -> Result<String, std::io::Error>{
-    let mut len = read_u64(reader, counter).await?;
+    let len = read_u64(reader, counter).await?;
     if len > 255 {
         panic!();
     }

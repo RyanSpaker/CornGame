@@ -3,8 +3,6 @@ name = "corn_game"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 # NOTE: https://github.com/joseph-gio/bevy-trait-query/issues/77 breaks with bevy_ecs/track_change_detection
 bevy = { version = "0.15.3", default-features = true, features = ["trace_tracy", "track_change_detection", "dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher", "default_font", "jpeg", "bevy_remote"] }
@@ -17,6 +15,7 @@ clap = {version = "*", features = ["derive"]}
 rand = "0.9.0"
 bytemuck = "1.14.1"
 futures-lite = "2.2.0"
+async-channel = "2.3.1"
 uuid = "*"
 
 wgpu-types = "23"
@@ -28,13 +27,9 @@ bevy-tnua-avian3d = "0.2.0"
 avian3d = { version = "0.2.1", features = ["serialize"]}
 lightyear = {version="0.19", features = ["avian3d", "track_change_detection", "metrics"]}
 leafwing-input-manager = "0.16.0"
-macaw = "0.19.1"
-#bevy_console = "0.13.1"
 prse = "1.2.1"
 auto_enums = "0.8.5"
-bevy_animation_graph = "0.6.0"
 bevy_edge_detection = "0.15.4"
-i-cant-believe-its-not-bsn = "0.3.0"
 bevy_remote_inspector = "0.1.0"
 bevy-inspector-egui = "*"
 bevy_easings = "0.15.0"
@@ -49,6 +44,9 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[profile.dev.package.corn_game]
+opt-level = 1
 
 [patch.crates-io]
 bevy_editor_pls = { path = "forks/bevy_editor_pls/crates/bevy_editor_pls/" }

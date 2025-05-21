@@ -1,23 +1,18 @@
-use std::collections::VecDeque;
-
 use bevy::{
-    app::{Plugin, PostUpdate, Update}, diagnostic::{Diagnostic, DiagnosticPath}, ecs::{component::Component, query::With, system::{Commands, Query, Res}}, prelude::{default, Text}, reflect::Reflect, transform::components::{GlobalTransform, Transform}
+    prelude::*,
+    color::palettes::css,
+    diagnostic::{Diagnostic, DiagnosticPath, DiagnosticsStore, FrameTimeDiagnosticsPlugin}
 };
+use super::cameras::MainCamera;
 
-use bevy::prelude::*;
-use bevy::color::palettes::css;
-use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
-
-use super::main_camera::MainCamera;
-
-#[derive(Component)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component)]
 pub struct DiagPos;
 
 pub fn update_position(
     mut query: Query<&mut TextSpan, With<DiagPos>>,
     camera: Query<(&Transform, &GlobalTransform), With<MainCamera>>
 ){
-    if let Ok((t, gt)) = camera.get_single(){
+    if let Ok((t, _)) = camera.get_single(){
         for mut text in query.iter_mut(){
             text.0 = format!("{}", t.translation);
         }
@@ -43,6 +38,7 @@ pub fn spawn_fps_text(mut commands: Commands){
 
     commands
             .spawn((
+                Name::from("FPS Display"),
                 Text::new("FPS: "),
                 TextFont {
                     font_size: 20.0,
@@ -101,8 +97,8 @@ fn update_diagnostics(
         let mode = mode.unwrap_or(&DiagnosticMode::Smoothed);
         *text = match diagnostics.get(&path.0) {
             Some(path) => match mode {
-                DiagnosticMode::Smoothed => match path.smoothed(){
-                    Some(f) => f.to_string(),
+                DiagnosticMode::Smoothed => match path.average(){
+                    Some(f) => format!("{f:.2}"),
                     None => "n/a".into(),
                 },
                 DiagnosticMode::Function(foo) => foo(path),

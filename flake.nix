@@ -18,25 +18,24 @@
           inherit system;
           config.allowUnfree = true; 
         };
-          buildInputs = with pkgs; [
-            pkg-config
-            openssl
-            openssl.dev
-            udev.dev
-            cacert
-            sqlite # for matrix_rust_sdk
-            sqlite.dev
-            rustc.llvmPackages.clang
-						stdenv.cc.cc
+        buildInputs = with pkgs; [
+          pkg-config
+          openssl
+          openssl.dev
+          udev.dev
+          cacert
+          sqlite # for matrix_rust_sdk
+          sqlite.dev
+          rustc.llvmPackages.clang
+          stdenv.cc.cc
 
-
-            alsa-lib alsa-lib.dev
-            vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
-            lutris
-            xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr # To use the x11 feature
-            wayland
-            libxkbcommon
-          ];
+          alsa-lib alsa-lib.dev
+          vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
+          lutris
+          xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr # To use the x11 feature
+          wayland
+          libxkbcommon
+        ];
       in
       {
         formatter = pkgs.nixpkgs-fmt;
@@ -50,7 +49,9 @@
             rust-analyzer
             rust.complete.toolchain
             pkg-config
+            linuxPackages_latest.perf
 
+            cargo-udeps
             cargo-limit # cargo lcheck, prioritize errors
             cargo-machete #check for unused deps in cargo.toml
             cargo-llvm-lines #info on generic function copies

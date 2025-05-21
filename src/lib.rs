@@ -1,34 +1,17 @@
-use std::path::PathBuf;
-
-use app::CornAppPlugin;
-use bevy::{
-    log::{
-        tracing_subscriber::{Layer, Registry},
-        BoxedLayer,
-        LogPlugin,
-    },
-    prelude::*,
-    reflect,
-    render::{sync_world::RenderEntity, RenderApp},
-};
-use bevy_editor_pls::{
-    default_windows::{logging::TracingDynamicSubscriber},
-    EditorPlugin,
-};
-use clap::Parser;
-use ecs::CornGameECSPlugin;
-use lightyear::prelude::AppMessageExt;
-use serde::{Deserialize, Serialize};
-
-pub mod app;
+pub mod systems;
+pub mod scenes;
 pub mod ecs;
 pub mod util;
+
+use std::path::PathBuf;
+use bevy::{prelude::*, render::{sync_world::RenderEntity, RenderApp}};
+use clap::Parser;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, clap::Parser, Default, Reflect, Serialize, Deserialize, Resource)]
 #[reflect(Resource)]
 struct Cli {
     scenes: Vec<PathBuf>,
-
     #[arg(short, long)]
     client: bool,
     #[arg(short, long)]
@@ -48,7 +31,7 @@ impl Plugin for CornGame {
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        present_mode: bevy::window::PresentMode::Mailbox,
+                        present_mode: bevy::window::PresentMode::AutoVsync,
                         ..default()
                     }),
                     ..default()
@@ -66,7 +49,12 @@ impl Plugin for CornGame {
                 .disable::<LogPlugin>(),
         );
         app.add_plugins(bevy_editor_pls::default_windows::utils::log_plugin::LogPlugin::default());
-        app.add_plugins((CornAppPlugin, CornGameECSPlugin));
+        
+        app.add_plugins((
+            systems::CornSystemsPlugin,
+            scenes::CornScenesPlugin,
+            ecs::CornECSPlugin
+        ));
 
         app.insert_resource(Cli::parse());
         app.sub_app_mut(RenderApp)

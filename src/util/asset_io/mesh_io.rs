@@ -1,4 +1,3 @@
-use aligned_vec::{AVec, ConstAlign};
 use bevy::render::{mesh::{Indices, Mesh, MeshVertexAttribute, MeshVertexAttributeId, VertexAttributeValues}, render_asset::RenderAssetUsages};
 use bytemuck::pod_collect_to_vec;
 use wgpu_types::{PrimitiveTopology, VertexFormat};
