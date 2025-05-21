@@ -1,16 +1,23 @@
 pub mod corn;
-pub mod main_camera;
+pub mod cameras;
 pub mod flycam;
 pub mod framerate;
+pub mod test_cube;
 
 use bevy::prelude::*;
-use self::{
-    corn::CornFieldComponentPlugin, main_camera::MainCameraPlugin, framerate::FrameRatePlugin
-};
+use corn::CornFieldComponentPlugin;
+use test_cube::TestCube;
+use self::{cameras::CamerasPlugin, framerate::FrameRatePlugin, flycam::FlyCamPlugin};
 
-pub struct CornGameECSPlugin;
-impl Plugin for CornGameECSPlugin{
+pub struct CornECSPlugin;
+impl Plugin for CornECSPlugin{
     fn build(&self, app: &mut App) {
-        app.add_plugins((CornFieldComponentPlugin, MainCameraPlugin, FrameRatePlugin));
+        app.add_plugins((
+            CamerasPlugin, 
+            FrameRatePlugin, 
+            FlyCamPlugin, 
+            CornFieldComponentPlugin,
+            TestCube
+        ));
     }
 }

@@ -4,3 +4,4 @@
 /assets/**/*.meta
 .envrc
 /.direnv
+/shaders/**/*.meta

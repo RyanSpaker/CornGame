@@ -25,7 +25,7 @@ impl MaterialExtension for EmptyExtension{
     fn specialize(
         _pipeline: &bevy::pbr::MaterialExtensionPipeline,
         _descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
-        _layout: &bevy::render::mesh::MeshVertexBufferLayout,
+        _layout: &bevy::render::mesh::MeshVertexBufferLayoutRef,
         _key: bevy::pbr::MaterialExtensionKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         Ok(())
@@ -70,16 +70,16 @@ pub trait SpoofRenderCommand{
     ) -> &mut Self
     where R::Param: ReadOnlySystemParam;
 }
-impl SpoofRenderCommand for App {
+impl SpoofRenderCommand for SubApp {
     fn spoof_render_command<P: PhaseItem, R: RenderCommand<P> + Send + Sync + 'static, L: 'static>(
         &mut self,
     ) -> &mut Self
     where
         R::Param: ReadOnlySystemParam,
     {
-        let draw_function = RenderCommandState::<P, R>::new(&mut self.world);
+        let draw_function = RenderCommandState::<P, R>::new(&mut self.world_mut());
         let draw_functions = self
-            .world
+            .world()
             .get_resource::<DrawFunctions<P>>()
             .unwrap_or_else(|| {
                 panic!(
