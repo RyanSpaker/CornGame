@@ -60,11 +60,11 @@ pub fn look_handler(
     mut query: Query<
         &ActionState<Action>,
         ( 
-            Without<crate::ecs::main_camera::MainCamera>, 
+            Without<crate::ecs::cameras::MainCamera>, 
             With<CornGameCharController> 
         )
     >,
-    mut camera: Query<&mut Transform, With<crate::ecs::main_camera::MainCamera>>,
+    mut camera: Query<&mut Transform, With<crate::ecs::cameras::MainCamera>>,
     window: Query<&mut Window, With<PrimaryWindow>>,
 ){
         let Ok(mut camera) = camera.get_single_mut() else {

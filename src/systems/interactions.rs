@@ -17,7 +17,7 @@ use bevy::{
 use bevy_editor_pls::egui::TextStyle;
 use blenvy::{AnimationMarkerReached, BlueprintAnimationPlayerLink, BlueprintAnimations};
 use frunk::{hlist::HList, Generic};
-use lightyear::prelude::{server::ServerTriggerExt, AppTriggerExt, ChannelDirection};
+use lightyear::prelude::{server::ServerTriggerExt, ChannelDirection};
 use serde::{Deserialize, Serialize};
 
 use super::character::Player;
@@ -45,7 +45,7 @@ impl Plugin for InteractPlugin {
         app.register_type::<Pickup>();
         app.register_type::<Held>();
 
-        app.register_trigger::<Interaction>(ChannelDirection::Bidirectional);
+        //app.register_trigger::<Interaction>(ChannelDirection::Bidirectional);
 
         // for debugging a blenvy issue
         app.register_type::<HashMapTest>();

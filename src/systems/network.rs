@@ -3,21 +3,16 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use avian3d::prelude::*;
-use bevy::ecs::query::QueryData;
 use bevy::prelude::*;
-use clap::Parser;
-use lightyear::prelude::server::{AuthorityPeer, ControlledBy, NetConfig, ReplicationTarget, ServerCommandsExt, ServerTransport};
+use lightyear::prelude::server::{AuthorityPeer, ControlledBy, ReplicationTarget, ServerCommandsExt, ServerTransport};
 use lightyear::prelude::*;
 
 use lightyear::client::components::{ComponentSyncMode, LerpFn};
 use lightyear::client::config::ClientConfig;
-use lightyear::prelude::client::{Authentication, ClientCommandsExt, ClientConnection, ClientTransport, ReplicateToServer};
-use lightyear::shared::replication::components::InitialReplicated;
-use lightyear::transport::config::SharedIoConfig;
-use lightyear::utils::avian3d::*;
+use lightyear::prelude::client::{Authentication, ClientCommandsExt, ReplicateToServer};
 use lightyear::utils::bevy::TransformLinearInterpolation;
 use server::ServerConfig;
-use bevy::ecs::system::{SystemParam, Query, Res};
+use bevy::ecs::system::{Query, Res};
 
 pub struct CornNetworkingPlugin;
 impl Plugin for CornNetworkingPlugin{
@@ -205,7 +200,7 @@ pub fn replicate_other_clients(
         Added<ReplicateOtherClients>
     >,
 ) {
-    for (entity, peer, has_auth, replicated, value) in replicated_cursor.iter() {
+    for (entity, peer, _, replicated, value) in replicated_cursor.iter() {
 
         if identity.is_server() || identity.is_host_server() {
             if let Some(AuthorityPeer::Client(client_id)) = peer {
@@ -282,7 +277,7 @@ impl Uid {
         let e = trigger.entity();
 
         // XXX currently Uid not allowed to change
-        let mut root = parents.iter_ancestors(e).find(|e| uids.contains(*e));
+        let root = parents.iter_ancestors(e).find(|e| uids.contains(*e));
         
         let tree : Vec<_> = parents.iter_ancestors(e).take_while(|e| Some(*e) != root).collect();
 

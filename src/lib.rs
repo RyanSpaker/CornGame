@@ -4,7 +4,7 @@ pub mod ecs;
 pub mod util;
 
 use std::path::PathBuf;
-use bevy::{prelude::*, render::{sync_world::RenderEntity, RenderApp}};
+use bevy::{log::LogPlugin, prelude::*, render::{sync_world::RenderEntity, RenderApp}};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 
@@ -46,9 +46,9 @@ impl Plugin for CornGame {
                 //     custom_layer,
                 //     ..Default::default()
                 // }),
-                .disable::<LogPlugin>(),
+                //.disable::<LogPlugin>(),
         );
-        app.add_plugins(bevy_editor_pls::default_windows::utils::log_plugin::LogPlugin::default());
+        //app.add_plugins(bevy_editor_pls::default_windows::utils::log_plugin::LogPlugin::default());
         
         app.add_plugins((
             systems::CornSystemsPlugin,

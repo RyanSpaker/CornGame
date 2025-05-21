@@ -1,6 +1,5 @@
 pub mod math;
 pub mod specialized_material;
-pub mod asset_io;
 pub mod debug_app;
 pub mod scene_set;
 pub mod observer_ext;
