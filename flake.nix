@@ -76,6 +76,7 @@
           # https://github.com/rust-lang/rustc_codegen_cranelift
           #CARGO_PROFILE_DEV_CODEGEN_BACKEND = "cranelift";
           RUSTFLAGS = "--cfg tracing_unstable -C link-arg=-fuse-ld=mold -C linker=clang";
+          RUST_LOG="info,cosmic_text=warn,naga=warn,wgpu_hal=warn,bevy_asset=trace";
         };
       }
     );

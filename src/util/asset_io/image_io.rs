@@ -7,7 +7,7 @@ use super::*;
 */
 
 /// Saves an Image to the writer with all necessary reading information present in the data. Returns the total number of bytes written.
-pub async fn save_image(image: &Image, writer: &mut bevy::asset::io::Writer, mut byte_counter: &mut usize) -> Result<(), std::io::Error>{
+pub async fn save_image(image: &Image, writer: &mut bevy::asset::io::Writer, byte_counter: &mut usize) -> Result<(), std::io::Error>{
     write_byte(image.asset_usage.bits(), writer, byte_counter).await?;
     write_byte(encode_texture_format(&image.texture_descriptor.format), writer, byte_counter).await?;
     write_byte(encode_texture_dimension(&image.texture_descriptor.dimension), writer, byte_counter).await?;

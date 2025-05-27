@@ -3,12 +3,11 @@ name = "corn_game"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 # NOTE: https://github.com/joseph-gio/bevy-trait-query/issues/77 breaks with bevy_ecs/track_change_detection
-bevy = { version = "0.15.3", default-features = true, features = ["trace_tracy", "track_change_detection", "dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher", "default_font", "jpeg", "bevy_remote"] }
+bevy = { version = "0.15.3", default-features = true, features = ["dynamic_linking", "serialize", "asset_processor", "file_watcher", "embedded_watcher", "default_font", "jpeg", "bevy_remote"] }
 blenvy = { path = "./forks/Blenvy/crates/blenvy"}
+bevy_skein = "0.1.1"
 
 bevy_editor_pls = "0.11" #minimal editor
 
@@ -59,4 +58,5 @@ lightyear = { path = "forks/lightyear/lightyear" }
 bevy-inspector-egui = { path = "forks/bevy-inspector-egui/crates/bevy-inspector-egui" }
 bevy-trait-query = { path = "forks/bevy-trait-query/bevy-trait-query" }
 egui_dock = { path = "forks/egui-dock/" }
+bevy_skein = { path = "forks/skein" }
 #avian3d = {git = "https://github.com/Jondolf/avian.git"}

@@ -10,7 +10,7 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use wgpu::{Maintain, QuerySet, QuerySetDescriptor};
-use crate::ecs::{corn::{asset::CornModel, buffer::{CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}}, main_camera::MainCamera};
+use crate::ecs::{corn::{asset::CornModel, buffer::{CornInstanceBuffer, PerCornData, CORN_DATA_SIZE}}, cameras::MainCamera};
 
 /// whether to readback the buffers to the cpu for debugging purposes
 const READBACK_ENABLED: bool = false;

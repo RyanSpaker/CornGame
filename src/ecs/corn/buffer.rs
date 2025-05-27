@@ -1,6 +1,6 @@
 use bevy::{prelude::*, render::{render_asset::RenderAssets, render_resource::*, renderer::RenderDevice, Render, RenderApp, RenderSet}, utils::hashbrown::HashMap};
 use bytemuck::{Pod, Zeroable};
-use crate::util::integer_set::{IntegerSet, SubOne};
+use crate::util::math::{IntegerSet, SubOne};
 use super::{asset::{CornAsset, CornModel}, field::{state::{PreviousFrameCornFields, StaleCornFieldEvent}, RenderableCornFieldID}};
 
 /// Struct representing the Per Corn Stalk data on  the GPU

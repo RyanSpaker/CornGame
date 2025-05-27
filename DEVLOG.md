@@ -44,7 +44,7 @@ Failed to update PerspectiveProjection: width and height must be positive, non-z
 
 I am able to change it by pressing up and down keys, further suggesting the issue is with bevy editor pls sending invalid values.
 
-*I have set scale factor to 1.5 manually in [./src/app/ui/console.rs]*
+*I have set scale factor to 1.5 manually in [](./src/systems/ui/editor.rs)*
 
 TODO:
 - [ ] scale ui with keybinds
@@ -349,6 +349,8 @@ breaks with bevy_ecs/track_change_detection
 - [ ] FEATURE: checkbox for whether to remember folding per entity or for all entities? (per archetype?)
 - [x] BUG: crash when clicking on entities? 
   - can't reproduce, seems something I did fixed it.
+- [ ] figure out proper picking handling (currently disabled entirely)
+- [ ] port menu bar to add button
 
 - [ ] FEATURE: much better gizmos
 

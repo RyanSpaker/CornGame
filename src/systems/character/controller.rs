@@ -7,10 +7,10 @@ use bevy_tnua::prelude::*;
 
 use bevy_tnua::builtins::{TnuaBuiltinCrouch, TnuaBuiltinDash};
 
+use frunk::labelled::chars::W;
 use leafwing_input_manager::action_state::ActionState;
 use serde::{Deserialize, Serialize};
-use crate::app::physics::ColliderFor;
-use crate::ecs::main_camera::MainCamera;
+use crate::ecs::cameras::MainCamera;
 
 use super::animation::MyAnimationState;
 use super::input::Action;
@@ -57,40 +57,33 @@ impl Default for CornGameCharController {
 }
 
 pub fn look_handler(
-    mut query: Query<
-        &ActionState<Action>,
-        ( 
-            Without<crate::ecs::main_camera::MainCamera>, 
-            With<CornGameCharController> 
-        )
-    >,
-    mut camera: Query<&mut Transform, With<crate::ecs::main_camera::MainCamera>>,
+    mut query: Query<&ActionState<Action>, (Without<MainCamera>, With<CornGameCharController>)>,
+    mut camera: Query<&mut Transform, With<MainCamera>>,
     window: Query<&mut Window, With<PrimaryWindow>>,
-){
-        let Ok(mut camera) = camera.get_single_mut() else {
-            return;
-        };
+) {
+    let Ok(mut camera) = camera.get_single_mut() else {
+        return;
+    };
 
-        let Ok(mut input) = query.get_single_mut() else {
-            return;
-        };
+    let Ok(mut input) = query.get_single_mut() else {
+        return;
+    };
 
-        let mut mouse = input.axis_pair(&Action::Pan);
-        if let Ok(window) = window.get_single(){
-            if window.cursor_options.grab_mode != CursorGrabMode::Locked {
-                mouse = default();
-            }
+    let mut mouse = input.axis_pair(&Action::Pan);
+    if let Ok(window) = window.get_single() {
+        if window.cursor_options.grab_mode != CursorGrabMode::Locked {
+            mouse = default();
         }
+    }
 
-        let sensitivity = 0.002;
-        let (mut yaw, mut pitch, _) = camera.rotation.to_euler(EulerRot::YXZ);
-        yaw -= sensitivity * mouse.x;
-        pitch -= sensitivity * mouse.y;
-        pitch = pitch.clamp(-1.54, 1.54);
+    let sensitivity = 0.002;
+    let (mut yaw, mut pitch, _) = camera.rotation.to_euler(EulerRot::YXZ);
+    yaw -= sensitivity * mouse.x;
+    pitch -= sensitivity * mouse.y;
+    pitch = pitch.clamp(-1.54, 1.54);
 
-        let yaw_rot = Quat::from_rotation_y(yaw);
-        camera.rotation = yaw_rot * Quat::from_rotation_x(pitch);
-
+    let yaw_rot = Quat::from_rotation_y(yaw);
+    camera.rotation = yaw_rot * Quat::from_rotation_x(pitch);
 }
 
 // controls the main camera and the Player entity (these are intractibly linked)
@@ -107,22 +100,31 @@ pub fn input_handler(
             &CornGameCharController,
             &mut MyAnimationState,
         ),
-        Without<crate::ecs::main_camera::MainCamera>,
+        Without<crate::ecs::cameras::MainCamera>,
     >,
-    mut colliders: Query<(&ColliderParent, &mut Collider, &mut Transform), (Without<CornGameCharController>, Without<MainCamera>)>,
-    mut camera: Query<&mut Transform, With<crate::ecs::main_camera::MainCamera>>,
+    mut colliders: Query<
+        (&ColliderParent, &mut Collider, &mut Transform),
+        (Without<CornGameCharController>, Without<MainCamera>),
+    >,
+    mut camera: Query<&mut Transform, With<crate::ecs::cameras::MainCamera>>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    let Ok(mut camera) = camera.get_single_mut() else {
-        return;
+    let mut camera = match camera.get_single_mut() {
+        Err(error) => {
+            error_once!(%error);
+            return;
+        }
+        Ok(c) => c,
     };
 
-    assert!( query.iter().count() <= 1);
+    assert!(query.iter().count() <= 1);
     for (id, transform, input, mut controller, config, mut anim_state) in query.iter_mut() {
-        let collider = colliders.iter_mut().find(|c|c.0.get() == id);
-        
+        let collider = colliders.iter_mut().find(|c| c.0.get() == id);
+
         if collider.is_none() {
-            commands.spawn((Collider::default(),Transform::default())).set_parent(id);
+            commands
+                .spawn((Collider::default(), Transform::default()))
+                .set_parent(id);
             continue;
         };
 
@@ -132,16 +134,29 @@ pub fn input_handler(
 
         if direction == Vec2::ZERO {
             anim_state.set_if_neq(MyAnimationState::Idle);
-        }else{
+        } else {
             anim_state.set_if_neq(MyAnimationState::Walk(direction));
         }
 
         // Only allow input when cursor is grabbed
         // TODO, we should do this on the input side instead of here.
         // TODO need a generic framework for claiming inputs
-        if let Ok(window) = window.get_single(){
+        if let Ok(mut window) = window.get_single_mut() {
+            if input.just_pressed(&Action::Toggle) {
+                window.cursor_options.grab_mode = match window.cursor_options.grab_mode {
+                    CursorGrabMode::None => CursorGrabMode::Locked,
+                    CursorGrabMode::Confined => CursorGrabMode::Locked,
+                    CursorGrabMode::Locked => CursorGrabMode::None,
+                };
+
+                debug!(?window.cursor_options.grab_mode);
+            }
+
             if window.cursor_options.grab_mode != CursorGrabMode::Locked {
                 direction = default();
+            } else {
+                let center = Some(window.size() / 2.0);
+                window.set_cursor_position(center);
             }
         }
 
@@ -149,7 +164,7 @@ pub fn input_handler(
 
         let mut direction = direction.extend(0.0).xzy();
         direction.z = -direction.z;
-        let (yaw,_,_) = camera.rotation.to_euler(EulerRot::YXZ);
+        let (yaw, _, _) = camera.rotation.to_euler(EulerRot::YXZ);
         direction = Quat::from_euler(EulerRot::YXZ, yaw, 0.0, 0.0) * direction;
 
         let speed = match input.pressed(&Action::Run) {
@@ -172,17 +187,17 @@ pub fn input_handler(
         controller.basis(basis);
 
         let height = config.height - config.float;
-        *collider = Collider::capsule(config.radius, height - 2.0*config.radius);
+        *collider = Collider::capsule(config.radius, height - 2.0 * config.radius);
         let offset = config.eye_height - height / 2.0 - config.float;
         *c_trans = Transform::from_xyz(0.0, -offset, 0.0);
 
         if input.pressed(&Action::Crouch) {
             let c_height = config.crouch_height - config.crouch_float;
-            *collider = Collider::capsule(config.radius, c_height - 2.0*config.radius);
+            *collider = Collider::capsule(config.radius, c_height - 2.0 * config.radius);
             let c_eye_height = config.eye_height + config.crouch_height - config.height;
             let c_offset = c_eye_height - c_height / 2.0 - config.crouch_float;
             *c_trans = Transform::from_xyz(0.0, -c_offset, 0.0);
-            
+
             controller.action(TnuaBuiltinCrouch {
                 float_offset: config.crouch_height - config.height,
                 height_change_impulse_for_duration: config.crouch_duration,
@@ -197,17 +212,15 @@ pub fn input_handler(
     }
 }
 
-pub fn round_velocity(
-    mut query: Query<&mut LinearVelocity, With<CornGameCharController> >
-){
-    for mut v in query.iter_mut(){
+pub fn round_velocity(mut query: Query<&mut LinearVelocity, With<CornGameCharController>>) {
+    for mut v in query.iter_mut() {
         if v.0 != Vec3::ZERO && v.length() < 0.0001 {
             // v.0 = Vec3::ZERO;
         }
     }
 }
-                // |q:Query<(Entity, &LinearVelocity), With<CornGameCharController>>|{ 
-                //     for (i,v) in q.iter(){
-                //         info!("{} {:?}", i, v);
-                //     }
-                // }
+// |q:Query<(Entity, &LinearVelocity), With<CornGameCharController>>|{
+//     for (i,v) in q.iter(){
+//         info!("{} {:?}", i, v);
+//     }
+// }

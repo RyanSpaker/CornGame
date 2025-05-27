@@ -1,5 +1,8 @@
-use std::{collections::HashMap, str::Chars, time::Duration};
-
+use std::{
+    collections::HashMap,
+    str::Chars,
+    time::{Duration, Instant},
+};
 use avian3d::prelude::{RigidBody, RigidBodyDisabled};
 use bevy::{
     audio::Volume,
@@ -8,16 +11,17 @@ use bevy::{
         query::{self, QueryData},
     },
     input::keyboard::{Key, KeyboardInput},
-    picking::backend::HitData,
+    picking::{backend::HitData, focus::HoverMap},
     prelude::*,
     render::primitives::Aabb,
     text::FontStyle,
     utils::all_tuples,
     window::PrimaryWindow,
 };
+use bevy_easings::{Ease, EaseMethod, EasingType, EasingsPlugin};
 use bevy_editor_pls::egui::TextStyle;
 use blenvy::{AnimationMarkerReached, BlueprintAnimationPlayerLink, BlueprintAnimations};
-use frunk::{hlist::HList, Generic};
+use frunk::{hlist::HList, labelled::chars::W, Generic};
 use lightyear::prelude::{server::ServerTriggerExt, AppTriggerExt, ChannelDirection};
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +31,7 @@ pub struct InteractPlugin;
 impl Plugin for InteractPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(MeshPickingPlugin);
+        app.add_plugins(EasingsPlugin::default());
         app.add_observer(on_over);
         app.add_observer(on_out);
         app.add_systems(
@@ -37,6 +42,10 @@ impl Plugin for InteractPlugin {
                 ToggleInteractionBlender::handle_animation_done,
             ),
         );
+        app.add_systems(PostUpdate, DebugForMissingReflect::system);
+        app.register_type::<DebugForMissingReflect>();
+        app.init_resource::<DebugForMissingReflect>();
+
         app.register_type::<Interactable>();
         app.register_type::<ToggleInteractionBlender>();
         app.register_type::<ToggleInteractionState>();
@@ -67,7 +76,7 @@ struct HashMapTest(HashMap<String, String>);
 struct HashMapTest2(HashMap<String, Vec<String>>);
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
-struct HashMapTest3(HashMap<String, HashMap<String,String>>);
+struct HashMapTest3(HashMap<String, HashMap<String, String>>);
 
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
@@ -78,14 +87,15 @@ pub struct Pickup;
 // TODO want to be able to set held object from commandline or scene file
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
+#[component(storage = "SparseSet")]
 pub struct Held; /*{
-    // Entity to sync to
-    // entity: Entity,
+                     // Entity to sync to
+                     // entity: Entity,
 
-    // Offset
-    // TODO hand bone
-    // offset: Transform,
-}*/
+                     // Offset
+                     // TODO hand bone
+                     // offset: Transform,
+                 }*/
 
 impl Pickup {
     fn observer(
@@ -106,23 +116,23 @@ impl Pickup {
         debug!("pickup {}", ev.entity());
 
         let player = player.single(); //TODO multiplayer
-        commands
-            .entity(entity)
-            .set_parent(player.0)
-            .insert((Transform {
+        commands.entity(entity).set_parent(player.0).insert((
+            Transform {
                 translation: Vec3::new(0.1, -0.3, -0.6),
                 scale: gt.scale(),
                 ..default()
-            }, 
-            Held, 
-            RigidBodyDisabled // XXX what about child colliders
+            },
+            Held,
+            RigidBodyDisabled, // XXX what about child colliders
         ));
 
-        for mut h in held.iter_mut(){
+        for mut h in held.iter_mut() {
             // TODO better logic for putting down currently held item
             // TODO have everything work off of adding or removing the Held component
             h.2.translation = gt.translation();
-            commands.entity(h.0).remove::<(Parent, Held, RigidBodyDisabled)>();
+            commands
+                .entity(h.0)
+                .remove::<(Parent, Held, RigidBodyDisabled)>();
         }
     }
 }
@@ -130,7 +140,7 @@ impl Pickup {
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
 pub struct FlipVisible {
-    vis: bool, 
+    vis: bool,
     name: String,
     marker: String,
     animation: String,
@@ -175,11 +185,11 @@ impl ToggleInteractionBlender {
         if let Ok(flip) = flip {
             let Some((_, mut vis)) = target.iter_mut().find(|n| n.0.as_str() == &flip.name) else {
                 error!("flip target {} not found", flip.name);
-                return
+                return;
             };
             if *vis == Visibility::Hidden {
                 *vis = Visibility::Inherited;
-            }else{
+            } else {
                 *vis = Visibility::Hidden;
             }
         }
@@ -188,17 +198,16 @@ impl ToggleInteractionBlender {
         //     dbg!(&ev);
 
         //     for flip in query.iter_mut(){
-        //         if target.get(ev.entity).is_ok_and(|n| n.as_str() == &flip.name ) 
-        //             && ( &flip.animation == "" || flip.animation == ev.animation_name) 
+        //         if target.get(ev.entity).is_ok_and(|n| n.as_str() == &flip.name )
+        //             && ( &flip.animation == "" || flip.animation == ev.animation_name)
         //             && ( &flip.marker == &ev.marker_name )
-        //         { 
+        //         {
         //             *vis = match flip.vis {
         //                 true => Visibility::Visible,
         //                 false => Visibility::Hidden,
         //             }
         //         }
         //     }
-
 
         //     // if let Some((_, mut vis)) = target
         //     //     .iter_mut()
@@ -289,7 +298,7 @@ impl InteractionText {
     fn flip() -> Self {
         Self {
             string: "pick up".to_string(),
-            show: "p--- --".to_string()
+            show: "p--- --".to_string(),
         }
     }
 }
@@ -298,11 +307,10 @@ impl Default for InteractionText {
     fn default() -> Self {
         Self {
             string: "i".to_string(),
-            show: "[i]nteract".to_string()
+            show: "[i]nteract".to_string(),
         }
     }
 }
-
 
 #[derive(Debug, Clone, Default, Component, Reflect)]
 #[reflect(Component)]
@@ -329,6 +337,7 @@ fn on_over(
     item: Query<&Name, With<Interactable>>,
     mut commands: Commands,
 ) {
+    trace!(entity = %ev.entity(), "on");
     ev.propagate(true);
     if let Ok(name) = item.get(ev.entity()) {
         debug!("Over: {}", name);
@@ -337,7 +346,9 @@ fn on_over(
 }
 
 // NOTE example of utility of runtime system disabling for debug
-fn on_out(ev: Trigger<Pointer<Out>>, item: Query<&Name, With<Hover>>, mut commands: Commands) {
+fn on_out(mut ev: Trigger<Pointer<Out>>, item: Query<&Name, With<Hover>>, mut commands: Commands) {
+    trace!(entity = %ev.entity(), "out");
+    ev.propagate(true);
     if let Ok(name) = item.get(ev.entity()) {
         debug!("Out: {}", name);
         commands.entity(ev.entity()).remove::<Hover>();
@@ -348,20 +359,24 @@ fn on_out(ev: Trigger<Pointer<Out>>, item: Query<&Name, With<Hover>>, mut comman
 #[reflect(Component)]
 pub struct Tooltip {
     target: Entity,
+    extra_frames: Option<Instant>,
     text: String,
 }
 
 fn display_tooltip(
     mut commands: Commands,
-    item: Query<(
-        Entity,
-        &Hover,
-        &Interactable,
-        Option<&InteractionText>,
-        &Aabb,
-        &GlobalTransform,
-        Option<&Name>,
-    ), Without<Held>>, //TODO really should use the active field of the interaction, or remove interactable
+    item: Query<
+        (
+            Entity,
+            &Hover,
+            &Interactable,
+            Option<&InteractionText>,
+            Option<&Aabb>,
+            &GlobalTransform,
+            Option<&Name>,
+        ),
+        Without<Held>,
+    >, //TODO really should use the active field of the interaction, or remove interactable
     mut tooltip: Query<(Entity, &Tooltip, &mut Node, &ComputedNode, &mut Visibility)>,
     camera: Query<(&Camera, &GlobalTransform)>, //XXX GlobalTransform will have 1 frame delay, unfortionately
     window: Query<&Window, With<PrimaryWindow>>,
@@ -369,6 +384,7 @@ fn display_tooltip(
     for t in tooltip.iter() {
         let target = t.1.target;
         if !item.get(target).is_ok_and(|item| !item.2.active) {
+            debug!(tooltip = %t.0, entity = %target, "despawn");
             commands.entity(t.0).despawn();
         }
     }
@@ -379,10 +395,11 @@ fn display_tooltip(
         }
 
         let item_pos = GlobalTransform::of(&item);
-        let item_pos = item_pos.transform_point(Aabb::of(&item).center.into());
+        // let center = Aabb::option(&item).map(|a| a.center).unwrap_or_default();
+        // let item_pos = item_pos.transform_point(center.into());
         let (camera, camera_transform) = camera.get(Hover::of(&item).0.camera).unwrap(); //NOTE another example of somewhere where the unhappy path should be pluggable with panic as default
         let pos = camera
-            .world_to_ndc(camera_transform, item_pos.into())
+            .world_to_ndc(camera_transform, item_pos.compute_transform().translation)
             .unwrap();
 
         let entity: &Entity = item.get();
@@ -391,14 +408,19 @@ fn display_tooltip(
             *t.4 = Visibility::Visible;
 
             let size = t.3.size() / window.single().scale_factor();
+            let mut res = window.single().size();
 
-            let res = window.single().size();
+            if let Some(v) = &camera.viewport {
+                // should fix tracking when editor is open.
+                res = v.physical_size.as_vec2() / window.single().scale_factor();
+            }
+
             let xy = res * ((pos + 1.) * 0.5).xy();
 
             // dbg!(size, pos, window.single().scale_factor(), window.single().size());
 
             let pos = xy - size / 2.0;
-            let pos = pos / 2.0; //XXX WHY!
+            // let pos = pos / 2.0; //XXX WHY!
 
             t.2.left = Val::Px(pos.x);
             t.2.bottom = Val::Px(pos.y);
@@ -406,6 +428,7 @@ fn display_tooltip(
             let text = InteractionText::option(&item).cloned().unwrap_or_default();
 
             // dbg!(&pos, Name::option(&item));
+            trace!(name = %Name::option(&item).map(|n|n.as_str()).unwrap_or_default(), ?pos, "tooltip");
             commands.spawn((
                 PickingBehavior::IGNORE,
                 Node {
@@ -417,25 +440,33 @@ fn display_tooltip(
                     ..default()
                 },
                 Text::new(text.show),
+                TextFont::default().with_font_size(40.0),
+                // TODO scaling based on ui size?
+                //      actually we need world sized tooltips, they should get bigger as you get closer.
+                //      we also need interaction distance.
+                //      but before any of that, we ought to try to get avian-based collider picking working
+                // https://github.com/blaind/bevy_text_mesh rendered to a top layer
                 // TODO MONOSPACE, choose font for corngame
                 BackgroundColor(Color::srgba(0.5, 0.5, 0.5, 0.5)),
                 TextColor(Color::srgba(0.05, 0.05, 0.05, 0.5)),
                 // BorderColor(Color::srgba(0.05, 0.05, 0.05, 0.9)),
                 Outline::new(
-                    Val::Px(2.0),
+                    Val::Px(4.0),
                     Val::Px(0.0),
                     Color::srgba(0.05, 0.05, 0.05, 0.9),
                 ),
-                // .ease_to(
-                //     BackgroundColor(Color::srgba(0.15, 0.15, 0.15, 0.8)),
+                // looks cool:
+                // BackgroundColor(Color::srgba(1.0, 0.5, 0.5, 0.5)).ease_to(
+                //     BackgroundColor(Color::srgba(0.15, 1.0, 0.15, 1.0)),
                 //     bevy_easings::EaseFunction::QuadraticIn,
                 //     bevy_easings::EasingType::Once {
-                //         duration: std::time::Duration::from_secs_f32(0.4),
+                //         duration: std::time::Duration::from_secs_f32(1.0),
                 //     },
                 // ),
                 Tooltip {
                     target: *entity,
                     text: "".to_string(),
+                    extra_frames: None,
                 },
                 //TODO Easing / tweening
             ));
@@ -449,12 +480,17 @@ fn handle_key(
     mut tooltip: Query<(Entity, &mut Tooltip, &mut Text)>,
     mut commands: Commands,
 ) {
-    'outer: for k in keyboard.read() {
-        if k.state.is_pressed() && !k.repeat {
-            for h in hover.iter() {
-                if let Some((id, mut tooltip, mut text)) =
-                    tooltip.iter_mut().find(|t| t.1.target == h.0)
-                {
+    for h in hover.iter() {
+        if let Some((id, mut tooltip, mut text)) = tooltip.iter_mut().find(|t| t.1.target == h.0) {
+            if let Some(start) = tooltip.extra_frames {
+                // then tooltip was already triggered, leave it visible a few frames and then despawn
+                if start.elapsed().as_millis() > 10000 {
+                    commands.entity(id).despawn();
+                }
+            }
+
+            'outer: for k in keyboard.read() {
+                if k.state.is_pressed() && !k.repeat {
                     match &k.logical_key {
                         Key::Character(s) => {
                             let s = s.as_str();
@@ -462,10 +498,10 @@ fn handle_key(
                                 continue 'outer;
                             }
 
-                            if "wasd".contains(s) && tooltip.text.is_empty(){
-                                continue 'outer; 
+                            if "wasd".contains(s) && tooltip.text.is_empty() {
+                                continue 'outer;
                             }
-                            
+
                             tooltip.text += s;
                         }
                         Key::Escape => {
@@ -479,20 +515,36 @@ fn handle_key(
 
                     let conf = h.3.cloned().unwrap_or_default();
                     let i = tooltip.text.len();
-                    if conf.string.get(i..i+1) == Some(" "){
+                    if conf.string.get(i..i + 1) == Some(" ") {
                         // support strings with spaces in them, even though we don't type the space
                         tooltip.text += " ";
                     }
+
+                    text.0 = tooltip.text.clone();
 
                     // trigger event
                     // TODO disable tooltip during animation.
                     if tooltip.text == conf.string {
                         commands.trigger_targets(Interaction, h.0);
-                        commands.entity(id).despawn();
+                        tooltip.extra_frames = Some(Instant::now());
+                        commands
+                            .entity(id)
+                            .insert(BackgroundColor(Color::srgba(0.5, 0.5, 0.5, 0.0)))
+                            .remove::<Outline>();
+
+                        // TODO need 0.16 for bugfix
+                        // commands.entity(id).insert(
+                        //     TextColor(Color::srgba(0.05, 0.05, 0.05, 0.5)).ease_to(
+                        //         TextColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
+                        //         EaseMethod::Linear,
+                        //         EasingType::Once {
+                        //             duration: Duration::from_millis(5000),
+                        //         },
+                        //     ),
+                        // );
                         return;
                     }
 
-                    text.0 = tooltip.text.clone();
                     let i = text.0.len();
                     if i < conf.show.len() {
                         text.0 += &conf.show[i..]; //TODO greyout suggestions
@@ -542,6 +594,17 @@ where
     fn option<I, H: frunk::hlist::Selector<Option<&'a Self>, I>>(src: &H) -> Option<&'a Self> {
         let a: &Option<&Self> = src.get();
         a.to_owned()
+    }
+}
+
+#[derive(Debug, Clone, Resource, Reflect, Default)]
+#[reflect(Resource)]
+pub struct DebugForMissingReflect {
+    pub hover: HashMap<Entity, HitData>,
+}
+impl DebugForMissingReflect {
+    fn system(mut this: ResMut<DebugForMissingReflect>, h: Res<HoverMap>) {
+        this.hover = h.0.values().flat_map(|v| v.clone()).collect()
     }
 }
 

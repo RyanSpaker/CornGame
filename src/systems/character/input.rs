@@ -1,4 +1,3 @@
-
 // abstracts keyboard input
 use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
@@ -10,7 +9,9 @@ pub enum Action {
     #[actionlike(DualAxis)]
     Move,
     #[actionlike(DualAxis)]
-    Pan
+    Pan,
+
+    Toggle,
 }
 
 impl Action {
@@ -23,6 +24,8 @@ impl Action {
         input_map.insert(Self::Crouch, KeyCode::ControlLeft);
         input_map.insert(Self::Run, KeyCode::ShiftLeft);
         input_map.insert_dual_axis(Self::Pan, MouseMove::default());
+
+        input_map.insert(Self::Toggle, KeyCode::Backquote);
 
         input_map
     }

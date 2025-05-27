@@ -11,10 +11,10 @@ use bevy::gizmos::GizmoRenderSystem;
 use bevy::input::InputSystem;
 use bevy::pbr::LightEntity;
 /// This will implement the character controller and animations.
-/// 
+///
 /// using a library called tnua because it had a working demo with animations. https://idanarye.github.io/bevy-tnua/demos/platformer_3d-xpbd
 /// might want to rip it out eventually
-/// 
+///
 /// TODO:
 /// [ ] character controller
 /// [ ] animations
@@ -23,7 +23,6 @@ use bevy::pbr::LightEntity;
 ///   [ ] interpolation
 /// [ ] item holding (ex flashlight)
 /// [ ] sight map (for out of sight changes)
-
 use bevy::{prelude::*, transform};
 use avian3d::prelude::*;
 use controller::{look_handler, CornGameCharController};
@@ -32,30 +31,37 @@ use leafwing_input_manager::plugin::InputManagerPlugin;
 use leafwing_input_manager::InputManagerBundle;
 use lightyear::prelude::client::ReplicateToServer;
 use lightyear::prelude::server::SyncTarget;
-use lightyear::prelude::{AppComponentExt, ClientReplicate, HasAuthority, ParentSync, ReplicateHierarchy, Replicated};
+use lightyear::prelude::{
+    AppComponentExt,
+    ClientReplicate,
+    HasAuthority,
+    ParentSync,
+    ReplicateHierarchy,
+    Replicated,
+};
 use lightyear::shared::replication::components::InitialReplicated;
 use serde::{Deserialize, Serialize};
 
-use crate::ecs::main_camera::MainCamera;
+use crate::ecs::cameras::MainCamera;
 
 use self::input::Action;
 
-mod input;
-mod controller;
 mod animation;
+mod controller;
+mod input;
 
 pub struct MyCharacterPlugin;
-impl Plugin for MyCharacterPlugin{
+impl Plugin for MyCharacterPlugin {
     fn build(&self, app: &mut App) {
         // button input plugin
         app.add_plugins(InputManagerPlugin::<self::input::Action>::default());
-        
+
         app.register_type::<CornGameCharController>();
         app.register_type::<SpawnLocation>();
         app.register_type::<SpawnPlayerEvent>();
 
         // init character controller plugin
-        app.add_plugins(bevy_tnua_avian3d::TnuaAvian3dPlugin::new(Update));//NOTE: FixedUpdate?
+        app.add_plugins(bevy_tnua_avian3d::TnuaAvian3dPlugin::new(Update)); //NOTE: FixedUpdate?
         app.add_plugins(bevy_tnua::controller::TnuaControllerPlugin::default());
 
         // This plugin supports `TnuaCrouchEnforcer`, which prevents the character from standing up
@@ -69,7 +75,8 @@ impl Plugin for MyCharacterPlugin{
         );
         app.add_systems(
             FixedUpdate, // Update was causing jitter. but it might have just been gizmos.
-            self::controller::round_velocity.in_set(lightyear::client::input::InputSystemSet::WriteClientInputs),
+            self::controller::round_velocity
+                .in_set(lightyear::client::input::InputSystemSet::WriteClientInputs),
         );
         app.add_systems(Update, look_handler);
         app.add_systems(Update, animation_test);
@@ -78,16 +85,19 @@ impl Plugin for MyCharacterPlugin{
         // app.add_systems(Update, animation_patcher_system);
         // app.add_systems(Update, animate_platformer_character);
         app.add_observer(move_player_to_spawn_obs);
-        app.add_observer(|
-            t: Trigger<OnAdd, SpawnLocation>, 
-            query: Query<&SpawnLocation>,
-            mut commands: Commands
-        | {
-            // problematic for multiplayer
-            if query.get(t.entity()).unwrap().default {
-                commands.trigger(SpawnPlayerEvent::default());
-            }
-        });
+        app.add_systems(
+            PostUpdate,
+            (|query: Query<&SpawnLocation, Added<SpawnLocation>>, mut commands: Commands| {
+                // problematic for multiplayer
+                // BUG: If I use a trigger here, then players are moved to spawn before GlobalTransform is populated.
+                for loc in query.iter() {
+                    if loc.default {
+                        commands.trigger(SpawnPlayerEvent::default());
+                    }
+                }
+            })
+            .after(TransformSystem::TransformPropagate),
+        );
 
         app.register_type::<Character>();
         app.register_component::<Character>(lightyear::prelude::ChannelDirection::Bidirectional);
@@ -98,7 +108,7 @@ impl Plugin for MyCharacterPlugin{
 }
 
 /// current or networked player
-#[derive(Debug,Clone, Component, Reflect, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Component, Reflect, Serialize, Deserialize, PartialEq)]
 #[reflect(Component)]
 pub struct Character;
 
@@ -116,7 +126,7 @@ impl Player {
             //bevy_tnua::TnuaAnimatingState::<self::animation::AnimationState>::default(), // This doesn't seem to provide anything over rolling your own
             MyAnimationState::Idle,
             bevy_tnua_avian3d::TnuaAvian3dSensorShape(Collider::cylinder(0.2, 0.0)), //XXX configure this in CornGameCharacterController
-            CornGameCharController{
+            CornGameCharController {
                 // height: 2.0,
                 // crouch_height: 2.0,
                 // float: 0.5,
@@ -124,20 +134,17 @@ impl Player {
                 ..default()
             },
             // MaxAngularSpeed(2.0*PI * 10.0),
-            
-            InputManagerBundle::with_map(
-                Action::default_input_map(),
-            ),
-
+            InputManagerBundle::with_map(Action::default_input_map()),
             // BlueprintInfo::from_path("blueprints/construction_worker.glb"),
             // SpawnBlueprint,
-            DehydratedChild::new(|_| (
-                Transform::from_xyz(0.0, -1.5, 0.0),
-                BlueprintInfo::from_path("blueprints/construction_worker.glb"),
-                SpawnBlueprint,
-                ReplicateOtherClients(true),
-            )),
-
+            DehydratedChild::new(|_| {
+                (
+                    Transform::from_xyz(0.0, -1.5, 0.0),
+                    BlueprintInfo::from_path("blueprints/construction_worker.glb"),
+                    SpawnBlueprint,
+                    ReplicateOtherClients(true),
+                )
+            }),
             ReplicateOtherClients(false),
             // SyncTarget {
             //     interpolation: lightyear::prelude::NetworkTarget::All,
@@ -145,7 +152,6 @@ impl Player {
             // },
 
             // How to get other clients to attach RigidBody and collider
-
 
             // Hack to add spot light as child,
             // TODO make it so I can specify this as a asset and load it with scene / from commandline (also shpuld be able to disable scene items from command line or console)
@@ -173,12 +179,10 @@ impl Player {
 
     pub fn init_network_character(
         mut commands: Commands,
-        query: Query<Entity, (Added<Character>, With<Replicated>)>
-    ){
+        query: Query<Entity, (Added<Character>, With<Replicated>)>,
+    ) {
         for entity in query.iter() {
-            commands.entity(entity).insert(
-                RigidBody::Kinematic
-            );
+            commands.entity(entity).insert(RigidBody::Kinematic);
         }
     }
 }
@@ -186,82 +190,92 @@ impl Player {
 #[derive(Debug, Default, Reflect, Component)]
 #[reflect(Default)]
 #[reflect(Component)]
-pub struct SpawnLocation{
+pub struct SpawnLocation {
     pub default: bool,
 }
 
 #[derive(Debug, Default, Reflect, Event)]
-pub struct SpawnPlayerEvent{
+pub struct SpawnPlayerEvent {
     pub target: Option<String>,
 }
 
 #[derive(Debug, QueryData)]
 struct SpawnQuery {
+    e: Entity,
     gt: &'static GlobalTransform,
     name: Option<&'static Name>,
-    info: Option<&'static SpawnLocation>
+    info: Option<&'static SpawnLocation>,
 }
 
 fn move_player_to_spawn_obs(
     trigger: Trigger<SpawnPlayerEvent>,
-    mut camera: Query<(Entity, &mut Transform, &GlobalTransform), (With<MainCamera>, Without<Player>)>,
+    mut camera: Query<
+        (Entity, &mut Transform, &GlobalTransform),
+        (With<MainCamera>, Without<Player>),
+    >,
     mut player: Query<(Entity, &mut Transform, &GlobalTransform), With<Player>>,
     spawn: Query<SpawnQuery>,
     mut commands: Commands,
-){
+) {
     // spawn a player or move existing player
     // TODO narrow by scene
 
     // get matching names (or SpawnLocations if name not specified)
-    let mut spawn : Vec<_> = spawn.iter().filter(|s| 
-        trigger.target.as_ref().is_none_or(|target| 
-            s.name.is_some_and(|n2| target == n2.as_str())
-        &&
-        ( trigger.target.is_some() || s.info.is_some() )
-    )).collect();
+    let mut spawn: Vec<_> = spawn
+        .iter()
+        .filter(|s| {
+            trigger.target.as_ref().is_none_or(|target| {
+                s.name.is_some_and(|n2| target == n2.as_str())
+                    && (trigger.target.is_some() || s.info.is_some())
+            })
+        })
+        .collect();
 
     // prefer default spawn_location, followed by other spawn_locations, fallback to simple name match (XXX overengineered)
-    spawn.sort_by_key(|s|{
-        match s.info {
-            Some(v) => match v.default {
-                true => 2,
-                false => 1,
-            },
-            None => 0,
-        }
+    spawn.sort_by_key(|s| match s.info {
+        Some(v) => match v.default {
+            true => 2,
+            false => 1,
+        },
+        None => 0,
     });
 
-    let spawn = spawn.pop().map(|s|*s.gt).unwrap_or_default();
+    let spawn = spawn.pop();
+    let transform = spawn.as_ref().map(|s| *s.gt).unwrap_or_default();
 
-    let mut transform : Transform = spawn.compute_transform();
+    let entity = spawn
+        .map(|s| s.e.to_string())
+        .unwrap_or("DEFAULT".to_string());
+
+    let mut transform: Transform = transform.compute_transform();
     transform.scale = Vec3::ONE;
 
     match player.get_single_mut() {
         Ok((id, mut t, _gt)) => {
             // todo use gt
-            info!("moving player to spawn {}", &transform.translation);
+            info!(
+                "moving player to spawn {} @ {}",
+                &entity, &transform.translation
+            );
             *t = transform;
-            commands.entity(id).insert((
-                LinearVelocity::default(),
-                AngularVelocity::default()
-            ));
-        },
+            commands
+                .entity(id)
+                .insert((LinearVelocity::default(), AngularVelocity::default()));
+        }
         Err(QuerySingleError::NoEntities(_)) => {
-            info!("creating player at spawn {}", &transform.translation);
-            commands.spawn((
-                Player::bundle(),
-                transform
-            ));
-        },
+            info!(
+                "creating player at spawn {} @ {}",
+                &entity, &transform.translation
+            );
+            commands.spawn((Player::bundle(), transform));
+        }
         Err(QuerySingleError::MultipleEntities(_)) => todo!(),
     }
 
-    if let Ok(mut camera) = camera.get_single_mut(){
+    if let Ok(mut camera) = camera.get_single_mut() {
         *camera.1 = transform;
     }
-    
 }
-
 
 #[derive(Component)]
 pub struct DehydratedChild {
@@ -269,9 +283,9 @@ pub struct DehydratedChild {
 }
 
 impl DehydratedChild {
-    pub fn new<B:Bundle, F: (Fn(Entity) -> B) + Send + Sync + 'static>(bundle:F) -> Self {
+    pub fn new<B: Bundle, F: (Fn(Entity) -> B) + Send + Sync + 'static>(bundle: F) -> Self {
         Self {
-            bundle_factory: Some(Box::new( move |commands: &mut Commands, parent: Entity| {
+            bundle_factory: Some(Box::new(move |commands: &mut Commands, parent: Entity| {
                 commands.entity(parent).with_child(bundle(parent)).id()
             })),
         }
@@ -285,11 +299,15 @@ fn spawn_dehydrated_child_obs(
     mut query: Query<&mut DehydratedChild, Added<DehydratedChild>>,
 ) {
     let mut dehydrated_child = query.get_mut(trigger.entity()).expect("bad trigger?");
-    let bundle_factory = dehydrated_child.bundle_factory.take().expect("should have callback");
+    let bundle_factory = dehydrated_child
+        .bundle_factory
+        .take()
+        .expect("should have callback");
     bundle_factory(&mut commands, trigger.entity());
-    commands.entity(trigger.entity()).remove::<DehydratedChild>();
+    commands
+        .entity(trigger.entity())
+        .remove::<DehydratedChild>();
 }
-
 
 use blenvy::{BlueprintAnimationPlayerLink, BlueprintInfo, SpawnBlueprint};
 use blenvy::BlueprintAnimations;
@@ -297,28 +315,37 @@ use blenvy::BlueprintAnimations;
 use super::interactions::Interactable;
 use super::network::ReplicateOtherClients;
 
+/// TODO: Blenvy -> skein
 /// KEEP this, default behavior should be to play animations
 pub fn animation_test(
-    animated_robots: Query<(Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations), Without<Interactable>>,
+    animated_robots: Query<
+        (Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations),
+        Without<Interactable>,
+    >,
 
     mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>, //TODO should be more general without case
-
 ) {
     // robots
     for (id, link, animations) in animated_robots.iter() {
         let Ok((mut animation_player, mut animation_transitions)) =
-            animation_players.get_mut(link.0) else {continue};
-        if animation_player.playing_animations().next().is_some(){
+            animation_players.get_mut(link.0)
+        else {
+            continue;
+        };
+        if animation_player.playing_animations().next().is_some() {
             // don't start animation if one is playing
-            break;   
+            break;
         }
         debug!("start animation for {}", id);
         animation_transitions
             .play(
                 &mut animation_player,
                 *animations
-                    .named_indices.iter().next()
-                    .expect("there should be an animation").1,
+                    .named_indices
+                    .iter()
+                    .next()
+                    .expect("there should be an animation")
+                    .1,
                 Duration::from_secs(1),
             )
             .repeat();

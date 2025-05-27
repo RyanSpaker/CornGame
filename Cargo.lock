@@ -645,6 +645,7 @@ dependencies = [
  "bevy_core_pipeline",
  "bevy_ecs",
  "bevy_egui",
+ "bevy_gltf",
  "bevy_hierarchy",
  "bevy_image",
  "bevy_log",
@@ -652,6 +653,7 @@ dependencies = [
  "bevy_pbr",
  "bevy_reflect",
  "bevy_render",
+ "bevy_scene",
  "bevy_state",
  "bevy_time",
  "bevy_utils",
@@ -1356,11 +1358,9 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "bevy_utils",
- "tracing-error",
  "tracing-log",
  "tracing-oslog",
  "tracing-subscriber",
- "tracing-tracy",
  "tracing-wasm",
 ]
 
@@ -1649,7 +1649,6 @@ dependencies = [
  "naga_oil",
  "nonmax",
  "offset-allocator",
- "profiling",
  "send_wrapper",
  "serde",
  "smallvec",
@@ -1688,6 +1687,25 @@ dependencies = [
  "derive_more 1.0.0",
  "serde",
  "uuid",
+]
+
+[[package]]
+name = "bevy_skein"
+version = "0.1.4"
+dependencies = [
+ "bevy_app",
+ "bevy_core",
+ "bevy_ecs",
+ "bevy_gltf",
+ "bevy_hierarchy",
+ "bevy_log",
+ "bevy_reflect",
+ "bevy_remote",
+ "bevy_scene",
+ "bevy_utils",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -2559,6 +2577,7 @@ dependencies = [
  "bevy_editor_pls",
  "bevy_metrics_dashboard",
  "bevy_remote_inspector",
+ "bevy_skein",
  "blenvy",
  "bytemuck",
  "clap",
@@ -6140,7 +6159,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afbdc74edc00b6f6a218ca6a5364d6226a259d4b8ea1af4a0ea063f27e179f4d"
 dependencies = [
  "profiling-procmacros",
- "tracing",
 ]
 
 [[package]]
