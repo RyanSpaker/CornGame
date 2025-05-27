@@ -51,7 +51,7 @@ impl Plugin for CornGame {
             DefaultPlugins
                 .set(WindowPlugin {
                     primary_window: Some(Window {
-                        present_mode: bevy::window::PresentMode::Mailbox,
+                        present_mode: bevy::window::PresentMode::AutoVsync,
                         ..default()
                     }),
                     ..default()
@@ -66,9 +66,10 @@ impl Plugin for CornGame {
                 //     custom_layer,
                 //     ..Default::default()
                 // }),
-                .disable::<LogPlugin>(),
+                //.disable::<LogPlugin>(),
         );
-        app.add_plugins(bevy_editor_pls::default_windows::utils::log_plugin::LogPlugin::default());
+        //app.add_plugins(bevy_editor_pls::default_windows::utils::log_plugin::LogPlugin::default());
+        
         app.add_plugins((
             systems::CornSystemsPlugin,
             scenes::CornScenesPlugin,

@@ -7,12 +7,6 @@ const LOD_COUNT = #{OVERRIDE_LOD_COUNT}u;
 const LOD_COUNT = 1u;
 #endif
 
-#ifdef OVERRIDE_PADDING_COUNT
-const PADDING_COUNT = #{OVERRIDE_PADDING_COUNT}u;
-#else
-const PADDING_COUNT = 3u;
-#endif
-
 const INDIRECT_COUNT = LOD_COUNT*5u;
 
 @group(0) @binding(0)
@@ -46,6 +40,7 @@ struct ConfigValues {
 @group(0) @binding(6)
 var<uniform> config: ConfigValues;
 
+var<push_constant> vertex_offset: u32;
 var<push_constant> lod_cutoffs: array<f32, LOD_COUNT>;
 
 // Calculates LOD from a index into the instance data. 
@@ -56,17 +51,17 @@ fn calc_lod(position: u32) -> u32{
   let offset: vec2<f32> = pos.xz - config.camera_pos_field_space.xz;
   let distance: f32 = dot(offset, offset);
   for (var i = 0u; i < LOD_COUNT; i++){
-    if distance >= lod_cutoffs[i]{
+    if distance >= lod_cutoffs[i]*lod_cutoffs[i]{
       lod += 1u;
     }
   }
   let projected: vec4<f32> = config.field_to_clip*pos;
   let bounds: vec3<f32> = projected.xyz / projected.w;
   var enabled: u32 = u32(
-    step(bounds.x, 1.1)*
-    step(-1.1, bounds.x)* 
-    step(0.0, bounds.z) > 0.0 || distance < lod_cutoffs[0] // always render closest corn b/c shadows
-  ) * instance_data[position].enabled;
+    step(projected.x, projected.w*1.1)*step(-projected.w*1.1, projected.x)*step(projected.z, projected.w)*step(0.0, projected.z) > 0.0 
+    || distance < lod_cutoffs[0] // always render closest corn b/c shadows
+  ) * instance_data[position].enabled * u32(position < arrayLength(&instance_data));
+  //return select(LOD_COUNT, 3u, position < arrayLength(&instance_data) && distance < 200.0);
   return select(LOD_COUNT, lod, bool(enabled));
 }
 
@@ -132,9 +127,9 @@ fn vote_scan(
 
   upswing(lid);
   // Record maximum in count
-  if (lid < LOD_COUNT) {
-    count_buffer_1[wid.x][lid] = scan_buffer[255][lid];
-    scan_buffer[255][lid] = 0u;
+  if (simple_lid.x < LOD_COUNT) {
+    count_buffer_1[wid.x][simple_lid.x] = scan_buffer[255][simple_lid.x];
+    scan_buffer[255][simple_lid.x] = 0u;
   }
   downswing(lid);
 
@@ -161,9 +156,9 @@ fn group_scan(
 
   upswing(lid);
   // Record maximum in count 2
-  if (lid < LOD_COUNT) {
-    count_buffer_2[wid.x][lid] = scan_buffer[255][lid];
-    scan_buffer[255][lid] = 0u;
+  if (simple_lid.x < LOD_COUNT) {
+    count_buffer_2[wid.x][simple_lid.x] = scan_buffer[255][simple_lid.x];
+    scan_buffer[255][simple_lid.x] = 0u;
   }
   downswing(lid);
 
@@ -196,6 +191,8 @@ fn group_scan2(
     for(var j: u32 = 0u; j < LOD_COUNT; j++){
       indirect_buffer[j*5u+1u] = scan_buffer[255][j];
       indirect_buffer[j*5u+4u] = sum;
+      // setup vertex offset here
+      indirect_buffer[j*5u+3u] = vertex_offset;
       sum += scan_buffer[255][j];
       scan_buffer[255][j] = 0u;
     }

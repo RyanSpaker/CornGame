@@ -8,7 +8,7 @@ var<storage, read_write> instance_data: array<PerCornData>;
 @group(0) @binding(1)
 var<uniform> settings: CornSettings;
 
-@compute @workgroup_size(256, 1)
+@compute @workgroup_size(256, 1, 1)
 fn simple_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) id_count: vec3<u32>) {
   let res_width: u32 = bitcast<u32>(settings.origin_res_width.w);
   let instance_index: u32 = gid.x;
@@ -31,7 +31,7 @@ fn simple_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workg
   instance_data[gid.x] = out;
 }
 
-@compute @workgroup_size(256, 1)
+@compute @workgroup_size(256, 1, 1)
 fn simple_rect_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) id_count: vec3<u32>) {
   let res_width: u32 = bitcast<u32>(settings.origin_res_width.w);
   let instance_index: u32 = gid.x;

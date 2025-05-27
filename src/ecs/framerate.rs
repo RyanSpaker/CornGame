@@ -36,48 +36,47 @@ pub fn spawn_fps_text(mut commands: Commands){
     let mut node = Node::default();
     node.margin.top = Val::Px(10.0);
 
-    commands
-            .spawn((
-                Name::from("FPS Display"),
-                Text::new("FPS: "),
-                TextFont {
-                    font_size: 20.0,
-                    ..default()
-                },
-                TextColor(css::GOLD.into()), 
-                node
-            ))
-            .with_children(|builder|{
-                let fps = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS), DiagnosticMode::Function(|d|{
-                    format!("{:.2}", d.smoothed().unwrap_or_default())
-                }));
-                let fps_range = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS), DiagnosticMode::Function(|d|{
-                    // TODO for the love of god, this should not be this complicated and it shouldn't take me 5 minutes to write fucking max()
+    commands.spawn((
+        Name::from("FPS Display"),
+        Text::new("FPS: "),
+        TextFont {
+            font_size: 20.0,
+            ..default()
+        },
+        TextColor(css::GOLD.into()), 
+        node
+    ))
+    .with_children(|builder|{
+        let fps = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS), DiagnosticMode::Function(|d|{
+            format!("{:.2}", d.smoothed().unwrap_or_default())
+        }));
+        let fps_range = (TextSpan::default(), TextFromDiagnostic(FrameTimeDiagnosticsPlugin::FPS), DiagnosticMode::Function(|d|{
+            // TODO for the love of god, this should not be this complicated and it shouldn't take me 5 minutes to write fucking max()
 
-                    let mut sorted : Vec<f64> = d.measurements().map(|d|d.value).collect();
-                    sorted.sort_by(f64::total_cmp);
+            let mut sorted : Vec<f64> = d.measurements().map(|d|d.value).collect();
+            sorted.sort_by(f64::total_cmp);
 
-                    if ! sorted.is_empty(){
-                        let max = sorted.last().unwrap();
-                        let min = sorted.first().unwrap();
-                    
-                        let mean = d.average().unwrap();
-                        let stddev = sorted.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / sorted.len() as f64;
-                        format!("[+/- {:.0}] {:.0} - {:.0}", stddev, min, max)
-                    }else{
-                        Default::default()
-                    }
-                }
-                ));
+            if ! sorted.is_empty(){
+                let max = sorted.last().unwrap();
+                let min = sorted.first().unwrap();
+            
+                let mean = d.average().unwrap();
+                let stddev = sorted.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / sorted.len() as f64;
+                format!("[+/- {:.0}] {:.0} - {:.0}", stddev, min, max)
+            }else{
+                Default::default()
+            }
+        }
+        ));
 
 
-                builder.spawn(fps);
-                builder.spawn(fps_range);
+        builder.spawn(fps);
+        builder.spawn(fps_range);
 
-                builder.spawn((TextSpan::new("\nPos: "))).with_children(|builder|{
-                    builder.spawn((TextSpan::default(), DiagPos));    
-                }); 
-            });
+        builder.spawn(TextSpan::new("\nPos: ")).with_children(|builder|{
+            builder.spawn((TextSpan::default(), DiagPos));    
+        }); 
+    });
 }
 
 #[derive(Debug, Component)]
