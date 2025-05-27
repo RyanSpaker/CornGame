@@ -1,9 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use bevy::{prelude::*, render::{
-    extract_component::{ExtractComponent, ExtractComponentPlugin}, 
-    render_graph::*, render_resource::*, 
-    renderer::{RenderContext, RenderDevice}, 
-    Render, RenderApp, RenderSet
+    extract_component::{ExtractComponent, ExtractComponentPlugin}, render_asset::RenderAssets, render_graph::*, render_resource::*, renderer::{RenderContext, RenderDevice}, texture::GpuImage, Render, RenderApp, RenderSet
 }};
 use crate::ecs::corn::{shader::*, CornField, CornLoaded, InstanceBuffer};
 
@@ -94,15 +91,22 @@ pub trait AsCornInitShader: Component+Sized+AsCornShader{
     fn get_push_constants(_settings: &Self::Settings) -> Vec<u8> {vec![]}
     /// Function which converts a settings component into a collection of settings buffers
     fn get_settings_buffer(settings: &Self::Settings, render_device: &RenderDevice) -> Vec<Buffer>;
+    /// Appends the texture bindgroups entries necessary for this shader
+    fn append_texture_bindgroups<'a>(_settings: &Self::Settings, _image_assets: &'a RenderAssets<GpuImage>, _entries: &mut Vec<BindGroupEntry<'a>>) {}
+    /// Determines if all assets are loaded for this shader
+    fn check_assets_loaded(_settings: &Self::Settings, _assets: &RenderAssets<GpuImage>) -> bool {true}
 }
 
 pub fn create_invocation_entities<S: AsCornInitShader>(
     query: Query<(Entity, &S::Settings), (Without<CornLoaded>, Without<WaitingOnInvocation>, With<CornField>)>,
     shader: Query<Entity, (With<CornInitShader>, With<S>)>,
+    image_assets: Res<RenderAssets<GpuImage>>,
     mut commands: Commands
 ){
     let shader = shader.single();
     for (entity, settings) in query.iter(){
+        // check asset state
+        if !S::check_assets_loaded(settings, image_assets.as_ref()) {continue;}
         let invocation = commands.entity(shader).with_child((
             InitShaderInvocation(entity),
             settings.clone()
@@ -142,6 +146,7 @@ pub fn create_invocation_settings<S: AsCornInitShader>(
     query: Query<(Entity, &S::Settings, &InstanceBuffer, &InitSettingsBuffers), (With<InitShaderInvocation>, Without<InitInvocationSettings>)>,
     shader: Query<&ShaderPipelineResources, (With<CornInitShader>, With<S>)>,
     render_device: Res<RenderDevice>,
+    images: Res<RenderAssets<GpuImage>>,
     mut commands: Commands
 ){
     let layout = &shader.single().layout;
@@ -150,6 +155,7 @@ pub fn create_invocation_settings<S: AsCornInitShader>(
         for (i, buffer) in buffers.0.iter().enumerate(){
             entries.push(BindGroupEntry { binding: (i+1) as u32, resource: buffer.as_entire_binding() });
         }
+        S::append_texture_bindgroups(settings, images.as_ref(), &mut entries);
         let bindgroup = render_device.create_bind_group(
             Some((S::get_label().into().to_string() + " Bind Group").as_str()), 
             layout,
@@ -199,7 +205,7 @@ impl CornInitShaderAppExt for App{
             create_invocation_entities::<S>.before(RenderSet::PrepareResources).after(RenderSet::ExtractCommands), 
             (create_instance_buffers::<S>, create_settings_buffers::<S>).in_set(RenderSet::PrepareResources), 
             create_invocation_settings::<S>.in_set(RenderSet::PrepareBindGroups)
-        ));
+        )).add_systems(ExtractSchedule, super::RemakeCornField::tag_render_world::<S>);
         // Add extract plugins
         self.add_plugins(ExtractComponentPlugin::<S::Settings>::default());
         self

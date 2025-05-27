@@ -110,11 +110,12 @@ pub struct VoteScanBuffers{
 }
 impl VoteScanBuffers{
     fn spawn_scan_buffers(
-        query: Query<(Entity, &InstanceBuffer), (With<CornLoaded>, Without<Self>)>,
+        missing: Query<(Entity, &InstanceBuffer), (With<CornLoaded>, Without<Self>)>,
+        changed: Query<(Entity, &InstanceBuffer), (With<CornLoaded>, With<Self>, Changed<InstanceBuffer>)>,
         render_device: Res<RenderDevice>,
         mut commands: Commands
     ){
-        for (entity, InstanceBuffer(_, count)) in query.iter(){
+        for (entity, InstanceBuffer(_, count)) in missing.iter().chain(changed.iter()){
             let vote_buffer = render_device.create_buffer(&BufferDescriptor{
                 label: Some("Corn Field Vote Buffer"),
                 size: count*8,
@@ -180,12 +181,13 @@ impl VoteScanBuffers{
 pub struct VoteScanBindGroup(pub BindGroup, pub [u32; 4]);
 impl VoteScanBindGroup{
     fn spawn_scan_bindgroup(
-        query: Query<(Entity, &VoteScanBuffers, &InstanceBuffer, &IndirectBuffer, &VertexInstanceBuffer), Without<Self>>,
+        query: Query<(Entity, Ref<VoteScanBuffers>, Ref<InstanceBuffer>, Ref<IndirectBuffer>, Ref<VertexInstanceBuffer>, Has<Self>)>,
         pipeline: Res<VoteScanPipelineResources>,
         render_device: Res<RenderDevice>,
         mut commands: Commands
     ){
-        for(entity, scan, instance, indirect, vertex) in query.iter(){
+        for(entity, scan, instance, indirect, vertex, has_self) in query.iter(){
+            if has_self && !scan.is_changed() && !instance.is_changed() && !indirect.is_changed() && !vertex.is_changed() {continue;}
             let bindgroup = render_device.create_bind_group(
                 Some("Corn Field Scan Prepass Bind Group"), 
                 &pipeline.layout, 

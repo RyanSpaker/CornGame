@@ -112,7 +112,7 @@ impl FromWorld for CornModel{
     // Loads the gltf, and creates a handle for the merged mesh
     fn from_world(world: &mut World) -> Self {
         let assets = world.resource::<AssetServer>();
-        let gltf_handle = assets.load("models/CornTest.glb");
+        let gltf_handle = assets.load("models/corn3.glb");
         let (tx, rx) = async_channel::bounded(1);
         world.spawn(CornMeshSender(gltf_handle.clone(), tx));
         let assets = world.resource::<AssetServer>();

@@ -46,7 +46,7 @@ var<push_constant> lod_cutoffs: array<f32, LOD_COUNT>;
 // Calculates LOD from a index into the instance data. 
 // 0 is highest, LOD_COUNT-1 is lowest, LOD_COUNT is not rendered
 fn calc_lod(position: u32) -> u32{
-  var lod: u32 = 0;
+  var lod: u32 = 0u;
   let pos: vec4<f32> = vec4<f32>(instance_data[position].offset.xyz, 1.0);
   let offset: vec2<f32> = pos.xz - config.camera_pos_field_space.xz;
   let distance: f32 = dot(offset, offset);

@@ -81,6 +81,7 @@ impl MaterialExtension for CornMaterialExtension {
     }
 }
 
+
 pub struct DrawCorn;
 impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
     type Param = (
@@ -137,11 +138,11 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
                     }
                 };
                 pass.set_index_buffer(index_buffer_slice.buffer.slice(start..end), 0, *index_format);
-                event!(Level::TRACE, "Rendering Corn, indexed: {}", true);
+                event!(Level::TRACE, "Rendering Corn, indexed: {}, lods: {}", true, LOD_COUNT);
                 pass.multi_draw_indexed_indirect(indirect_buffer, 0, LOD_COUNT);
             }
             RenderMeshBufferInfo::NonIndexed => {
-                event!(Level::TRACE, "Rendering Corn, indexed: {}", false);
+                event!(Level::TRACE, "Rendering Corn, indexed: {}, lods: {}", false, LOD_COUNT);
                 pass.multi_draw_indirect(indirect_buffer, 0, LOD_COUNT);
             }
         }

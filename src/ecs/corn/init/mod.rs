@@ -1,10 +1,12 @@
 pub mod shader;
 pub mod simple;
+pub mod image;
 
-use bevy::{prelude::*, render::{extract_component::{ExtractComponent, ExtractComponentPlugin}, renderer::RenderDevice, Render, RenderApp, RenderSet}};
-use shader::CornInitShaderPlugin;
+use bevy::{prelude::*, render::{extract_component::{ExtractComponent, ExtractComponentPlugin}, renderer::RenderDevice, sync_world::RenderEntity, Extract, Render, RenderApp, RenderSet}};
+use bytemuck::{Pod, Zeroable};
+use image::ImageInitPlugin;
+use shader::{AsCornInitShader, CornInitShaderPlugin};
 use simple::SimpleInitPlugin;
-
 use super::{CornData, CornLoaded, InstanceBuffer};
 
 /*
@@ -19,6 +21,25 @@ use super::{CornData, CornLoaded, InstanceBuffer};
     In a node, Start a compute pass
     Set pipeline, Set bindgroup, invoke sum # of times
 */
+
+pub mod prelude{
+    pub use super::{InitialCornData, RemakeCornField};
+    pub use super::image::{ImageCarvedInitSettings, ImageCarvedHexagonalSettings};
+    pub use super::simple::{SimpleInitSettings, SimpleHexagonalSettings};
+}
+
+#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+#[repr(C)]
+pub struct CornInitShaderSettings{
+    origin: Vec3,
+    resolution_width: u32,
+    height_range: f32,
+    minimum_height: f32,
+    step_size: Vec2,
+    random_settings: Vec2,
+    uv_scale: Vec2
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Reflect, Component, ExtractComponent)]
 #[reflect(Component)]
 pub struct InitialCornData(pub Vec<CornData>);
@@ -38,18 +59,46 @@ impl InitialCornData{
     }
 }
 
+/// Tag component added to corn fields when they need to be remade
+#[derive(Default, Debug, Clone, PartialEq, Eq, Reflect, Component)]
+#[reflect(Component)] #[component(storage="SparseSet")]
+pub struct RemakeCornField;
+impl RemakeCornField{
+    pub fn tag_render_world<S: AsCornInitShader>(
+        mut commands: Commands,
+        query: Extract<Query<(RenderEntity, Ref<S::Settings>)>>
+    ){
+        for (render_entity, settings) in query.iter(){
+            if !settings.is_changed() {continue;}
+            if S::get_instance_count(&settings) == 0 {continue;}
+            commands.entity(render_entity).insert(Self);
+        }
+    }
+    pub fn reset_corn_fields(
+        query: Query<Entity, (With<CornLoaded>, With<Self>)>,
+        mut commands: Commands
+    ){
+        for entity in query.iter() {
+            commands.entity(entity).remove::<(Self, CornLoaded)>();
+        }
+    }
+}
+
 /// Global Code for the init shader invocations
 #[derive(Debug, Default, Clone)]
 pub struct CornInitializationPlugin;
 impl Plugin for CornInitializationPlugin{
     fn build(&self, app: &mut App) {
-        app.register_type::<InitialCornData>()
+        app
+            .register_type::<InitialCornData>()
+            .register_type::<RemakeCornField>()
             .add_plugins(ExtractComponentPlugin::<InitialCornData>::default())
             .add_plugins(CornInitShaderPlugin)
         .sub_app_mut(RenderApp)
-            .add_systems(Render, InitialCornData::upload_data.in_set(RenderSet::PrepareResources));
+            .add_systems(Render, InitialCornData::upload_data.in_set(RenderSet::PrepareResources))
+            .add_systems(Render, RemakeCornField::reset_corn_fields.in_set(RenderSet::Cleanup));
         // Init Shader Plugins
-        app.add_plugins(SimpleInitPlugin);
+        app.add_plugins((SimpleInitPlugin, ImageInitPlugin));
         // Readback plugin
         #[cfg(debug_assertions)]
         app.add_plugins(readback::ReadbackPlugin);

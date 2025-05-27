@@ -10,7 +10,7 @@ use bevy::{prelude::*, render::{
     render_resource::*, renderer::RenderDevice, view::NoFrustumCulling, Render, RenderApp, RenderSet
 }};
 use bytemuck::{Pod, Zeroable};
-use init::{simple::SimpleInitShader, CornInitializationPlugin};
+use init::{prelude::*, CornInitializationPlugin};
 use asset::{CornModel, CornModelPlugin};
 use render::CornRenderPlugin;
 use scan_prepass::ScanPrepassPlugin;
@@ -106,12 +106,13 @@ pub struct IndirectBuffer(pub Buffer);
 impl IndirectBuffer{
     // System which creates indirect buffers for loaded corn field
     fn spawn_indirect(
-        query: Query<Entity, (With<CornLoaded>, Without<Self>)>,
+        query: Query<(Entity, Has<Self>), With<CornLoaded>>,
         corn_model: Res<CornModel>,
         render_device: Res<RenderDevice>,
         mut commands: Commands
     ){
-        for entity in query.iter(){
+        for (entity, has_self) in query.iter(){
+            if has_self && !corn_model.is_changed() {continue;}
             let data: Vec<u32> = corn_model.lod_info.iter().map(|(total, start)| 
                 [*total as u32, 0, *start as u32, 0, 0]
             ).flatten().collect();
@@ -130,11 +131,20 @@ impl IndirectBuffer{
 pub struct VertexInstanceBuffer(pub Buffer);
 impl VertexInstanceBuffer{
     fn spawn_vertex_buffer(
-        query: Query<(Entity, &InstanceBuffer), (With<CornLoaded>, Without<Self>)>,
+        missing: Query<(Entity, &InstanceBuffer), (With<CornLoaded>, Without<Self>)>,
+        changed: Query<(Entity, &InstanceBuffer), (With<CornLoaded>, With<Self>, Changed<InstanceBuffer>)>,
         render_device: Res<RenderDevice>,
         mut commands: Commands
     ){
-        for (entity, InstanceBuffer(_, count)) in query.iter(){
+        for (entity, InstanceBuffer(_, count)) in missing.iter(){
+            commands.entity(entity).insert(VertexInstanceBuffer(render_device.create_buffer(&BufferDescriptor{
+                label: Some("Corn Field Vertex Instance Buffer"),
+                size: count*64,
+                usage: BufferUsages::STORAGE | BufferUsages::VERTEX | BufferUsages::COPY_SRC,
+                mapped_at_creation: false
+            })));
+        }
+        for(entity, InstanceBuffer(_, count)) in changed.iter(){
             commands.entity(entity).insert(VertexInstanceBuffer(render_device.create_buffer(&BufferDescriptor{
                 label: Some("Corn Field Vertex Instance Buffer"),
                 size: count*64,
@@ -189,19 +199,20 @@ pub struct CornSensor{
 pub fn test_init(
     mut commands: Commands,
     default_resources: Res<SimpleMaterials>,
-    model: Res<CornModel>
+    model: Res<CornModel>,
+    _materials: Res<Assets<StandardMaterial>>,
+    _asset_server: Res<AssetServer>
 ){
     commands.spawn((
         CornField,
-        SimpleInitShader::new(
-            Vec3::ZERO, 
-            Vec2::ONE*500.0, 
-            UVec2::new(1000, 1000), 
-            Vec2::new(0.9, 1.1), 
+        SimpleHexagonalSettings::new(
+            Vec3::ZERO, Vec2::ONE*50.0,
+            1.0, Vec2::new(1.0, 1.0),
             0.0
         ),
-        Transform::from_xyz(0.0, 2.0, 0.0),
+        Transform::from_xyz(0.0, 0.0, 0.0),
         Mesh3d(model.mesh_handle.clone()),
-        MeshMaterial3d(default_resources.red.clone())
+        MeshMaterial3d(default_resources.green.clone()),
+        //ReadbackVoteScan
     ));
 }

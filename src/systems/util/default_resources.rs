@@ -21,7 +21,8 @@ impl FromWorld for SimpleMeshes{
 pub struct SimpleMaterials{
     pub white: Handle<StandardMaterial>,
     pub black: Handle<StandardMaterial>,
-    pub red: Handle<StandardMaterial>
+    pub red: Handle<StandardMaterial>,
+    pub green: Handle<StandardMaterial>
 }
 impl FromWorld for SimpleMaterials{
     fn from_world(world: &mut World) -> Self {
@@ -29,7 +30,8 @@ impl FromWorld for SimpleMaterials{
         Self{
             white: materials.add(StandardMaterial::from_color(WHITE)),
             black: materials.add(StandardMaterial::from_color(BLACK)),
-            red: materials.add(StandardMaterial::from_color(RED))
+            red: materials.add(StandardMaterial::from_color(RED)),
+            green: materials.add(StandardMaterial::from_color(GREEN))
         }
     }
 }
