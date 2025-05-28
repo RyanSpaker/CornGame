@@ -12,7 +12,6 @@ use bevy::{
 };
 use bevy_editor_pls::{
     default_windows::{logging::TracingDynamicSubscriber},
-    EditorPlugin,
 };
 use clap::Parser;
 use lightyear::prelude::AppMessageExt;

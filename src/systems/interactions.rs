@@ -11,16 +11,14 @@ use bevy::{
         query::{self, QueryData},
     },
     input::keyboard::{Key, KeyboardInput},
-    picking::{backend::HitData, focus::HoverMap},
+    picking::{backend::HitData, hover::HoverMap},
     prelude::*,
     render::primitives::Aabb,
     text::FontStyle,
-    utils::all_tuples,
     window::PrimaryWindow,
 };
 use bevy_easings::{Ease, EaseMethod, EasingType, EasingsPlugin};
 use bevy_editor_pls::egui::TextStyle;
-use blenvy::{AnimationMarkerReached, BlueprintAnimationPlayerLink, BlueprintAnimations};
 use frunk::{hlist::HList, Generic};
 use lightyear::prelude::{server::ServerTriggerExt, ChannelDirection};
 use serde::{Deserialize, Serialize};
@@ -39,7 +37,7 @@ impl Plugin for InteractPlugin {
             (
                 display_tooltip,
                 handle_key,
-                ToggleInteractionBlender::handle_animation_done,
+                // ToggleInteractionBlender::handle_animation_done,
             ),
         );
         app.add_systems(PostUpdate, DebugForMissingReflect::system);
@@ -62,9 +60,9 @@ impl Plugin for InteractPlugin {
         app.register_type::<HashMapTest2>();
         app.register_type::<HashMapTest3>();
 
-        app.add_observer(ToggleInteractionBlender::observer);
+        // app.add_observer(ToggleInteractionBlender::observer);
         app.add_observer(Pickup::observer);
-        app.add_observer(ToggleInteractionBlender::handle_flip);
+        // app.add_observer(ToggleInteractionBlender::handle_flip);
     }
 }
 
@@ -81,7 +79,7 @@ struct HashMapTest3(HashMap<String, HashMap<String, String>>);
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
 #[require(Interactable)]
-#[require(InteractionText(InteractionText::flip))]
+#[require(InteractionText = InteractionText::flip())]
 pub struct Pickup;
 
 // TODO want to be able to set held object from commandline or scene file
@@ -110,13 +108,13 @@ impl Pickup {
         mut player: Query<(Entity, &Player)>,
     ) {
         // HERE need to handle rigidbody, and add damping to outer rocket
-        let Ok((entity, pickup, mut interactable, gt)) = query.get_mut(ev.entity()) else {
+        let Ok((entity, pickup, mut interactable, gt)) = query.get_mut(ev.target()) else {
             return;
         };
-        debug!("pickup {}", ev.entity());
+        debug!("pickup {}", ev.target());
 
-        let player = player.single(); //TODO multiplayer
-        commands.entity(entity).set_parent(player.0).insert((
+        let player = player.single().unwrap(); //TODO multiplayer
+        commands.entity(entity).insert(ChildOf(player.0)).insert((
             Transform {
                 translation: Vec3::new(0.1, -0.3, -0.6),
                 scale: gt.scale(),
@@ -132,7 +130,7 @@ impl Pickup {
             h.2.translation = gt.translation();
             commands
                 .entity(h.0)
-                .remove::<(Parent, Held, RigidBodyDisabled)>();
+                .remove::<(ChildOf, Held, RigidBodyDisabled)>();
         }
     }
 }
@@ -160,7 +158,9 @@ pub struct ToggleInteractionBlender {
     off_sfx: Option<String>,
 }
 
+
 impl ToggleInteractionBlender {
+    /* 
     fn handle_animation_done(
         mut animated: Query<(&BlueprintAnimationPlayerLink, &mut Interactable)>,
         mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
@@ -172,7 +172,9 @@ impl ToggleInteractionBlender {
             }
         }
     }
+    */
 
+    /* 
     fn handle_flip(
         // NOTE vecs appear broken in blenvy so I can't add AnimationMarkers
         // TODO revert this back to a component on the breaker
@@ -180,7 +182,7 @@ impl ToggleInteractionBlender {
         query: Query<&FlipVisible>,
         mut target: Query<(&Name, &mut Visibility)>,
     ) {
-        let flip = query.get(event.entity());
+        let flip = query.get(event.target());
         dbg!(event.event(), &query);
         if let Ok(flip) = flip {
             let Some((_, mut vis)) = target.iter_mut().find(|n| n.0.as_str() == &flip.name) else {
@@ -222,7 +224,9 @@ impl ToggleInteractionBlender {
         //     // }
         // }
     }
+    */
 
+    /* 
     fn observer(
         ev: Trigger<Interaction>,
         mut commands: Commands,
@@ -231,17 +235,17 @@ impl ToggleInteractionBlender {
         animated: Query<(&BlueprintAnimationPlayerLink, &BlueprintAnimations)>,
         mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
     ) {
-        let Ok((conf, mut state, mut interactable)) = query.get_mut(ev.entity()) else {
+        let Ok((conf, mut state, mut interactable)) = query.get_mut(ev.target()) else {
             return;
         };
         state.0 = !state.0;
-        debug!("{} toggle {}", ev.entity(), state.0);
+        debug!("{} toggle {}", ev.target(), state.0);
 
         //HERE just send lightyear message with Uid or even just Name
         // with a manual handler which sends it to all other clients (on server)
         // and triggers this (on client). With something to prevent resending to server. (EventId doesn't exist for Trigger?)
 
-        if let Ok((link, animations)) = animated.get(ev.entity()) {
+        if let Ok((link, animations)) = animated.get(ev.target()) {
             let (mut animation_player, mut animation_transitions) =
                 animation_players.get_mut(link.0).unwrap();
 
@@ -275,17 +279,18 @@ impl ToggleInteractionBlender {
                     s.insert_str(0, "sounds/".into());
                 }
                 //TODO why doesn't this replace current sound?
-                commands.entity(ev.entity()).insert((
+                commands.entity(ev.target()).insert((
                     AudioPlayer::<AudioSource>(asset_server.load(s)),
                     PlaybackSettings {
                         mode: bevy::audio::PlaybackMode::Remove,
-                        volume: Volume::new(0.7),
+                        volume: Volume::Linear(0.7),
                         ..Default::default()
                     },
                 ));
             }
         }
     }
+    */
 }
 
 #[derive(Debug, Clone, Component, Reflect)]
@@ -337,21 +342,21 @@ fn on_over(
     item: Query<&Name, With<Interactable>>,
     mut commands: Commands,
 ) {
-    trace!(entity = %ev.entity(), "on");
+    trace!(entity = %ev.target(), "on");
     ev.propagate(true);
-    if let Ok(name) = item.get(ev.entity()) {
+    if let Ok(name) = item.get(ev.target()) {
         debug!("Over: {}", name);
-        commands.entity(ev.entity()).insert(Hover(ev.hit.clone()));
+        commands.entity(ev.target()).insert(Hover(ev.hit.clone()));
     }
 }
 
 // NOTE example of utility of runtime system disabling for debug
 fn on_out(mut ev: Trigger<Pointer<Out>>, item: Query<&Name, With<Hover>>, mut commands: Commands) {
-    trace!(entity = %ev.entity(), "out");
+    trace!(entity = %ev.target(), "out");
     ev.propagate(true);
-    if let Ok(name) = item.get(ev.entity()) {
+    if let Ok(name) = item.get(ev.target()) {
         debug!("Out: {}", name);
-        commands.entity(ev.entity()).remove::<Hover>();
+        commands.entity(ev.target()).remove::<Hover>();
     }
 }
 
@@ -407,12 +412,12 @@ fn display_tooltip(
         if let Some(mut t) = tooltip.iter_mut().find(|t| t.1.target == *entity) {
             *t.4 = Visibility::Visible;
 
-            let size = t.3.size() / window.single().scale_factor();
-            let mut res = window.single().size();
+            let size = t.3.size() / window.single().unwrap().scale_factor();
+            let mut res = window.single().unwrap().size();
 
             if let Some(v) = &camera.viewport {
                 // should fix tracking when editor is open.
-                res = v.physical_size.as_vec2() / window.single().scale_factor();
+                res = v.physical_size.as_vec2() / window.single().unwrap().scale_factor();
             }
 
             let xy = res * ((pos + 1.) * 0.5).xy();
@@ -430,7 +435,7 @@ fn display_tooltip(
             // dbg!(&pos, Name::option(&item));
             trace!(name = %Name::option(&item).map(|n|n.as_str()).unwrap_or_default(), ?pos, "tooltip");
             commands.spawn((
-                PickingBehavior::IGNORE,
+                Pickable::IGNORE,
                 Node {
                     position_type: PositionType::Absolute,
                     overflow: Overflow::visible(),

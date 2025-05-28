@@ -3,7 +3,7 @@ use super::{CornData, CornField, CornFieldObserver, CornLoaded, IndirectBuffer, 
 use bevy::{
     asset::Asset, ecs::{query::ROQueryItem, system::{lifetimeless::{Read, SRes}, SystemParamItem}}, log::Level, pbr::{ExtendedMaterial, MaterialExtension, RenderMeshInstances, StandardMaterial}, prelude::*, reflect::Reflect, render::{
         mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}
-    }, utils::tracing::event
+    },
 };
 use wgpu::{vertex_attr_array, IndexFormat, PushConstantRange, ShaderStages};
 
@@ -32,7 +32,7 @@ pub fn replace_standard_materials(
     assets: Res<AssetServer>,
     std_mats: Res<Assets<StandardMaterial>>
 ){
-    let Ok((entity, material)) = query.get(trigger.entity()) else {return;};
+    let Ok((entity, material)) = query.get(trigger.target()) else {return;};
     let Some(material) = std_mats.get(material.id()) else {error!("Std Material on Corn Field is not Loaded, wierd"); return;};
     let extd_mat = ExtendedMaterial{base: material.clone(), extension: CornMaterialExtension{}};
     let handle = assets.add(extd_mat);
@@ -137,11 +137,11 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
                     }
                 };
                 pass.set_index_buffer(index_buffer_slice.buffer.slice(start..end), 0, *index_format);
-                event!(Level::TRACE, "Rendering Corn, indexed: {}", true);
+                trace!("Rendering Corn, indexed: {}", true);
                 pass.multi_draw_indexed_indirect(indirect_buffer, 0, LOD_COUNT);
             }
             RenderMeshBufferInfo::NonIndexed => {
-                event!(Level::TRACE, "Rendering Corn, indexed: {}", false);
+                trace!("Rendering Corn, indexed: {}", false);
                 pass.multi_draw_indirect(indirect_buffer, 0, LOD_COUNT);
             }
         }

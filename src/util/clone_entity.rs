@@ -41,13 +41,13 @@ impl CloneEntity {
             let source = component
                 .reflect(world.get_entity(self.source).unwrap())
                 .unwrap()
-                .clone_value();
+                .to_dynamic();
 
             dbg!(&source);
 
             let registry = world.get_resource::<AppTypeRegistry>().unwrap().internal.to_owned();
             let mut destination = world.get_entity_mut(self.destination).unwrap();
-            component.apply_or_insert(&mut destination, &*source, &registry.read().unwrap());
+            component.apply_or_insert_mapped(&mut destination, &*source, &registry.read().unwrap(), &mut (), bevy::ecs::relationship::RelationshipHookMode::Run);
         }
     }
 }

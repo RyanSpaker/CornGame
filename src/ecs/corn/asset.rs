@@ -1,5 +1,5 @@
 use async_channel::Sender;
-use bevy::{prelude::*, render::extract_resource::{ExtractResource, ExtractResourcePlugin}, utils::hashbrown::HashMap};
+use bevy::{prelude::*, render::extract_resource::{ExtractResource, ExtractResourcePlugin}, platform::collections::HashMap};
 use crate::util::observer_ext::ObserveAsAppExt;
 
 use super::{CornField, CornFieldObserver};
@@ -15,7 +15,7 @@ impl core::error::Error for ConvertCornMeshError{}
 
 // Observer which attaches corn meshes to any corn field
 pub fn attach_mesh(trigger: Trigger<OnAdd, CornField>, mut commands: Commands, model: Res<CornModel>){
-    commands.entity(trigger.entity()).insert_if_new(Mesh3d(model.mesh_handle.clone()));
+    commands.entity(trigger.target()).insert_if_new(Mesh3d(model.mesh_handle.clone()));
 }
 
 /// Component which is used to send corn meshes to an async load function for the corn mesh asset. This way the handle for the mesh can be created before the gltf has loaded
@@ -51,11 +51,11 @@ impl CornModel{
             else {continue;};
             let world = &mut scene.world;
             // Find the meshes
-            let mut mesh_query = world.query::<(&Parent, &Mesh3d)>();
+            let mut mesh_query = world.query::<(&ChildOf, &Mesh3d)>();
             let meshes: Vec<(Handle<Mesh>, Entity)> = mesh_query.iter(world)
                 .map(|(parent, mesh3d)| (mesh3d.0.clone(), parent.get())).collect();
             // Group meshes by their parents parent. 
-            let mut parent_query = world.query::<&Parent>();
+            let mut parent_query = world.query::<&ChildOf>();
             let mut lods: HashMap<Entity, Vec<Handle<Mesh>>> = HashMap::default();
             for (mesh, parent) in meshes.into_iter(){
                 let Ok(middle) = parent_query.get(world, parent) else {continue;};
@@ -112,7 +112,7 @@ impl FromWorld for CornModel{
     // Loads the gltf, and creates a handle for the merged mesh
     fn from_world(world: &mut World) -> Self {
         let assets = world.resource::<AssetServer>();
-        let gltf_handle = assets.load("models/Corn.glb");
+        let gltf_handle = assets.load("models/corn3.glb");
         let (tx, rx) = async_channel::bounded(1);
         world.spawn(CornMeshSender(gltf_handle.clone(), tx));
         let assets = world.resource::<AssetServer>();

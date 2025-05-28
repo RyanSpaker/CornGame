@@ -364,7 +364,14 @@ https://github.com/segfault-s-pull-requests/bevy_editor_pls/blob/588543f679989d7
 okay I need to get back to work on the actual game.
 
 Needed for demo:
-- [ ] merge ryan
+- [x] merge ryan    
+- [ ] 0.16
+  - [x] editor compiling
+  - [ ] reimplement bevy-inspector-egui tweaks
+  - [ ] test lightyear
+- [ ] blenvy -> skein
+  - [x] rework cctest
+  - [ ] reimplement animation interaction
 - [ ] menu -> networking (mock up up with egui)
   - [ ] level (un)loading / starting for server
 - [ ] interaction networking (just use message ie. by hand)
@@ -376,6 +383,5 @@ Needed for demo:
   - "you get a feeling he isn't coming"
 - [ ] audio chat
   
-Then 0.16
 Then get it working in the browser?
 Then cleanup?

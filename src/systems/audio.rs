@@ -1,5 +1,5 @@
-use std::{ops::AddAssign, time::Duration};
-use bevy::{audio::Volume, ecs::{component::ComponentId, entity::EntityHashMap, world::DeferredWorld}, prelude::*};
+use std::{ops::AddAssign, process::Child, time::Duration};
+use bevy::{audio::Volume, ecs::{component::{ComponentId, HookContext}, entity::EntityHashMap, world::DeferredWorld}, prelude::*};
 use crate::{
     ecs::{cameras::MainCamera, corn::CornSensor, flycam::FlyCamMoveEvent},
     util::{math::lerp, observer_ext::{ObserveAsAppExt, ObserverParent}},
@@ -42,12 +42,12 @@ impl ObserverParent for AudioObservers{
 #[component(storage = "SparseSet", on_add = Pause::pause_sink, on_remove = Pause::play_sink)]
 pub struct Pause;
 impl Pause{
-    fn pause_sink(world: DeferredWorld, entity: Entity, _: ComponentId){
-        let Some(sink) = world.get::<AudioSink>(entity) else {return;};
+    fn pause_sink(world: DeferredWorld, ctx: HookContext){
+        let Some(sink) = world.get::<AudioSink>(ctx.entity) else {return;};
         sink.pause();
     }
-    fn play_sink(world: DeferredWorld, entity: Entity, _: ComponentId){
-        let Some(sink) = world.get::<AudioSink>(entity) else {return;};
+    fn play_sink(world: DeferredWorld, ctx: HookContext){
+        let Some(sink) = world.get::<AudioSink>(ctx.entity) else {return;};
         sink.play();
     }
 }
@@ -91,8 +91,8 @@ impl AddAssign for AudioFactor{
 impl AudioFactor{
     /// For a set of volume factors, calculates the audio sink volume
     fn calculate_volume(
-        sinks: Query<(Entity, &AudioSink, &PlaybackSettings)>,
-        factors: Query<(&Parent, &Self)>
+        mut sinks: Query<(Entity, &mut AudioSink, &PlaybackSettings)>,
+        factors: Query<(&ChildOf, &Self)>
     ){
         let mut calculated_factors: EntityHashMap<Self> = EntityHashMap::default();
         for (parent, factor) in factors.iter(){
@@ -101,13 +101,13 @@ impl AudioFactor{
             let Some(fact) = calculated_factors.get_mut(&entity) else {continue;};
             *fact += factor.clone();
         }
-        for (entity, sink, settings) in sinks.iter(){
+        for (entity, mut sink, settings) in sinks.iter_mut(){
             let Some(Self{vm, va, sm, sa}) = calculated_factors.get(&entity) else {
-                sink.set_volume(*settings.volume);
+                sink.set_volume(settings.volume);
                 sink.set_speed(settings.speed); 
                 continue;
             };
-            sink.set_volume((*settings.volume*vm+va).max(0.0));
+            sink.set_volume(Volume::Linear((settings.volume.to_linear() * vm + va).max(0.0))); //TODO factors should be Volume
             sink.set_speed((settings.speed*sm+sa).max(0.0));
         }
     }
@@ -149,7 +149,7 @@ impl WindNoise{
             AudioPlayer::<AudioSource>(asset_server.load("sounds/wind.ogg")),
             PlaybackSettings {
                 mode: bevy::audio::PlaybackMode::Loop,
-                volume: Volume::new(0.8),
+                volume: Volume::Linear(0.8),
                 ..Default::default()
             },
             Name::from("Wind Audio Player")
@@ -163,7 +163,7 @@ impl WindNoise{
             AudioPlayer::<AudioSource>(asset_server.load("sounds/wind_rustle.ogg")),
             PlaybackSettings {
                 mode: bevy::audio::PlaybackMode::Loop,
-                volume: Volume::new(0.2),
+                volume: Volume::Linear(0.2),
                 ..Default::default()
             },
             Name::from("Rustle Audio Player")
@@ -237,7 +237,7 @@ impl Footsteps{
             AudioPlayer::<AudioSource>(asset_server.load("sounds/footstep_leaves.ogg")),
             PlaybackSettings {
                 mode: bevy::audio::PlaybackMode::Loop,
-                volume: Volume::new(0.4),
+                volume: Volume::Linear(0.4),
                 ..Default::default()
             },
             Name::from("Footsteps Audio Player")
@@ -279,15 +279,15 @@ impl Fade{
     }
     fn fade_despawn_observer(
         trigger: Trigger<OnRemove, Fade>,
-        query: Query<(&Parent, Option<&FadePauseOnEnd>, Option<&FadeKeepOnEnd>), With<Fade>>,
+        query: Query<(&ChildOf, Option<&FadePauseOnEnd>, Option<&FadeKeepOnEnd>), With<Fade>>,
         mut commands: Commands
     ){
-        let Ok((parent, pause, keep)) = query.get(trigger.entity()) else {return;};
+        let Ok((parent, pause, keep)) = query.get(trigger.target()) else {return;};
         if pause.is_some(){
             commands.entity(parent.get()).insert(Pause);
         }
         if keep.is_none(){
-            commands.entity(trigger.entity()).despawn_recursive();
+            commands.entity(trigger.target()).despawn();
         }
     }
 }

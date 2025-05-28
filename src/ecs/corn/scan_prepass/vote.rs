@@ -321,7 +321,7 @@ impl Plugin for VoteScanPlugin{
             .world_mut().resource_mut::<RenderGraph>();
         let graph = render_graph.sub_graph_mut(Core3d);
         graph.add_node(VoteScanStage, VoteScanNode::default());
-        graph.add_node_edge(VoteScanStage, NodePbr::ShadowPass);
+        graph.add_node_edge(VoteScanStage, NodePbr::EarlyShadowPass); // TODO EAS: should this be early or late
 
         #[cfg(debug_assertions)]
         app.add_plugins(readback::ReadbackPlugin);

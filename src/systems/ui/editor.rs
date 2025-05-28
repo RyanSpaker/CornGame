@@ -3,13 +3,16 @@ use std::env;
 
 use bevy::prelude::*;
 use bevy_editor_pls::controls::{self, EditorControls};
-use bevy_editor_pls::{spawn_default_windows, EditorPlugin};
+use bevy_editor_pls::{spawn_default_windows, EditorPlugin, EguiPlugin};
 
 #[derive(Debug)]
 pub struct MyEditorPlugin;
 impl Plugin for MyEditorPlugin{
     fn build(&self, app: &mut App) {
         if env::var("CORN_EDITOR") != Ok("0".to_string()) {
+            app.add_plugins(EguiPlugin{
+                enable_multipass_for_primary_context: false,
+            });
             app.add_plugins(EditorPlugin::default());
             app.insert_resource(editor_controls());
             app.add_systems(Startup, spawn_default_windows);

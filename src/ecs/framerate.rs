@@ -23,7 +23,7 @@ pub struct FrameRatePlugin;
 impl Plugin for FrameRatePlugin{
     fn build(&self, app: &mut bevy::prelude::App) {
         app
-            .add_plugins(FrameTimeDiagnosticsPlugin)
+            .add_plugins(FrameTimeDiagnosticsPlugin::default())
             .add_systems(Update, (
                 update_diagnostics,
                 update_position,

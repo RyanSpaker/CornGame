@@ -8,8 +8,6 @@ pub mod ui;
 pub mod util;
 
 use bevy::{pbr::FogVolume, prelude::*};
-use bevy_edge_detection::EdgeDetectionPlugin;
-use blenvy::BlenvyPlugin;
 
 pub struct CornSystemsPlugin;
 impl Plugin for CornSystemsPlugin {
@@ -24,6 +22,7 @@ impl Plugin for CornSystemsPlugin {
             character::MyCharacterPlugin,
             interactions::InteractPlugin,
         ));
+        // TODO reimplement edge detection
         // .add_plugins((BlenvyPlugin::default(), EdgeDetectionPlugin::default()));
     }
 }

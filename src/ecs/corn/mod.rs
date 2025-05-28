@@ -42,7 +42,7 @@ impl CornData{
 /// Each entity with a CornField and CornPositionInitializer Component has a corresponding Buffer of corn stalk instances in the render app.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component, ExtractComponent)]
 #[reflect(Component)]
-#[require(Transform, Visibility, NoFrustumCulling, NoAutomaticBatching(|| NoAutomaticBatching))]
+#[require(Transform, Visibility, NoFrustumCulling, NoAutomaticBatching)]
 pub struct CornField;
 
 /// Global resource for lod cutoffs

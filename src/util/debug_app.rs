@@ -1,4 +1,9 @@
-use bevy::{app::Plugins, ecs::schedule::ScheduleLabel, prelude::*, render::extract_component::ExtractComponent};
+use bevy::{
+    app::Plugins,
+    ecs::{schedule::ScheduleLabel, system::ScheduleSystem},
+    prelude::*,
+    render::extract_component::ExtractComponent,
+};
 
 #[derive(Component, Clone, ExtractComponent)]
 pub struct DebugTag{}
@@ -8,7 +13,7 @@ pub trait DebugApp{
     fn add_debug_systems<M>(
         &mut self,
         schedule: impl ScheduleLabel,
-        systems: impl IntoSystemConfigs<M>,
+        systems: impl IntoScheduleConfigs<ScheduleSystem, M>,
     ) -> &mut Self;
     #[track_caller]
     fn add_debug_plugins<M>(&mut self, plugins: impl Plugins<M>) -> &mut Self;
@@ -17,7 +22,7 @@ impl DebugApp for App{
     fn add_debug_systems<M>(
         &mut self,
         schedule: impl ScheduleLabel,
-        systems: impl IntoSystemConfigs<M>,
+        systems: impl IntoScheduleConfigs<ScheduleSystem, M>,
     ) -> &mut Self {
         #[cfg(debug_assertions)]
         self.add_systems(schedule, systems);

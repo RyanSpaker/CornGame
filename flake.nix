@@ -13,7 +13,11 @@
   outputs = inputs: with inputs;
     flake-utils.lib.eachDefaultSystem (system:
       let
-        rust = fenix.packages.${system};
+        rustpkgs = with fenix.packages.${system}; combine [
+          complete.rust-src
+          complete.toolchain
+          targets.wasm32-unknown-unknown.latest.rust-std
+        ];
         pkgs = import nixpkgs { 
           inherit system;
           config.allowUnfree = true; 
@@ -26,8 +30,6 @@
           cacert
           sqlite # for matrix_rust_sdk
           sqlite.dev
-          rustc.llvmPackages.clang
-          stdenv.cc.cc
 
           alsa-lib alsa-lib.dev
           vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
@@ -40,14 +42,14 @@
       {
         formatter = pkgs.nixpkgs-fmt;
 
+        inherit rustpkgs;
         devShells.default = pkgs.mkShell{
           name = "rust environment";
 
 					inherit buildInputs;
           nativeBuildInputs = with pkgs; [
             nixd
-            rust-analyzer
-            rust.complete.toolchain
+            rustpkgs
             pkg-config
             linuxPackages_latest.perf
 
@@ -65,7 +67,7 @@
           ];
 
           # needed for rust-analyzer
-          RUST_SRC_PATH = "${rust.complete.rust-src}/lib/rustlib/src/rust/library";
+          RUST_SRC_PATH = "${rustpkgs}/lib/rustlib/src/rust/library";
           LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           #RUSTC_WRAPPER = "${pkgs.sccache}/bin/sccache";
 					#LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath buildInputs}";

@@ -5,7 +5,7 @@ pub mod main_menu;
 
 use bevy::{
     core_pipeline::{bloom::Bloom, tonemapping::Tonemapping},
-    ecs::{component::ComponentId, world::DeferredWorld},
+    ecs::{component::{ComponentId, HookContext}, world::DeferredWorld},
     pbr::{ScreenSpaceReflections, VolumetricFog},
     prelude::*,
 };
@@ -31,7 +31,7 @@ impl LoadScene {
             scene: path.next().unwrap_or_default().to_string(),
         }
     }
-    fn on_add_load_scene(mut world: DeferredWorld, entity: Entity, _: ComponentId) {
+    fn on_add_load_scene(mut world: DeferredWorld, HookContext{entity,..}:HookContext) {
         let this = world.get::<LoadScene>(entity).unwrap();
 
         let asset_server = world.resource::<AssetServer>();

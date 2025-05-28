@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use leafwing_input_manager::prelude::*;
 
 #[derive(Actionlike, PartialEq, Eq, Clone, Copy, Hash, Debug, Reflect)]
-pub enum Action {
+pub enum CornCharacterInput {
     Crouch,
     Run,
     #[actionlike(DualAxis)]
@@ -14,7 +14,7 @@ pub enum Action {
     Toggle,
 }
 
-impl Action {
+impl CornCharacterInput {
     /// Define the default bindings to the input
     pub fn default_input_map() -> InputMap<Self> {
         let mut input_map = InputMap::default();

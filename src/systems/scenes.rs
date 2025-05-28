@@ -12,7 +12,7 @@
 //! Schedules run when scenes are spawned or despawned. Loading/Unloading code should go here.
 
 use std::{hash::Hash, marker::PhantomData};
-use bevy::{app::MainScheduleOrder, ecs::{entity::EntityHashSet, schedule::ScheduleLabel}, prelude::*, utils::hashbrown::HashSet};
+use bevy::{app::MainScheduleOrder, ecs::{entity::EntityHashSet, schedule::ScheduleLabel}, prelude::*, platform::collections::HashSet};
 use crate::util::observer_ext::*;
 
 /// Trait used to identify components that are Scene identifying tags
@@ -77,9 +77,9 @@ impl<S: CornScene> SceneTracker<S>{
         query: Query<Entity, Or<(Without<Transform>, Without<Visibility>, Without<SceneEntity>)>>,
         mut commands: Commands
     ){
-        if res.loaded.contains(&trigger.entity()) {return;}
-        event_writer.send(RunSpawnSchedule(trigger.entity(), PhantomData::default()));
-        if let Ok(entity) = query.get(trigger.entity()){
+        if res.loaded.contains(&trigger.target()) {return;}
+        event_writer.send(RunSpawnSchedule(trigger.target(), PhantomData::default()));
+        if let Ok(entity) = query.get(trigger.target()){
             commands.entity(entity).insert_if_new((
                 SceneEntity, Transform::default(), Visibility::Visible
             ));
@@ -92,10 +92,10 @@ impl<S: CornScene> SceneTracker<S>{
         res: Res<Self>,
         mut event_writer: EventWriter<RunDespawnSchedule<S>>
     ){
-        let entity = trigger.entity();
+        let entity = trigger.target();
         if !res.loaded.contains(&entity) {return;}
         let Ok(comp) = query.get(entity) else {return;};
-        event_writer.send(RunDespawnSchedule(trigger.entity(), comp.to_owned()));
+        event_writer.send(RunDespawnSchedule(trigger.target(), comp.to_owned()));
     }
 }
 
@@ -195,7 +195,7 @@ impl SceneTransition{
         for RunDespawnSchedule(entity, _) in events.read(){
             if res.loaded.remove(entity) {
                 // A parent scene unloading could make entity not exist
-                if let Some(com) = commands.get_entity(*entity) {com.despawn_recursive();}
+                if let Ok(mut com) = commands.get_entity(*entity) {com.despawn();}
             }
         }
     }

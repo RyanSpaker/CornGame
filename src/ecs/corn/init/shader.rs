@@ -50,7 +50,7 @@ impl bevy::render::render_graph::Node for CornInitNode{
         let shaders_with_children: Vec<(CachedComputePipelineId, Vec<Entity>)> = shader_query.iter(world).filter_map(
         |(children, resources)| {
             if children.is_empty() {None}
-            else {Some((resources.pipeline, children.iter().cloned().collect()))}
+            else {Some((resources.pipeline, children.iter().collect()))}
         }).collect();
         let pipeline_cache = world.resource::<PipelineCache>();
         self.ready_shaders = shaders_with_children.into_iter().filter_map(|(id, children)| {
@@ -101,7 +101,7 @@ pub fn create_invocation_entities<S: AsCornInitShader>(
     shader: Query<Entity, (With<CornInitShader>, With<S>)>,
     mut commands: Commands
 ){
-    let shader = shader.single();
+    let shader = shader.single().unwrap();
     for (entity, settings) in query.iter(){
         let invocation = commands.entity(shader).with_child((
             InitShaderInvocation(entity),
@@ -144,7 +144,7 @@ pub fn create_invocation_settings<S: AsCornInitShader>(
     render_device: Res<RenderDevice>,
     mut commands: Commands
 ){
-    let layout = &shader.single().layout;
+    let layout = &shader.single().unwrap().layout;
     for (entity, settings, instance, buffers) in query.iter(){
         let mut entries = vec![BindGroupEntry{binding: 0, resource: instance.0.as_entire_binding()}];
         for (i, buffer) in buffers.0.iter().enumerate(){
@@ -192,7 +192,7 @@ impl CornInitShaderAppExt for App{
         self.insert_shader(shader);
         // Add init shader tag component
         let mut query: _ = self.sub_app_mut(RenderApp).world_mut().query_filtered::<Entity, (With<S>, With<CornShader>)>();
-        let entity = query.single(self.sub_app_mut(RenderApp).world());
+        let entity = query.single(self.sub_app_mut(RenderApp).world()).unwrap();
         self.sub_app_mut(RenderApp).world_mut().entity_mut(entity).insert(CornInitShader);
         // Schedule Systems
         self.sub_app_mut(RenderApp).add_systems(Render, (

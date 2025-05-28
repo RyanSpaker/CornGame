@@ -15,7 +15,6 @@
 use std::time::Duration;
 
 pub use bevy::prelude::*;
-use blenvy::{BlueprintAnimationPlayerLink, BlueprintAnimations, BlueprintInfo, SpawnBlueprint};
 use lightyear::prelude::{AppComponentExt, ChannelDirection};
 use serde::{Deserialize, Serialize};
 use wgpu::core::error;
@@ -30,9 +29,10 @@ pub enum MyAnimationState {
 impl MyAnimationState {
     fn update_animation(
         query: Query<(Entity, &MyAnimationState, Option<&Children>), Changed<MyAnimationState>>,
-        blueprint: Query<(Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations)>,
+        // blueprint: Query<(Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations)>,
         mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>, //TODO should be more general without case
     ) {
+        /*  TODO skein
         for (id, state, children) in query.iter() {
             // a bunch of ugly code to let player model be a child of the controller
             let mut ids = vec![id];
@@ -72,6 +72,7 @@ impl MyAnimationState {
                     .repeat();
             }
         }
+        */
     }
 }
 

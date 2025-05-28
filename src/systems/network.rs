@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use lightyear::prelude::server::{AuthorityPeer, ControlledBy, ReplicationTarget, ServerCommandsExt, ServerTransport};
+use lightyear::prelude::server::{AuthorityPeer, ControlledBy, ReplicateToClient, ServerCommandsExt, ServerTransport};
 use lightyear::prelude::*;
 
 use lightyear::client::components::{ComponentSyncMode, LerpFn};
@@ -209,42 +209,27 @@ pub fn replicate_other_clients(
                         target: NetworkTarget::Single(*client_id),
                         lifetime: server::Lifetime::SessionBased,
                     },
-                    ReplicationTarget {
+                    ReplicateToClient {
                         target: NetworkTarget::AllExceptSingle(*client_id),
-                    },
-                    ReplicateHierarchy {
-                        // heirarchy replication causes panic when using hostserver
-                        enabled: false,
-                        recursive: false,
                     },
                 ));
             }
             if !replicated {
                 let mut e = commands.entity(entity);
                 e.insert((
-                    ReplicationTarget::default(),
-                    ReplicateHierarchy {
-                        // heirarchy replication causes panic when using hostserver
-                        enabled: false,
-                        recursive: false,
-                    },
+                    ReplicateToClient::default(),
                 ));
                 if value.0 {
-                    e.insert(ParentSync::default());
+                    e.insert(ChildOfSync::default());
                 }
             }
         } else if identity.is_client() && !replicated {
             let mut e = commands.entity(entity);
             e.insert((
                 ReplicateToServer,
-                ReplicateHierarchy {
-                    // heirarchy replication causes panic when using hostserver
-                    enabled: false,
-                    recursive: false,
-                },
             ));
             if value.0 {
-                e.insert(ParentSync::default());
+                e.insert(ChildOfSync::default());
             }
         }
 
@@ -265,7 +250,7 @@ impl Uid {
 
     fn generate(
         trigger: Trigger<OnAdd, UidGen>,
-        parents: Query<&Parent>,
+        parents: Query<&ChildOf>,
         uids: Query<&Uid>,
         seeds: Query<&UidSeed>,
         names: Query<&Name>,
@@ -273,7 +258,7 @@ impl Uid {
         uid_gen: Query<&UidGen>,
         mut commands: Commands,
     ) {
-        let e = trigger.entity();
+        let e = trigger.target();
 
         // XXX currently Uid not allowed to change
         let mut root = parents.iter_ancestors(e).find(|e| uids.contains(*e));

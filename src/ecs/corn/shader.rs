@@ -32,7 +32,7 @@ pub trait AsCornShader where Self: Component+Sized{
     fn get_zero_init() -> bool {false}
     /// System run on startup which creates the shader, pipeline, and layout. 
     /// Expects an entity with component Self in the renderapp to attach resources to
-    fn on_startup_systems(world: &mut World) {
+    fn on_startup_systems(world: &mut World){
         let assets = world.resource::<AssetServer>();
         let render_device = world.resource::<RenderDevice>();
         let pipeline_cache = world.resource::<PipelineCache>();
@@ -56,7 +56,7 @@ pub trait AsCornShader where Self: Component+Sized{
 
         // Add our resources to the shader entity
         let mut query = world.query_filtered::<Entity, (With<Self>, With<CornShader>)>();
-        let entity = query.single(world);
+        let entity = query.single(world).unwrap();
         world.entity_mut(entity).insert(ShaderPipelineResources{
             shader, pipeline, layout
         });

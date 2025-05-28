@@ -1,5 +1,5 @@
 use avian3d::math::PI;
-use avian3d::prelude::{collider, Collider, ColliderParent, ColliderTransform, LinearVelocity};
+use avian3d::prelude::{Collider, ColliderOf, LinearVelocity};
 use bevy::math::VectorSpace;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::ecs::cameras::MainCamera;
 
 use super::animation::MyAnimationState;
-use super::input::Action;
+use super::input::CornCharacterInput;
 
 #[derive(Debug, Component, Reflect, Serialize, Deserialize)]
 #[reflect(Component)]
@@ -57,7 +57,7 @@ impl Default for CornGameCharController {
 }
 
 pub fn look_handler(
-    mut query: Query<&ActionState<Action>, (Without<MainCamera>, With<CornGameCharController>)>,
+    mut query: Query<&ActionState<CornCharacterInput>, (Without<MainCamera>, With<CornGameCharController>)>,
     mut camera: Query<&mut Transform, With<MainCamera>>,
     window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
@@ -69,7 +69,7 @@ pub fn look_handler(
         return;
     };
 
-    let mut mouse = input.axis_pair(&Action::Pan);
+    let mut mouse = input.axis_pair(&CornCharacterInput::Pan);
     if let Ok(window) = window.get_single() {
         if window.cursor_options.grab_mode != CursorGrabMode::Locked {
             mouse = default();
@@ -95,7 +95,7 @@ pub fn input_handler(
         (
             Entity,
             &Transform,
-            &ActionState<Action>,
+            &ActionState<CornCharacterInput>,
             &mut TnuaController,
             &CornGameCharController,
             &mut MyAnimationState,
@@ -103,13 +103,13 @@ pub fn input_handler(
         Without<crate::ecs::cameras::MainCamera>,
     >,
     mut colliders: Query<
-        (&ColliderParent, &mut Collider, &mut Transform),
+        (&ColliderOf, &mut Collider, &mut Transform),
         (Without<CornGameCharController>, Without<MainCamera>),
     >,
     mut camera: Query<&mut Transform, With<crate::ecs::cameras::MainCamera>>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    let mut camera = match camera.get_single_mut() {
+    let mut camera = match camera.single_mut() {
         Err(error) => {
             error_once!(%error);
             return;
@@ -119,7 +119,7 @@ pub fn input_handler(
 
     assert!(query.iter().count() <= 1);
     for (id, transform, input, mut controller, config, mut anim_state) in query.iter_mut() {
-        let collider = colliders.iter_mut().find(|c| c.0.get() == id);
+        let collider = colliders.iter_mut().find(|c| c.0.body == id);
 
         if collider.is_none() {
             commands
@@ -130,7 +130,7 @@ pub fn input_handler(
 
         let (_, mut collider, mut c_trans) = collider.unwrap();
 
-        let mut direction = input.clamped_axis_pair(&Action::Move);
+        let mut direction = input.clamped_axis_pair(&CornCharacterInput::Move);
 
         if direction == Vec2::ZERO {
             anim_state.set_if_neq(MyAnimationState::Idle);
@@ -142,7 +142,7 @@ pub fn input_handler(
         // TODO, we should do this on the input side instead of here.
         // TODO need a generic framework for claiming inputs
         if let Ok(mut window) = window.get_single_mut() {
-            if input.just_pressed(&Action::Toggle) {
+            if input.just_pressed(&CornCharacterInput::Toggle) {
                 window.cursor_options.grab_mode = match window.cursor_options.grab_mode {
                     CursorGrabMode::None => CursorGrabMode::Locked,
                     CursorGrabMode::Confined => CursorGrabMode::Locked,
@@ -167,7 +167,7 @@ pub fn input_handler(
         let (yaw, _, _) = camera.rotation.to_euler(EulerRot::YXZ);
         direction = Quat::from_euler(EulerRot::YXZ, yaw, 0.0, 0.0) * direction;
 
-        let speed = match input.pressed(&Action::Run) {
+        let speed = match input.pressed(&CornCharacterInput::Run) {
             true => config.dash_speed,
             false => config.speed,
         };
@@ -181,7 +181,7 @@ pub fn input_handler(
             acceleration: config.acceleration,
             float_height: config.eye_height,
             max_slope: config.max_slope,
-            spring_strengh: config.spring,
+            spring_strength: config.spring,
             ..default()
         };
         controller.basis(basis);
@@ -191,7 +191,7 @@ pub fn input_handler(
         let offset = config.eye_height - height / 2.0 - config.float;
         *c_trans = Transform::from_xyz(0.0, -offset, 0.0);
 
-        if input.pressed(&Action::Crouch) {
+        if input.pressed(&CornCharacterInput::Crouch) {
             let c_height = config.crouch_height - config.crouch_float;
             *collider = Collider::capsule(config.radius, c_height - 2.0 * config.radius);
             let c_eye_height = config.eye_height + config.crouch_height - config.height;

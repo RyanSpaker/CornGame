@@ -1,3 +1,5 @@
+use std::process::Child;
+
 use bevy::prelude::*;
 use crate::{systems::scenes::{CornScene, DespawnCornScene, DespawnCornSceneMany, SpawnCornScene}, util::observer_ext::*};
 
@@ -58,11 +60,11 @@ pub fn on_press_switch_scene<S1: CornScene, S2: CornScene>(old_scene: S1, new_sc
 
 /// Unloads old scene, loads new scene. IF old scene had a parent, new scene will be a child of that parent
 pub fn on_press_swap_scene<S1: CornScene, S2: CornScene>(old_scene: S1, new_scene: S2)  -> 
-    impl FnMut(Trigger<ButtonEvent>, Query<(Entity, &S1, Option<&Parent>)>, EventWriter<DespawnCornScene>, Commands)->() 
+    impl FnMut(Trigger<ButtonEvent>, Query<(Entity, &S1, Option<&ChildOf>)>, EventWriter<DespawnCornScene>, Commands)->() 
 {
     move |
         trigger: Trigger<ButtonEvent>, 
-        despawn_query: Query<(Entity, &S1, Option<&Parent>)>,
+        despawn_query: Query<(Entity, &S1, Option<&ChildOf>)>,
         mut despawn_event_writer: EventWriter<DespawnCornScene>,
         mut commands: Commands, 
     | {
@@ -91,7 +93,7 @@ where C: Fn(Entity, &mut World) + Send + 'static + Clone
         mut commands: Commands, 
     | {
         match trigger.1 {Interaction::Pressed => {
-            let entity = trigger.entity();
+            let entity = trigger.target();
             let func = command.clone();
             commands.queue(move |world: &mut World| {
                 func(entity, world);

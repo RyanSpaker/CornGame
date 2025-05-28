@@ -35,8 +35,7 @@ use lightyear::prelude::{
     AppComponentExt,
     ClientReplicate,
     HasAuthority,
-    ParentSync,
-    ReplicateHierarchy,
+    ChildOfSync,
     Replicated,
 };
 use lightyear::shared::replication::components::InitialReplicated;
@@ -44,7 +43,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ecs::cameras::MainCamera;
 
-use self::input::Action;
+use self::input::CornCharacterInput;
 
 mod animation;
 mod controller;
@@ -54,7 +53,7 @@ pub struct MyCharacterPlugin;
 impl Plugin for MyCharacterPlugin {
     fn build(&self, app: &mut App) {
         // button input plugin
-        app.add_plugins(InputManagerPlugin::<self::input::Action>::default());
+        app.add_plugins(InputManagerPlugin::<self::input::CornCharacterInput>::default());
 
         app.register_type::<CornGameCharController>();
         app.register_type::<SpawnLocation>();
@@ -79,7 +78,7 @@ impl Plugin for MyCharacterPlugin {
                 .in_set(lightyear::client::input::InputSystemSet::WriteClientInputs),
         );
         app.add_systems(Update, look_handler);
-        app.add_systems(Update, animation_test);
+        // app.add_systems(Update, animation_test); //TODO skein
         app.add_observer(spawn_dehydrated_child_obs);
 
         // app.add_systems(Update, animation_patcher_system);
@@ -134,14 +133,14 @@ impl Player {
                 ..default()
             },
             // MaxAngularSpeed(2.0*PI * 10.0),
-            InputManagerBundle::with_map(Action::default_input_map()),
+            CornCharacterInput::default_input_map(),
             // BlueprintInfo::from_path("blueprints/construction_worker.glb"),
             // SpawnBlueprint,
             DehydratedChild::new(|_| {
                 (
                     Transform::from_xyz(0.0, -1.5, 0.0),
-                    BlueprintInfo::from_path("blueprints/construction_worker.glb"),
-                    SpawnBlueprint,
+                    // BlueprintInfo::from_path("blueprints/construction_worker.glb"), //TODO skein
+                    // SpawnBlueprint,
                     ReplicateOtherClients(true),
                 )
             }),
@@ -298,59 +297,59 @@ fn spawn_dehydrated_child_obs(
     mut commands: Commands,
     mut query: Query<&mut DehydratedChild, Added<DehydratedChild>>,
 ) {
-    let mut dehydrated_child = query.get_mut(trigger.entity()).expect("bad trigger?");
+    let mut dehydrated_child = query.get_mut(trigger.target()).expect("bad trigger?");
     let bundle_factory = dehydrated_child
         .bundle_factory
         .take()
         .expect("should have callback");
-    bundle_factory(&mut commands, trigger.entity());
+    bundle_factory(&mut commands, trigger.target());
     commands
-        .entity(trigger.entity())
+        .entity(trigger.target())
         .remove::<DehydratedChild>();
 }
 
-use blenvy::{BlueprintAnimationPlayerLink, BlueprintInfo, SpawnBlueprint};
-use blenvy::BlueprintAnimations;
+// use blenvy::{BlueprintAnimationPlayerLink, BlueprintInfo, SpawnBlueprint};
+// use blenvy::BlueprintAnimations;
 
-use super::interactions::Interactable;
 use super::network::ReplicateOtherClients;
 
-/// TODO: Blenvy -> skein
-/// KEEP this, default behavior should be to play animations
-pub fn animation_test(
-    animated_robots: Query<
-        (Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations),
-        Without<Interactable>,
-    >,
+// TODO: reimplment animation stuff for skein
+// KEEP this, default behavior should be to play animations
+// use super::interactions::Interactable;
+// pub fn animation_test(
+//     animated_robots: Query<
+//         (Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations),
+//         Without<Interactable>,
+//     >,
 
-    mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>, //TODO should be more general without case
-) {
-    // robots
-    for (id, link, animations) in animated_robots.iter() {
-        let Ok((mut animation_player, mut animation_transitions)) =
-            animation_players.get_mut(link.0)
-        else {
-            continue;
-        };
-        if animation_player.playing_animations().next().is_some() {
-            // don't start animation if one is playing
-            break;
-        }
-        debug!("start animation for {}", id);
-        animation_transitions
-            .play(
-                &mut animation_player,
-                *animations
-                    .named_indices
-                    .iter()
-                    .next()
-                    .expect("there should be an animation")
-                    .1,
-                Duration::from_secs(1),
-            )
-            .repeat();
-    }
-}
+//     mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>, //TODO should be more general without case
+// ) {
+//     // robots
+//     for (id, link, animations) in animated_robots.iter() {
+//         let Ok((mut animation_player, mut animation_transitions)) =
+//             animation_players.get_mut(link.0)
+//         else {
+//             continue;
+//         };
+//         if animation_player.playing_animations().next().is_some() {
+//             // don't start animation if one is playing
+//             break;
+//         }
+//         debug!("start animation for {}", id);
+//         animation_transitions
+//             .play(
+//                 &mut animation_player,
+//                 *animations
+//                     .named_indices
+//                     .iter()
+//                     .next()
+//                     .expect("there should be an animation")
+//                     .1,
+//                 Duration::from_secs(1),
+//             )
+//             .repeat();
+//     }
+// }
 
 // TODO system to prevent rendering player model for current player
 // TODO system to rehydrate player on client
