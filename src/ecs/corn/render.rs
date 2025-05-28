@@ -1,7 +1,7 @@
 use crate::util::{observer_ext::ObserveAsAppExt, specialized_material::{SpecializedDrawMaterial, SpecializedDrawPrepass, SpecializedMaterialPlugin}};
 use super::{CornData, CornField, CornFieldObserver, CornLoaded, IndirectBuffer, VertexInstanceBuffer, LOD_COUNT};
 use bevy::{
-    asset::Asset, ecs::{query::ROQueryItem, system::{lifetimeless::{Read, SRes}, SystemParamItem}}, log::Level, pbr::{ExtendedMaterial, MaterialExtension, RenderMeshInstances, StandardMaterial}, prelude::*, reflect::Reflect, render::{
+    asset::Asset, ecs::{query::ROQueryItem, system::{lifetimeless::{Read, SRes}, SystemParamItem}}, pbr::{ExtendedMaterial, MaterialExtension, RenderMeshInstances, StandardMaterial}, prelude::*, reflect::Reflect, render::{
         mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}
     },
 };

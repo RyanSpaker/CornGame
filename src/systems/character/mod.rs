@@ -1,15 +1,7 @@
-use core::panic;
-use std::cell::RefCell;
-use std::time::Duration;
 
 use animation::MyAnimationState;
-use avian3d::math::PI;
-use bevy::ecs::bundle::DynamicBundle;
 use bevy::ecs::query::{QueryData, QuerySingleError, WorldQuery};
 use bevy::ecs::system::SystemParam;
-use bevy::gizmos::GizmoRenderSystem;
-use bevy::input::InputSystem;
-use bevy::pbr::LightEntity;
 /// This will implement the character controller and animations.
 ///
 /// using a library called tnua because it had a working demo with animations. https://idanarye.github.io/bevy-tnua/demos/platformer_3d-xpbd
@@ -23,22 +15,14 @@ use bevy::pbr::LightEntity;
 ///   [ ] interpolation
 /// [ ] item holding (ex flashlight)
 /// [ ] sight map (for out of sight changes)
-use bevy::{prelude::*, transform};
+use bevy::prelude::*;
 use avian3d::prelude::*;
 use controller::{look_handler, CornGameCharController};
-use frunk::labelled::chars::Q;
 use leafwing_input_manager::plugin::InputManagerPlugin;
-use leafwing_input_manager::InputManagerBundle;
-use lightyear::prelude::client::ReplicateToServer;
-use lightyear::prelude::server::SyncTarget;
 use lightyear::prelude::{
     AppComponentExt,
-    ClientReplicate,
-    HasAuthority,
-    ChildOfSync,
     Replicated,
 };
-use lightyear::shared::replication::components::InitialReplicated;
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::cameras::MainCamera;

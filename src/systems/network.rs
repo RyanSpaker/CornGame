@@ -266,7 +266,7 @@ impl Uid {
         let e = trigger.target();
 
         // XXX currently Uid not allowed to change
-        let mut root = parents.iter_ancestors(e).find(|e| uids.contains(*e));
+        let root = parents.iter_ancestors(e).find(|e| uids.contains(*e));
 
         let tree: Vec<_> = parents
             .iter_ancestors(e)

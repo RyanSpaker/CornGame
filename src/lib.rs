@@ -1,20 +1,7 @@
 use std::path::PathBuf;
 
-use bevy::{
-    log::{
-        tracing_subscriber::{Layer, Registry},
-        BoxedLayer,
-        LogPlugin,
-    },
-    prelude::*,
-    reflect,
-    render::{sync_world::RenderEntity, RenderApp},
-};
-use bevy_editor_pls::{
-    default_windows::{logging::TracingDynamicSubscriber},
-};
+use bevy::prelude::*;
 use clap::Parser;
-use lightyear::prelude::AppMessageExt;
 
 pub mod ecs;
 pub mod scenes;

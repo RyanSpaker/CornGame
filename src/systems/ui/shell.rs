@@ -1,6 +1,5 @@
-use std::collections::BTreeSet;
 
-use bevy::{ecs::{component::ComponentId, entity::Entity, world::{EntityMut, EntityRef, World}}, reflect::{TypeRegistration, TypeRegistryArc}};
+use bevy::{ecs::{entity::Entity, world::{EntityMut, World}}, reflect::{TypeRegistration, TypeRegistryArc}};
 use bevy::prelude::*;
 
 /// My attempt at an easy to use keyboard navigator.

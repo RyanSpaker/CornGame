@@ -12,12 +12,10 @@
 // simplest way to do animation?
 // just base it on the
 
-use std::time::Duration;
 
 pub use bevy::prelude::*;
 use lightyear::prelude::{AppComponentExt, ChannelDirection};
 use serde::{Deserialize, Serialize};
-use wgpu::core::error;
 
 #[derive(Debug, Clone, Component, Reflect, PartialEq, Serialize, Deserialize)]
 #[reflect(Component)]
@@ -30,7 +28,7 @@ impl MyAnimationState {
     fn update_animation(
         query: Query<(Entity, &MyAnimationState, Option<&Children>), Changed<MyAnimationState>>,
         // blueprint: Query<(Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations)>,
-        mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>, //TODO should be more general without case
+        animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>, //TODO should be more general without case
     ) {
         /*  TODO skein
         for (id, state, children) in query.iter() {

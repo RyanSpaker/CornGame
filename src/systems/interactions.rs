@@ -1,26 +1,15 @@
-use std::{
-    collections::HashMap,
-    str::Chars,
-};
-use avian3d::prelude::{RigidBody, RigidBodyDisabled};
+use std::collections::HashMap;
+use avian3d::prelude::RigidBodyDisabled;
 use bevy::{
-    audio::Volume,
-    ecs::{
-        entity,
-        query::{self, QueryData},
-    },
     input::keyboard::{Key, KeyboardInput},
     picking::{backend::HitData, hover::HoverMap},
     prelude::*,
     render::primitives::Aabb,
-    text::FontStyle,
     window::PrimaryWindow,
     platform::time::Instant
 };
-use bevy_easings::{Ease, EaseMethod, EasingType, EasingsPlugin};
-use bevy_editor_pls::egui::TextStyle;
+use bevy_easings::EasingsPlugin;
 use frunk::{hlist::HList, Generic};
-use lightyear::prelude::{server::ServerTriggerExt, ChannelDirection};
 use serde::{Deserialize, Serialize};
 
 use super::character::Player;
@@ -105,10 +94,10 @@ impl Pickup {
         mut held: Query<(Entity, &Held, &mut Transform)>,
 
         // player to take item
-        mut player: Query<(Entity, &Player)>,
+        player: Query<(Entity, &Player)>,
     ) {
         // HERE need to handle rigidbody, and add damping to outer rocket
-        let Ok((entity, pickup, mut interactable, gt)) = query.get_mut(ev.target()) else {
+        let Ok((entity, pickup, interactable, gt)) = query.get_mut(ev.target()) else {
             return;
         };
         debug!("pickup {}", ev.target());

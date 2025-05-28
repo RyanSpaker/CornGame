@@ -5,9 +5,8 @@ use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 use bevy_tnua::prelude::*;
 
-use bevy_tnua::builtins::{TnuaBuiltinCrouch, TnuaBuiltinDash};
+use bevy_tnua::builtins::TnuaBuiltinCrouch;
 
-use frunk::labelled::chars::W;
 use leafwing_input_manager::action_state::ActionState;
 use serde::{Deserialize, Serialize};
 use crate::ecs::cameras::MainCamera;
@@ -65,7 +64,7 @@ pub fn look_handler(
         return;
     };
 
-    let Ok(mut input) = query.get_single_mut() else {
+    let Ok(input) = query.get_single_mut() else {
         return;
     };
 
@@ -213,7 +212,7 @@ pub fn input_handler(
 }
 
 pub fn round_velocity(mut query: Query<&mut LinearVelocity, With<CornGameCharController>>) {
-    for mut v in query.iter_mut() {
+    for v in query.iter_mut() {
         if v.0 != Vec3::ZERO && v.length() < 0.0001 {
             // v.0 = Vec3::ZERO;
         }
