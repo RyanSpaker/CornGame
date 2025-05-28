@@ -30,7 +30,7 @@
           cacert
           sqlite # for matrix_rust_sdk
           sqlite.dev
-
+ 
           alsa-lib alsa-lib.dev
           vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
           lutris
@@ -62,6 +62,10 @@
             cargo-hakari # workspace management
             #cargo-add-dynamic # convert deps to dyn
 
+            # for deps that need to compile c via clang
+            llvmPackages.clang
+            llvmPackages.bintools
+
             sccache
             mold-wrapped
           ];
@@ -78,7 +82,10 @@
 
           # https://github.com/rust-lang/rustc_codegen_cranelift
           #CARGO_PROFILE_DEV_CODEGEN_BACKEND = "cranelift";
-          RUSTFLAGS = "--cfg tracing_unstable -C link-arg=-fuse-ld=mold -C linker=clang";
+          
+          # DO NOT SET RUSTFLAGS HERE: cargo's is retarded and will ignore .cargo/config.toml rustflags instead of appending them
+          # https://doc.rust-lang.org/cargo/reference/config.html#buildrustflags
+          # RUSTFLAGS = "--cfg tracing_unstable"; # moved linker args to .cargo/config.toml
         };
       }
     );

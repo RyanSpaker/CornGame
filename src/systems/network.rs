@@ -95,7 +95,11 @@ impl Plugin for CornNetworkingPlugin {
 fn network_on_start_system(mut commands: Commands, res: Res<crate::Cli>) {
     // TODO replace with generic cli dev hooks
     if res.server {
+        #[cfg(not(target_arch = "wasm32"))]
         commands.run_system_cached(start_server);
+        #[cfg(target_arch = "wasm32")]
+        unimplemented!()
+
     } else if res.client {
         commands.run_system_cached(start_client);
     }
@@ -103,6 +107,7 @@ fn network_on_start_system(mut commands: Commands, res: Res<crate::Cli>) {
 
 const PORT: u16 = 4444;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn start_server(
     mut commands: Commands,
     mut config: ResMut<ServerConfig>,
@@ -121,7 +126,7 @@ pub fn start_server(
 
     let net_config = server::NetConfig::Netcode {
         config: netcode_config,
-        io: server::IoConfig::from_transport(ServerTransport::UdpSocket(server_addr)), // .with_conditioner(LinkConditionerConfig { incoming_latency: Duration::from_millis(200), incoming_jitter: default(), incoming_loss: 0.0  })
+        io: server::IoConfig::from_transport(ServerTransport::WebSocketServer{server_addr}), // .with_conditioner(LinkConditionerConfig { incoming_latency: Duration::from_millis(200), incoming_jitter: default(), incoming_loss: 0.0  })
     };
 
     // Here we only provide a single net config, but you can provide multiple!
@@ -150,10 +155,10 @@ pub fn start_client(
 ) {
     info!("The game is hosted by another client. Connecting to the host...");
     // update the client config to connect to the game host
-    let client_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0);
+    let _client_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0); // not needed for websocket
     let server_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), PORT);
     let io_config =
-        client::IoConfig::from_transport(client::ClientTransport::UdpSocket(client_addr));
+        client::IoConfig::from_transport(client::ClientTransport::WebSocketClient{ server_addr });
     // .with_conditioner(LinkConditionerConfig { incoming_latency: Duration::from_millis(200), incoming_jitter: default(), incoming_loss: 0.0  });
     let auth = Authentication::Manual {
         // server's IP address

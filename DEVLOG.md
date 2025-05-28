@@ -380,8 +380,15 @@ Needed for demo:
 - [ ] monster (networked)
 - [ ] death screen (networked?)
 - [ ] win screen (escape the maze) fadeout screen effect and car noise? wind? hmm...
-  - "you get a feeling he isn't coming"
+  - "you get a feeling he isn't coming" if teammate died (random time delay)
 - [ ] audio chat
   
 Then get it working in the browser?
 Then cleanup?
+
+# 
+wasm:
+- cringe: 
+
+somehow fucked up the flake.nix and getting:
+`target/debug/corn_game: error while loading shared libraries: libudev.so.1: cannot open shared object file: No such file or directory`

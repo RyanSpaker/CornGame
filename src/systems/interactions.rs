@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     str::Chars,
-    time::{Duration, Instant},
 };
 use avian3d::prelude::{RigidBody, RigidBodyDisabled};
 use bevy::{
@@ -16,6 +15,7 @@ use bevy::{
     render::primitives::Aabb,
     text::FontStyle,
     window::PrimaryWindow,
+    platform::time::Instant
 };
 use bevy_easings::{Ease, EaseMethod, EasingType, EasingsPlugin};
 use bevy_editor_pls::egui::TextStyle;
