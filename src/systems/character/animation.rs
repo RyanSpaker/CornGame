@@ -24,6 +24,7 @@ pub enum MyAnimationState {
     Walk(Vec2),
 }
 
+#[expect(unused)]
 impl MyAnimationState {
     fn update_animation(
         query: Query<(Entity, &MyAnimationState, Option<&Children>), Changed<MyAnimationState>>,

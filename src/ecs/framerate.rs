@@ -12,7 +12,7 @@ pub fn update_position(
     mut query: Query<&mut TextSpan, With<DiagPos>>,
     camera: Query<(&Transform, &GlobalTransform), With<MainCamera>>
 ){
-    if let Ok((t, _)) = camera.get_single(){
+    if let Ok((t, _)) = camera.single(){
         for mut text in query.iter_mut(){
             text.0 = format!("{}", t.translation);
         }

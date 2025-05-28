@@ -241,6 +241,7 @@ impl AsCornInitShader for SimpleHexagonalInitShader{
         })]
     }
     
+    #[expect(unused)]
     fn get_invocation_count(settings: &Self::Settings) -> UVec3 {
         todo!();
         let (width, height) = settings.get_resolution();

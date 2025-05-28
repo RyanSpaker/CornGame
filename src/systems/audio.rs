@@ -96,7 +96,7 @@ impl AudioFactor{
     ){
         let mut calculated_factors: EntityHashMap<Self> = EntityHashMap::default();
         for (parent, factor) in factors.iter(){
-            let entity = parent.get();
+            let entity = parent.parent();
             if !calculated_factors.contains_key(&entity) {calculated_factors.insert(entity, Self::default());}
             let Some(fact) = calculated_factors.get_mut(&entity) else {continue;};
             *fact += factor.clone();
@@ -208,7 +208,7 @@ impl Footsteps{
         mut factors: Query<(&mut AudioFactor, &mut Self)>
     ){
         let moving = !move_events.is_empty();
-        let Ok((t, sensor)) = camera.get_single() else {
+        let Ok((t, sensor)) = camera.single() else {
             return;
         };
         let flying = t.translation.y > 2.0; //MOVEME
@@ -284,7 +284,7 @@ impl Fade{
     ){
         let Ok((parent, pause, keep)) = query.get(trigger.target()) else {return;};
         if pause.is_some(){
-            commands.entity(parent.get()).insert(Pause);
+            commands.entity(parent.parent()).insert(Pause);
         }
         if keep.is_none(){
             commands.entity(trigger.target()).despawn();

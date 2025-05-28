@@ -1,7 +1,6 @@
 
 use animation::MyAnimationState;
-use bevy::ecs::query::{QueryData, QuerySingleError, WorldQuery};
-use bevy::ecs::system::SystemParam;
+use bevy::ecs::query::{QueryData, QuerySingleError};
 /// This will implement the character controller and animations.
 ///
 /// using a library called tnua because it had a working demo with animations. https://idanarye.github.io/bevy-tnua/demos/platformer_3d-xpbd
@@ -233,7 +232,7 @@ fn move_player_to_spawn_obs(
     let mut transform: Transform = transform.compute_transform();
     transform.scale = Vec3::ONE;
 
-    match player.get_single_mut() {
+    match player.single_mut() {
         Ok((id, mut t, _gt)) => {
             // todo use gt
             info!(
@@ -255,7 +254,7 @@ fn move_player_to_spawn_obs(
         Err(QuerySingleError::MultipleEntities(_)) => todo!(),
     }
 
-    if let Ok(mut camera) = camera.get_single_mut() {
+    if let Ok(mut camera) = camera.single_mut() {
         *camera.1 = transform;
     }
 }

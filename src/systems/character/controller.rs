@@ -1,6 +1,5 @@
 use avian3d::math::PI;
 use avian3d::prelude::{Collider, ColliderOf, LinearVelocity};
-use bevy::math::VectorSpace;
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 use bevy_tnua::prelude::*;
@@ -60,16 +59,16 @@ pub fn look_handler(
     mut camera: Query<&mut Transform, With<MainCamera>>,
     window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    let Ok(mut camera) = camera.get_single_mut() else {
+    let Ok(mut camera) = camera.single_mut() else {
         return;
     };
 
-    let Ok(input) = query.get_single_mut() else {
+    let Ok(input) = query.single_mut() else {
         return;
     };
 
     let mut mouse = input.axis_pair(&CornCharacterInput::Pan);
-    if let Ok(window) = window.get_single() {
+    if let Ok(window) = window.single() {
         if window.cursor_options.grab_mode != CursorGrabMode::Locked {
             mouse = default();
         }
@@ -123,7 +122,7 @@ pub fn input_handler(
         if collider.is_none() {
             commands
                 .spawn((Collider::default(), Transform::default()))
-                .set_parent(id);
+                .insert(ChildOf(id));
             continue;
         };
 
@@ -140,7 +139,7 @@ pub fn input_handler(
         // Only allow input when cursor is grabbed
         // TODO, we should do this on the input side instead of here.
         // TODO need a generic framework for claiming inputs
-        if let Ok(mut window) = window.get_single_mut() {
+        if let Ok(mut window) = window.single_mut() {
             if input.just_pressed(&CornCharacterInput::Toggle) {
                 window.cursor_options.grab_mode = match window.cursor_options.grab_mode {
                     CursorGrabMode::None => CursorGrabMode::Locked,

@@ -96,7 +96,7 @@ pub mod readback{
                 commands.entity(entity).insert(Self(buffer));
                 events.push(ReadbackInitEvent(entity));
             }
-            event_writer.send_batch(events);
+            event_writer.write_batch(events);
         }
         fn finish_readback(
             query: Query<&ReadbackInitBuffer>,

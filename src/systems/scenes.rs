@@ -78,7 +78,7 @@ impl<S: CornScene> SceneTracker<S>{
         mut commands: Commands
     ){
         if res.loaded.contains(&trigger.target()) {return;}
-        event_writer.send(RunSpawnSchedule(trigger.target(), PhantomData::default()));
+        event_writer.write(RunSpawnSchedule(trigger.target(), PhantomData::default()));
         if let Ok(entity) = query.get(trigger.target()){
             commands.entity(entity).insert_if_new((
                 SceneEntity, Transform::default(), Visibility::Visible
@@ -95,7 +95,7 @@ impl<S: CornScene> SceneTracker<S>{
         let entity = trigger.target();
         if !res.loaded.contains(&entity) {return;}
         let Ok(comp) = query.get(entity) else {return;};
-        event_writer.send(RunDespawnSchedule(trigger.target(), comp.to_owned()));
+        event_writer.write(RunDespawnSchedule(trigger.target(), comp.to_owned()));
     }
 }
 
@@ -149,7 +149,7 @@ impl SceneTransition{
     ){
         let despawning: HashSet<S> = events.read().into_iter().map(|e| e.0.clone()).collect();
         // Send new events for all scenes that need to be despawned
-        writer.send_batch(query.iter().filter_map(|(entity, scene)| {
+        writer.write_batch(query.iter().filter_map(|(entity, scene)| {
             if !res.loaded.contains(&entity) {return None;}
             if despawning.contains(scene) {Some(RunDespawnSchedule(entity, scene.to_owned()))}
             else {None}
@@ -161,7 +161,7 @@ impl SceneTransition{
         res: Res<SceneTracker<S>>,
         mut event_writer: EventWriter<RunDespawnSchedule<S>>
     ){
-        event_writer.send_batch(event_reader.read().into_iter().filter_map(|DespawnCornScene(entity)| {
+        event_writer.write_batch(event_reader.read().into_iter().filter_map(|DespawnCornScene(entity)| {
             if !res.loaded.contains(entity) {return None;}
             let Ok(comp) = query.get(*entity) else {return None;};
             Some(RunDespawnSchedule(*entity, comp.to_owned()))
@@ -214,7 +214,7 @@ impl SceneTransition{
             res.loaded.insert(entity);
             events.push(RunSpawnSchedule(entity, PhantomData::default()));
         }
-        event_writer.send_batch(events);
+        event_writer.write_batch(events);
     }
 
     fn get_spawn_entities<S: CornScene>(

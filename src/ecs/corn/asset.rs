@@ -53,16 +53,16 @@ impl CornModel{
             // Find the meshes
             let mut mesh_query = world.query::<(&ChildOf, &Mesh3d)>();
             let meshes: Vec<(Handle<Mesh>, Entity)> = mesh_query.iter(world)
-                .map(|(parent, mesh3d)| (mesh3d.0.clone(), parent.get())).collect();
+                .map(|(parent, mesh3d)| (mesh3d.0.clone(), parent.parent())).collect();
             // Group meshes by their parents parent. 
             let mut parent_query = world.query::<&ChildOf>();
             let mut lods: HashMap<Entity, Vec<Handle<Mesh>>> = HashMap::default();
             for (mesh, parent) in meshes.into_iter(){
                 let Ok(middle) = parent_query.get(world, parent) else {continue;};
-                if let Some(list) = lods.get_mut(&middle.get()) {
+                if let Some(list) = lods.get_mut(&middle.parent()) {
                     list.push(mesh);
                 } else {
-                    lods.insert(middle.get(), vec![mesh]);
+                    lods.insert(middle.parent(), vec![mesh]);
                 }
             }
             // Get Mesh Pointers
@@ -104,7 +104,9 @@ impl CornModel{
         lods.sort_by(|(a, _), (b, _)| {b.cmp(a)});
         let mut iter = lods.into_iter().map(|(_, lod)| lod.into_iter()).flatten();
         let mut merged = iter.next().unwrap().clone();
-        for mesh in iter {merged.merge(mesh);}
+        for mesh in iter {
+            merged.merge(mesh).map_err(|_| ConvertCornMeshError)?;
+        }
         Ok(merged)
     }
 }

@@ -248,12 +248,12 @@ pub fn replicate_other_clients(
 /// should be immutable
 #[derive(Debug, Copy, Clone, Component, Reflect)]
 #[reflect(Component)]
-struct Uid(u64);
+pub struct Uid(pub u64);
 
 impl Uid {
-    fn map_entities() {}
+    pub fn map_entities() {}
 
-    fn generate(
+    pub fn generate(
         trigger: Trigger<OnAdd, UidGen>,
         parents: Query<&ChildOf>,
         uids: Query<&Uid>,
@@ -330,12 +330,12 @@ impl Uid {
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
 #[require(UidGen)]
-struct UidSeed(String);
+pub struct UidSeed(String);
 
 #[derive(Debug, Copy, Clone, Component, Reflect)]
 #[reflect(Component)]
 #[require(UidGen)]
-enum UidUsePath {
+pub enum UidUsePath {
     Name,
     Path,
 }
@@ -343,10 +343,10 @@ enum UidUsePath {
 #[derive(Debug, Copy, Clone, Component, Reflect, Default)]
 #[reflect(Component)]
 #[component(storage = "SparseSet")]
-struct UidGen;
+pub struct UidGen;
 
 #[derive(Debug, Clone, Component, Reflect, Default)]
 #[reflect(Component)]
-struct UidDebug(String);
+pub struct UidDebug(String);
 
 // note: https://github.com/cBournhonesque/lightyear/blob/2037d468f513569deee79ca24e0eb06c2a4c35ea/examples/distributed_authority/src/server.rs#L58C1-L79C2

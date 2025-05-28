@@ -177,7 +177,7 @@ pub fn cleanup_invocations(
                 .remove::<WaitingOnInvocation>()
                 .insert((buffer, CornLoaded));
         });
-        commands.entity(entity).despawn_recursive();
+        commands.entity(entity).despawn();
     }
 }
 

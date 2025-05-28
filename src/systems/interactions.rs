@@ -9,7 +9,6 @@ use bevy::{
     platform::time::Instant
 };
 use bevy_easings::EasingsPlugin;
-use frunk::{hlist::HList, Generic};
 use serde::{Deserialize, Serialize};
 
 use super::character::Player;
@@ -97,7 +96,7 @@ impl Pickup {
         player: Query<(Entity, &Player)>,
     ) {
         // HERE need to handle rigidbody, and add damping to outer rocket
-        let Ok((entity, pickup, interactable, gt)) = query.get_mut(ev.target()) else {
+        let Ok((entity, _pickup, _interactable, gt)) = query.get_mut(ev.target()) else {
             return;
         };
         debug!("pickup {}", ev.target());

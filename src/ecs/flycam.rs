@@ -143,7 +143,7 @@ fn read_flycam_button_inputs(
     movement = if movement == Vec3::ZERO {
         Vec3::ZERO
     } else {
-        move_events.send(FlyCamMoveEvent);
+        move_events.write(FlyCamMoveEvent);
         movement.normalize()
     };
     if mouse == Vec2::ZERO && movement == Vec3::ZERO {

@@ -51,8 +51,8 @@ pub fn on_press_switch_scene<S1: CornScene, S2: CornScene>(old_scene: S1, new_sc
 {
     move |trigger: Trigger<ButtonEvent>, mut spawn: EventWriter<SpawnCornScene<S2>>, mut despawn: EventWriter<DespawnCornSceneMany<S1>>| {
         match trigger.1 {Interaction::Pressed => {
-            spawn.send(SpawnCornScene(new_scene.clone()));
-            despawn.send(DespawnCornSceneMany(old_scene.clone()));
+            spawn.write(SpawnCornScene(new_scene.clone()));
+            despawn.write(DespawnCornSceneMany(old_scene.clone()));
         } _ => {}}
     }
 }
@@ -73,12 +73,12 @@ pub fn on_press_swap_scene<S1: CornScene, S2: CornScene>(old_scene: S1, new_scen
                 if *scene != old_scene {continue;}
                 despawn_events.push(DespawnCornScene(entity));
                 if let Some(parent) = parent{
-                    commands.entity(parent.get()).with_child(new_scene.clone().get_bundle());
+                    commands.entity(parent.parent()).with_child(new_scene.clone().get_bundle());
                 }else {
                     commands.spawn(new_scene.clone().get_bundle());
                 }
             }
-            despawn_event_writer.send_batch(despawn_events);
+            despawn_event_writer.write_batch(despawn_events);
         } _ => {}}
     }
 }
@@ -134,5 +134,5 @@ fn send_button_events(
         events.push(ButtonEvent(entity, event.to_owned()));
         commands.trigger_targets(ButtonEvent(entity, event.to_owned()), entity);
     }
-    event_writer.send_batch(events);
+    event_writer.write_batch(events);
 }

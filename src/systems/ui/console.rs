@@ -98,7 +98,7 @@ fn reload_command(
     scene: Query<(Entity, &blenvy::BlueprintInfo), With<GameWorldTag>>
 ){
     if let Some(Ok(cmd)) = ctx.take() {
-        match scene.get_single() {
+        match scene.single() {
             Ok((id, info)) => {
                 let path = cmd.path.unwrap_or(info.path.clone());
                 commands.entity(id).despawn();

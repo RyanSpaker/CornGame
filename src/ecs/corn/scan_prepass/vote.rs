@@ -158,7 +158,7 @@ impl VoteScanBuffers{
         camera: Query<&ExtractedView, With<MainCamera>>,
         render_device: Res<RenderDevice>
     ){
-        let Ok(view) = camera.get_single() else {return;};
+        let Ok(view) = camera.single() else {return;};
         let cam_pos = view.world_from_view.translation().extend(1.0);
         let w2c = view.clip_from_view*view.world_from_view.compute_matrix().inverse();
 
