@@ -7,7 +7,7 @@ use bevy::{
     core_pipeline::{bloom::Bloom, tonemapping::Tonemapping},
     ecs::{component::HookContext, world::DeferredWorld},
     pbr::{ScreenSpaceReflections, VolumetricFog},
-    prelude::*,
+    prelude::*, scene::scene_spawner,
 };
 use lobby::LobbyScene;
 use crate::{
@@ -92,8 +92,8 @@ impl Plugin for CornScenesPlugin {
             .register_type::<SceneGltf>()
             .add_systems(Startup, (spawn_global_entities, spawn_fps_text))
             .add_systems(
-                PostUpdate,
-                LoadScene::load_handler.before(TransformSystem::TransformPropagate),
+                SpawnScene, //PostUpdate causes falling through floor
+                LoadScene::load_handler.before(scene_spawner),
             )
             .add_plugins((main_menu::MainMenuPlugin, lobby::LobbyPlugin));
     }

@@ -184,11 +184,13 @@ pub struct SpawnPlayerEvent {
 #[derive(Debug, QueryData)]
 struct SpawnQuery {
     e: Entity,
+    t: &'static Transform,
     gt: &'static GlobalTransform,
     name: Option<&'static Name>,
     info: Option<&'static SpawnLocation>,
 }
 
+// TODO refactor as command
 fn move_player_to_spawn_obs(
     trigger: Trigger<SpawnPlayerEvent>,
     mut camera: Query<
@@ -196,14 +198,15 @@ fn move_player_to_spawn_obs(
         (With<MainCamera>, Without<Player>),
     >,
     mut player: Query<(Entity, &mut Transform, &GlobalTransform), With<Player>>,
-    spawn: Query<SpawnQuery>,
+    spawn1: Query<SpawnQuery, (Without<MainCamera>, Without<Player>)>,
     mut commands: Commands,
+    // tree: Query<&ChildOf>,
 ) {
     // spawn a player or move existing player
     // TODO narrow by scene
 
     // get matching names (or SpawnLocations if name not specified)
-    let mut spawn: Vec<_> = spawn
+    let mut spawn: Vec<_> = spawn1
         .iter()
         .filter(|s| {
             trigger.target.as_ref().is_none_or(|target| {
@@ -222,8 +225,18 @@ fn move_player_to_spawn_obs(
         None => 0,
     });
 
+
     let spawn = spawn.pop();
     let transform = spawn.as_ref().map(|s| *s.gt).unwrap_or_default();
+
+    if let Some(s) = &spawn {
+        // dbg!(s.t, s.gt);
+        // for id in tree.iter_ancestors(s.e) {
+        //     if let Ok(s) = spawn1.get(id){
+        //         dbg!(s.t, s.gt);
+        //     }
+        // }
+    }
 
     let entity = spawn
         .map(|s| s.e.to_string())
