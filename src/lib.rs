@@ -14,6 +14,7 @@ use util::debug_app::DebugApp;
 #[derive(Debug, clap::Parser, Default, Reflect, Serialize, Deserialize, Resource)]
 #[reflect(Resource)]
 struct Cli {
+    /// implies --lobby
     scenes: Vec<PathBuf>,
     #[arg(short, long)]
     client: bool,
@@ -22,6 +23,10 @@ struct Cli {
 
     #[arg(short, long)]
     menu: bool,
+
+    #[arg(short, long)]
+    lobby: bool,
+
 }
 
 pub struct CornGame;
@@ -43,7 +48,9 @@ impl Plugin for CornGame {
                     ..default()
                 })
                 .set(AssetPlugin {
-                    mode: AssetMode::Processed,
+                    // setting these for wasm, if we want to use the asset preprocessor we should change this
+                    mode: AssetMode::Unprocessed,
+                    meta_check: bevy::asset::AssetMetaCheck::Never,
                     ..default()
                 })
                 // .set(LogPlugin {

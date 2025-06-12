@@ -14,7 +14,7 @@
 
 
 pub use bevy::prelude::*;
-use lightyear::prelude::{AppComponentExt, ChannelDirection};
+use lightyear::prelude::AppComponentExt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Component, Reflect, PartialEq, Serialize, Deserialize)]
@@ -78,7 +78,7 @@ impl MyAnimationState {
 pub fn plugin(app: &mut App) {
     app.register_type::<MyAnimationState>();
     app.add_systems(Update, MyAnimationState::update_animation);
-    app.register_component::<MyAnimationState>(ChannelDirection::Bidirectional);
+    app.register_component::<MyAnimationState>();
     //app.register_component::<SpawnBlueprint>(ChannelDirection::Bidirectional);
     //app.register_component::<BlueprintInfo>(ChannelDirection::Bidirectional);
 }

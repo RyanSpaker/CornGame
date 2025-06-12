@@ -24,7 +24,7 @@ pub struct LoadScene {
     scene: String,
 }
 impl LoadScene {
-    fn new<'a>(path: impl Into<&'a str>) -> Self {
+    pub fn new<'a>(path: impl Into<&'a str>) -> Self {
         let mut path = path.into().split("#");
         Self {
             file: path.next().unwrap_or_default().to_string(),
@@ -71,7 +71,7 @@ impl LoadScene {
 
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
-pub struct SceneGltf(Handle<Gltf>);
+pub struct SceneGltf(pub Handle<Gltf>);
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
 #[reflect(Component)]
@@ -116,7 +116,7 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
             ambient_intensity: 0.0,
             ..default()
         },
-        ScreenSpaceReflections::default(),
+        // ScreenSpaceReflections::default(), // problems on wasm
         CornSensor::default(),
         FlyCam,
         IsDefaultUiCamera,
@@ -124,7 +124,7 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
 
     if cli.menu {
         commands.spawn(main_menu::MainMenuScene.get_bundle());
-    } else if !cli.scenes.is_empty() {
+    } else if !cli.scenes.is_empty() || cli.lobby {
         commands.spawn(LobbyScene.get_bundle());
     }
     commands.insert_resource(UiScale(1.0));

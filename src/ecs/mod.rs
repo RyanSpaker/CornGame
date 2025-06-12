@@ -16,8 +16,8 @@ impl Plugin for CornECSPlugin{
             CamerasPlugin, 
             FrameRatePlugin, 
             FlyCamPlugin, 
-            CornFieldComponentPlugin,
-            TestCube
+            // CornFieldComponentPlugin,
+            TestCube,
         ));
     }
 }

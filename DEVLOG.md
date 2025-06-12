@@ -263,13 +263,8 @@ add this to .git/config
 
 ```
 [credential]
-	helper = /run/current-system/sw/bin/git-credential-manager
-	credentialStore = plaintext
-	useHttpPath = true
+	helper = /run/current-system/sw/bin/git-credential-managerbevy_cli
 ```
-
-the first time you clone you should be able to use a password
-see clone->generate git credentials
 
 # Wed Apr 30 04:20:40 PM EDT 2025
 bevy trace breaks asset loader.
@@ -367,7 +362,8 @@ Needed for demo:
 - [x] merge ryan    
 - [ ] 0.16
   - [x] editor compiling
-  - [ ] reimplement bevy-inspector-egui tweaks
+    - [ ] fix editor camera
+    - [ ] reimplement bevy-inspector-egui tweaks
   - [ ] test lightyear
 - [ ] blenvy -> skein
   - [x] rework cctest
@@ -386,9 +382,42 @@ Needed for demo:
 Then get it working in the browser?
 Then cleanup?
 
-# 
+# Wed May 28 04:33:14 PM EDT 2025
 wasm:
-- cringe: 
 
-somehow fucked up the flake.nix and getting:
+somehow messed up the flake.nix and getting:
 `target/debug/corn_game: error while loading shared libraries: libudev.so.1: cannot open shared object file: No such file or directory`
+
+ANSWER: https://doc.rust-lang.org/cargo/reference/config.html#buildrustflags
+
+We need webgpu for compute shaders.
+Webgpu is experimental and disabled by default in chrome for linux (stable on windows/mac). Webgpu in firefox is nightly-only.
+
+I ran the bevy_new_2d template with webgpu and [bevy_cli]. It **totally lags out** in chromium unless I start it with `chromium --enable-features=Vulkan --enable-unsafe-webgpu`. Doesn't work in brave, still lags.
+
+I get 404 not found for all our assets. It appears to be trying to load from imported_assets which might be the issue.
+
+[bevy_cli]: https://github.com/TheBevyFlock/bevy_cli
+
+# Thu May 29 04:19:04 PM EDT 2025
+daily annoyances: https://github.com/rust-lang/rust/issues/34162
+
+# Wed Jun  4 04:04:20 AM EDT 2025
+I am reimplementing animations. The new AnimationContext will be used to mark in blender what object is the animation root, and on the bevy side will collect all the info needed to play animations by name. (find child AnimationTargets, build AnimationGraph, etc.)
+
+I also added a QueryParam to make working with the info easier.
+
+I also added a custom view impl for the editor so you can play animations.
+Meanwhile I have update the editor to support picking and outlines for selected entities.
+- [x] there is a bug with picking which is either due to camera viewport not covering full window, ~~or perhaps picking is using the main camera instead of the editor camera.~~
+  - https://github.com/bevyengine/bevy/issues/18856 16.1 seems to have fixed it
+
+now, why aren't interactions working.
+A: because I didn't uncomment plugins in the system
+
+# Thu Jun 12 01:57:48 PM EDT 2025
+
+Trying to get lightyear/main working. 
+Having trouble starting the server. Turns out ConnectionPlugin is only added by netcode feature (surely a bug)
+
+Can't get client to connect. The connection fails but there are no error messages on client or server.

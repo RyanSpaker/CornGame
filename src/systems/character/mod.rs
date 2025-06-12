@@ -58,7 +58,7 @@ impl Plugin for MyCharacterPlugin {
         app.add_systems(
             FixedUpdate, // Update was causing jitter. but it might have just been gizmos.
             self::controller::round_velocity
-                .in_set(lightyear::client::input::InputSystemSet::WriteClientInputs),
+                // .in_set(lightyear::client::input::InputSystemSet::WriteClientInputs),
         );
         app.add_systems(Update, look_handler);
         // app.add_systems(Update, animation_test); //TODO skein
@@ -82,7 +82,7 @@ impl Plugin for MyCharacterPlugin {
         );
 
         app.register_type::<Character>();
-        app.register_component::<Character>(lightyear::prelude::ChannelDirection::Bidirectional);
+        app.register_component::<Character>();
         app.add_systems(FixedPostUpdate, Player::init_network_character);
 
         app.add_plugins(animation::plugin);
@@ -124,10 +124,10 @@ impl Player {
                     Transform::from_xyz(0.0, -1.5, 0.0),
                     // BlueprintInfo::from_path("blueprints/construction_worker.glb"), //TODO skein
                     // SpawnBlueprint,
-                    ReplicateOtherClients(true),
+                    // ReplicateOtherClients(true),
                 )
             }),
-            ReplicateOtherClients(false),
+            // ReplicateOtherClients(false),
             // SyncTarget {
             //     interpolation: lightyear::prelude::NetworkTarget::All,
             //     ..default()
@@ -191,6 +191,7 @@ struct SpawnQuery {
 }
 
 // TODO refactor as command
+// TODO do character controller calclation to place character at correct height + valid location
 fn move_player_to_spawn_obs(
     trigger: Trigger<SpawnPlayerEvent>,
     mut camera: Query<
@@ -307,7 +308,7 @@ fn spawn_dehydrated_child_obs(
 // use blenvy::{BlueprintAnimationPlayerLink, BlueprintInfo, SpawnBlueprint};
 // use blenvy::BlueprintAnimations;
 
-use super::network::ReplicateOtherClients;
+// use super::network::ReplicateOtherClients;
 
 // TODO: reimplment animation stuff for skein
 // KEEP this, default behavior should be to play animations

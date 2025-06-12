@@ -37,11 +37,11 @@ impl LobbyScene {
                 // MeshMaterial3d(materials.white.clone()),
                 RigidBody::Static,
             ));
-            parent.spawn((
-                Name::from("Box"),
-                Mesh3d(shapes.cube.clone()),
-                MeshMaterial3d(materials.red.clone()),
-            ));
+            // parent.spawn((
+            //     Name::from("Box"),
+            //     Mesh3d(shapes.cube.clone()),
+            //     MeshMaterial3d(materials.red.clone()),
+            // ));
             parent.spawn((
                 DirectionalLight::default(),
                 Transform::from_translation(Vec3::ONE).looking_at(Vec3::ZERO, Vec3::Y),

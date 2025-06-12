@@ -6,6 +6,7 @@ pub mod physics;
 pub mod scenes;
 pub mod ui;
 pub mod util;
+pub mod animation_context;
 
 use bevy::{pbr::FogVolume, prelude::*};
 

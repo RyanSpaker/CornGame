@@ -1,15 +1,12 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use avian3d::prelude::RigidBodyDisabled;
 use bevy::{
-    input::keyboard::{Key, KeyboardInput},
-    picking::{backend::HitData, hover::HoverMap},
-    prelude::*,
-    render::primitives::Aabb,
-    window::PrimaryWindow,
-    platform::time::Instant
+    animation, audio::Volume, input::keyboard::{Key, KeyboardInput}, picking::{backend::HitData, hover::HoverMap}, platform::time::Instant, prelude::*, render::primitives::Aabb, window::PrimaryWindow
 };
 use bevy_easings::EasingsPlugin;
 use serde::{Deserialize, Serialize};
+
+use crate::systems::animation_context::AnimationParams;
 
 use super::character::Player;
 
@@ -25,7 +22,7 @@ impl Plugin for InteractPlugin {
             (
                 display_tooltip,
                 handle_key,
-                // ToggleInteractionBlender::handle_animation_done,
+                ToggleInteractionBlender::handle_animation_done,
             ),
         );
         app.add_systems(PostUpdate, DebugForMissingReflect::system);
@@ -48,7 +45,7 @@ impl Plugin for InteractPlugin {
         app.register_type::<HashMapTest2>();
         app.register_type::<HashMapTest3>();
 
-        // app.add_observer(ToggleInteractionBlender::observer);
+        app.add_observer(ToggleInteractionBlender::observer);
         app.add_observer(Pickup::observer);
         // app.add_observer(ToggleInteractionBlender::handle_flip);
     }
@@ -148,80 +145,74 @@ pub struct ToggleInteractionBlender {
 
 
 impl ToggleInteractionBlender {
-    /* 
     fn handle_animation_done(
-        mut animated: Query<(&BlueprintAnimationPlayerLink, &mut Interactable)>,
-        mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
+        mut query: Query<(AnimationParams, &mut Interactable)>,
     ) {
-        for (link, mut state) in animated.iter_mut() {
-            if animation_players.get(link.0).unwrap().0.all_finished() {
+        for (ref animated, mut state) in query.iter_mut() {
+            if animated.player.all_finished() {
                 // TODO what if there is an idle animation
                 state.active = false;
             }
         }
     }
-    */
+    
+    
+    // fn handle_flip(
+    //     // NOTE vecs appear broken in blenvy so I can't add AnimationMarkers
+    //     // TODO revert this back to a component on the breaker
+    //     event: Trigger<AnimationMarkerReached>,
+    //     query: Query<&FlipVisible>,
+    //     mut target: Query<(&Name, &mut Visibility)>,
+    // ) {
+    //     let flip = query.get(event.target());
+    //     dbg!(event.event(), &query);
+    //     if let Ok(flip) = flip {
+    //         let Some((_, mut vis)) = target.iter_mut().find(|n| n.0.as_str() == &flip.name) else {
+    //             error!("flip target {} not found", flip.name);
+    //             return;
+    //         };
+    //         if *vis == Visibility::Hidden {
+    //             *vis = Visibility::Inherited;
+    //         } else {
+    //             *vis = Visibility::Hidden;
+    //         }
+    //     }
 
-    /* 
-    fn handle_flip(
-        // NOTE vecs appear broken in blenvy so I can't add AnimationMarkers
-        // TODO revert this back to a component on the breaker
-        event: Trigger<AnimationMarkerReached>,
-        query: Query<&FlipVisible>,
-        mut target: Query<(&Name, &mut Visibility)>,
-    ) {
-        let flip = query.get(event.target());
-        dbg!(event.event(), &query);
-        if let Ok(flip) = flip {
-            let Some((_, mut vis)) = target.iter_mut().find(|n| n.0.as_str() == &flip.name) else {
-                error!("flip target {} not found", flip.name);
-                return;
-            };
-            if *vis == Visibility::Hidden {
-                *vis = Visibility::Inherited;
-            } else {
-                *vis = Visibility::Hidden;
-            }
-        }
+    //     // for ev in events.read() {
+    //     //     dbg!(&ev);
 
-        // for ev in events.read() {
-        //     dbg!(&ev);
+    //     //     for flip in query.iter_mut(){
+    //     //         if target.get(ev.entity).is_ok_and(|n| n.as_str() == &flip.name )
+    //     //             && ( &flip.animation == "" || flip.animation == ev.animation_name)
+    //     //             && ( &flip.marker == &ev.marker_name )
+    //     //         {
+    //     //             *vis = match flip.vis {
+    //     //                 true => Visibility::Visible,
+    //     //                 false => Visibility::Hidden,
+    //     //             }
+    //     //         }
+    //     //     }
 
-        //     for flip in query.iter_mut(){
-        //         if target.get(ev.entity).is_ok_and(|n| n.as_str() == &flip.name )
-        //             && ( &flip.animation == "" || flip.animation == ev.animation_name)
-        //             && ( &flip.marker == &ev.marker_name )
-        //         {
-        //             *vis = match flip.vis {
-        //                 true => Visibility::Visible,
-        //                 false => Visibility::Hidden,
-        //             }
-        //         }
-        //     }
+    //     //     // if let Some((_, mut vis)) = target
+    //     //     //     .iter_mut()
+    //     //     //     .find(|t| *t.0 == Name::from(item.1.target.clone()))
+    //     //     // {
+    //     //     //     *vis = match item.0 .0 {
+    //     //     //         true => Visibility::Visible,
+    //     //     //         false => Visibility::Hidden,
+    //     //     //     }
+    //     //     // } else {
+    //     //     //     warn!("could not find {}", item.1.target);
+    //     //     // }
+    //     // }
+    // }
 
-        //     // if let Some((_, mut vis)) = target
-        //     //     .iter_mut()
-        //     //     .find(|t| *t.0 == Name::from(item.1.target.clone()))
-        //     // {
-        //     //     *vis = match item.0 .0 {
-        //     //         true => Visibility::Visible,
-        //     //         false => Visibility::Hidden,
-        //     //     }
-        //     // } else {
-        //     //     warn!("could not find {}", item.1.target);
-        //     // }
-        // }
-    }
-    */
-
-    /* 
     fn observer(
         ev: Trigger<Interaction>,
         mut commands: Commands,
         asset_server: ResMut<AssetServer>,
         mut query: Query<(&Self, &mut ToggleInteractionState, &mut Interactable)>,
-        animated: Query<(&BlueprintAnimationPlayerLink, &BlueprintAnimations)>,
-        mut animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
+        mut animate: Query<AnimationParams>,
     ) {
         let Ok((conf, mut state, mut interactable)) = query.get_mut(ev.target()) else {
             return;
@@ -233,52 +224,44 @@ impl ToggleInteractionBlender {
         // with a manual handler which sends it to all other clients (on server)
         // and triggers this (on client). With something to prevent resending to server. (EventId doesn't exist for Trigger?)
 
-        if let Ok((link, animations)) = animated.get(ev.target()) {
-            let (mut animation_player, mut animation_transitions) =
-                animation_players.get_mut(link.0).unwrap();
+        let Ok(mut animate) = animate.get_mut(ev.target()) else {
+            error!(entity = %ev.target(), "AnimationContext or required missing");
+            return;
+        };
 
-            let anim_name = match state.0 {
-                true => conf.on_animation.as_str(),
-                false => conf.off_animation.as_str(),
-            };
+        let anim_name = match state.0 {
+            true => conf.on_animation.as_str(),
+            false => conf.off_animation.as_str(),
+        };
 
-            let Some(animation) = animations.named_indices.get(anim_name) else {
-                error!("animation {} does not exist for {}", anim_name, link.0);
-                return;
-            };
+        debug!("play {}", anim_name);
+        interactable.active = true;
+        animate.play(
+            anim_name,
+            Duration::ZERO
+        );
 
-            // dbg!(animations);
+        let sfx = match state.0 {
+            true => &conf.on_sfx,
+            false => &conf.off_sfx,
+        };
 
-            debug!("play {}", anim_name);
-            interactable.active = true;
-            animation_transitions.play(
-                &mut animation_player,
-                animation.clone(),
-                Duration::from_secs(0),
-            );
-
-            let sfx = match state.0 {
-                true => &conf.on_sfx,
-                false => &conf.off_sfx,
-            };
-
-            if let Some(mut s) = sfx.clone() {
-                if !s.contains("/") {
-                    s.insert_str(0, "sounds/".into());
-                }
-                //TODO why doesn't this replace current sound?
-                commands.entity(ev.target()).insert((
-                    AudioPlayer::<AudioSource>(asset_server.load(s)),
-                    PlaybackSettings {
-                        mode: bevy::audio::PlaybackMode::Remove,
-                        volume: Volume::Linear(0.7),
-                        ..Default::default()
-                    },
-                ));
+        // TODO make sound part of animation framework
+        if let Some(mut s) = sfx.clone() {
+            if !s.contains("/") {
+                s.insert_str(0, "sounds/".into());
             }
+            //TODO why doesn't this replace current sound?
+            commands.entity(ev.target()).insert((
+                AudioPlayer::<AudioSource>(asset_server.load(s)), //TODO preload
+                PlaybackSettings {
+                    mode: bevy::audio::PlaybackMode::Remove,
+                    volume: Volume::Linear(0.7),
+                    ..Default::default()
+                },
+            ));
         }
     }
-    */
 }
 
 #[derive(Debug, Clone, Component, Reflect)]

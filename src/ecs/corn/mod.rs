@@ -177,7 +177,7 @@ impl Plugin for CornFieldComponentPlugin{
             ).in_set(RenderSet::PrepareResources));
         app.add_plugins((CornInitializationPlugin, ScanPrepassPlugin, CornModelPlugin, CornRenderPlugin));
 
-        app.add_systems(OnSpawnScene(LobbyScene), test_init);
+        // app.add_systems(OnSpawnScene(LobbyScene), test_init);
     }
 }
 

@@ -29,16 +29,60 @@ getrandom2 = { package="getrandom", version = "0.2", default-features = false, f
 
 [dependencies]
 # NOTE: https://github.com/joseph-gio/bevy-trait-query/issues/77 breaks with bevy_ecs/track_change_detection
-bevy = { version = "0.16.0", default-features = true, features = [
-    "dynamic_linking", 
-    "serialize", 
-    "asset_processor", 
-    # "file_watcher", # faggots  https://github.com/rust-lang/cargo/issues/1197
-    # "embedded_watcher", 
-    "default_font", 
-    "jpeg", 
-    "bevy_remote",
-  ]}
+bevy = { version = "0.16.1", default-features = false, features = [
+  # "android-game-activity", # Android GameActivity support. Default, choose between this and android-native-activity.
+  # "android_shared_stdcxx", #	Enable using a shared stdlib for cxx on Android
+  "animation", #	Enable animation support, and glTF animation loading
+  "async_executor", #	Uses async-executor as a task execution backend.
+  "bevy_animation", #	Provides animation functionality
+  "bevy_asset", #	Provides asset functionality
+  "bevy_audio", #	Provides audio functionality
+  "bevy_color", #	Provides shared color types and operations
+  "bevy_core_pipeline", #	Provides cameras and other basic render pipeline features
+  "bevy_gilrs", #	Adds gamepad support
+  "bevy_gizmos", #	Adds support for rendering gizmos
+  "bevy_gltf", #	glTF support
+  "bevy_input_focus", #	Enable input focus subsystem
+  "bevy_log", #	Enable integration with tracing and log
+  "bevy_mesh_picking_backend", #	Provides an implementation for picking meshes
+  "bevy_pbr", #	Adds PBR rendering
+  "bevy_picking", #	Provides picking functionality
+  "bevy_render", #	Provides rendering functionality
+  "bevy_scene", #	Provides scene functionality
+  "bevy_sprite", #	Provides sprite functionality
+  "bevy_sprite_picking_backend", #	Provides an implementation for picking sprites
+  "bevy_state", #	Enable built in global state machines
+  "bevy_text", #	Provides text functionality
+  "bevy_ui", #	A custom ECS-driven UI framework
+  "bevy_ui_picking_backend", #	Provides an implementation for picking UI
+  "bevy_window", #	Windowing layer
+  "bevy_winit", #	winit window and input backend
+  # "custom_cursor", #	Enable winit custom cursor support
+  "default_font", #	Include a default font, containing only ASCII characters, at the cost of a 20kB binary size increase
+  "hdr", #	HDR image format support
+  "ktx2", #	KTX2 compressed texture support
+  "multi_threaded", #	Enables multithreaded parallelism in the engine. Disabling it forces all engine tasks to run on a single thread.
+  "png", #	PNG image format support
+  "smaa_luts", #	Include SMAA Look Up Tables KTX2 Files
+  "std", #	Allows access to the std crate.
+  "sysinfo_plugin", #	Enables system information diagnostic plugin
+  "tonemapping_luts", #	Include tonemapping Look Up Tables KTX2 files. If everything is pink, you need to enable this feature or change the Tonemapping method for your Camera2d or Camera3d.
+  "vorbis", #	OGG/VORBIS audio format support
+  "webgl2", #	Enable some limitations to be able to use WebGL2. Please refer to the WebGL2 and WebGPU section of the examples README for more information on how to run Wasm builds with WebGPU.
+  "x11", #	X11 display server support
+  "zstd", #	For KTX2 supercompression
+
+  "dynamic_linking", 
+  "serialize", 
+  # "asset_processor", 
+  # "file_watcher", # faggots  https://github.com/rust-lang/cargo/issues/1197
+  # "embedded_watcher", 
+  "default_font", 
+  "jpeg", 
+  "bevy_remote",
+  "web",
+  "webgpu",
+]}
 # blenvy = { path = "./forks/Blenvy/crates/blenvy"}
 bevy_skein = "0.2.1"
 wgpu-types = "24"
@@ -46,12 +90,13 @@ wgpu = "24"
 bevy-tnua = "0.24.0"
 bevy-tnua-avian3d = "0.5.0"
 avian3d = { version = "0.3.0", features = ["serialize"]}
-lightyear = { version = "0.20.2", features = [
+lightyear = { version = "0.21.0-rc.1", features = [
   "avian3d", 
   # "metrics", 
   "websocket",
   "webtransport",
-  "udp"
+  "udp",
+  "netcode"
 ]}
 leafwing-input-manager = "0.17.0"
 # bevy_edge_detection = "0.15.4"
@@ -66,15 +111,21 @@ rand = "0.9.0"
 bytemuck = "1.14.1"
 async-channel = "2.3.1"
 uuid = "*"
+parking_lot = "*"
 
 image = "0.25.5"
 prse = "1.2.1"
 auto_enums = "0.8.5"
 frunk = "0.4.3"
 aligned-vec = "0.6.4"
+bevy_mod_outline = "0.10.0"
+
+async-compat = "*"
 
 
 [patch.crates-io]
+petgraph = {branch = "master", git = "https://github.com/petgraph/petgraph.git"}
+
 bevy_editor_pls = { path = "forks/editor/crates/bevy_editor_pls/" }
 bevy-inspector-egui = { path = "forks/editor/forks/bevy-inspector-egui/crates/bevy-inspector-egui" }
 egui_dock = { path = "forks/editor/forks/egui-dock/" }

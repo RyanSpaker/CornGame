@@ -1,6 +1,7 @@
 use std::f32::consts::PI;
 use bevy::prelude::*;
 use avian3d::prelude::*;
+use lightyear::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
@@ -57,5 +58,56 @@ impl Plugin for CornPhysicsPlugin {
             .register_type::<DebugRender>()
             .register_type::<DampedPhysics>()
             .init_resource::<DebugRender>();
+    }
+}
+
+pub struct CornPhysicsPluginNetworkPlugin;
+impl Plugin for CornPhysicsPluginNetworkPlugin {
+    fn build(&self, app: &mut App) {
+        app.register_component::<LinearVelocity>()
+            .add_prediction(PredictionMode::Full);
+
+        app.register_component::<AngularVelocity>()
+            .add_prediction(PredictionMode::Full);
+
+        app.register_component::<ExternalForce>()
+            .add_prediction(PredictionMode::Full);
+
+        app.register_component::<ExternalImpulse>()
+            .add_prediction(PredictionMode::Full);
+
+        // // Do not replicate Transform when we are replicating Position/Rotation!
+        // // See https://github.com/cBournhonesque/lightyear/discussions/941
+        // // app.register_component::<Transform>()
+        // //     .add_prediction(PredictionMode::Full);
+
+        app.register_component::<ComputedMass>()
+            .add_prediction(PredictionMode::Full);
+
+        // Position and Rotation have a `correction_fn` set, which is used to smear rollback errors
+        // over a few frames, just for the rendering part in postudpate.
+        //
+        // They also set `interpolation_fn` which is used by the VisualInterpolationPlugin to smooth
+        // out rendering between fixedupdate ticks.
+        // app.register_component::<Position>()
+        //     .add_prediction(PredictionMode::Full)
+        //     .add_interpolation_fn(position::lerp)
+        //     .add_interpolation(PredictionMode::Full)
+        //     .add_correction_fn(position::lerp);
+
+        // app.register_component::<Rotation>()
+        //     .add_prediction(PredictionMode::Full)
+        //     .add_interpolation_fn(rotation::lerp)
+        //     .add_interpolation(PredictionMode::Full)
+        //     .add_correction_fn(rotation::lerp);
+
+        // do not replicate Transform but make sure to register an interpolation function
+        // for it so that we can do visual interpolation
+        // (another option would be to replicate transform and not use Position/Rotation at all)
+
+        app.register_component::<Transform>()
+            .add_interpolation(InterpolationMode::Full)
+            .add_interpolation_fn(TransformLinearInterpolation::lerp);
+    
     }
 }

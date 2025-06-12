@@ -1,8 +1,8 @@
 use avian3d::prelude::{RigidBody, Collider};
 use bevy::{ecs::{component::HookContext, world::DeferredWorld}, prelude::*};
-use lightyear::prelude::{AppComponentExt, NetworkIdentityState, ServerReplicate};
+use lightyear::prelude::*;
 use serde::{Serialize, Deserialize};
-use crate::systems::physics::DampedPhysics;
+use crate::systems::{network::ReplicateAuto, physics::DampedPhysics};
 
 /// Test object for debugging network / replication (or whatever)
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component, Serialize, Deserialize)]
@@ -21,27 +21,21 @@ impl TestCube {
         let assets = world.resource_mut::<AssetServer>();
         let mesh3d = Mesh3d(assets.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))));
         let material = MeshMaterial3d(assets.add(StandardMaterial::from(Color::srgb(1.0, 1.0, 1.0))));
-        let net = world.get_resource::<State<NetworkIdentityState>>().map(|s| s.get().clone());
         
-        info!("spawning test cube {:?}", net);
+        info!("spawning test cube");
         let mut commands = world.commands();
         let mut entity = commands.entity(entity);
         entity.insert((
             mesh3d,
-            material
+            material,
+            ReplicateAuto
         ));
-        match net {
-            Some(NetworkIdentityState::Client) | None => {},
-            _ => {
-                entity.insert(ServerReplicate::default());
-            }
-        }
     }
 }
 impl Plugin for TestCube{
     fn build(&self, app: &mut App) {
         app
             .register_type::<TestCube>()
-            .register_component::<TestCube>(lightyear::prelude::ChannelDirection::Bidirectional);
+            .register_component::<TestCube>();
     }
 }
