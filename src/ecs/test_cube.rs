@@ -1,4 +1,4 @@
-use avian3d::prelude::{RigidBody, Collider};
+use avian3d::prelude::{Collider, RigidBody, SleepingDisabled, SleepingThreshold};
 use bevy::{ecs::{component::HookContext, world::DeferredWorld}, prelude::*};
 use lightyear::prelude::*;
 use serde::{Serialize, Deserialize};
@@ -28,7 +28,8 @@ impl TestCube {
         entity.insert((
             mesh3d,
             material,
-            ReplicateAuto
+            ReplicateAuto,
+            SleepingDisabled,
         ));
     }
 }

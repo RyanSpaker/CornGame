@@ -53,7 +53,8 @@ impl Plugin for CornPhysicsPlugin {
     fn build(&self, app: &mut App) {
         // init physics plugins
         app
-            .add_plugins(PhysicsPlugins::default())
+            .add_plugins(PhysicsPlugins::default().build().disable::<SyncPlugin>() /*handled by lightyear */)
+            .add_plugins(CornPhysicsPluginNetworkPlugin)
             // .register_type::<ColliderFor>()
             .register_type::<DebugRender>()
             .register_type::<DampedPhysics>()
@@ -89,17 +90,17 @@ impl Plugin for CornPhysicsPluginNetworkPlugin {
         //
         // They also set `interpolation_fn` which is used by the VisualInterpolationPlugin to smooth
         // out rendering between fixedupdate ticks.
-        // app.register_component::<Position>()
-        //     .add_prediction(PredictionMode::Full)
-        //     .add_interpolation_fn(position::lerp)
-        //     .add_interpolation(PredictionMode::Full)
-        //     .add_correction_fn(position::lerp);
+        app.register_component::<Position>()
+            .add_prediction(PredictionMode::Full)
+            .add_linear_interpolation_fn()
+            .add_interpolation(InterpolationMode::Full)
+            .add_linear_correction_fn();
 
-        // app.register_component::<Rotation>()
-        //     .add_prediction(PredictionMode::Full)
-        //     .add_interpolation_fn(rotation::lerp)
-        //     .add_interpolation(PredictionMode::Full)
-        //     .add_correction_fn(rotation::lerp);
+        app.register_component::<Rotation>()
+            .add_prediction(PredictionMode::Full)
+            .add_linear_interpolation_fn()
+            .add_interpolation(InterpolationMode::Full)
+            .add_linear_correction_fn();
 
         // do not replicate Transform but make sure to register an interpolation function
         // for it so that we can do visual interpolation

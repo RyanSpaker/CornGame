@@ -421,3 +421,15 @@ Trying to get lightyear/main working.
 Having trouble starting the server. Turns out ConnectionPlugin is only added by netcode feature (surely a bug)
 
 Can't get client to connect. The connection fails but there are no error messages on client or server.
+
+I'm not a fan of events to enact behavior, if nothing is listening (because of missing plugin) they fail silently. And there is no record of it.
+Much better is marker components which get removed by the system which reacts to them. So we can see in the inspector that it was not handled.
+
+# Thu Jun 19 06:47:32 PM EDT 2025
+something seems broken with the avian transform->position sync. Changing transform in editor doesn't update position.
+
+this is because lightyear_avian handles sync itself and disables transform->position by default, as supposedly this still causes issues.
+
+switched to replicating position/rotation as per example and it works. Perhaps I can ensure all replicated entities which move have position (even without rigidbody). I have confirmed with perrywink that lightyears replacement for SyncPlugin handles position regardless of replication or rigidbody components.
+
+TODO: make editor use any relation for hierarchy, so ClientOf shows as child, as well as AeronetLinkOf. deal with cycles somehow.

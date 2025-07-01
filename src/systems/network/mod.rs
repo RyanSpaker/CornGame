@@ -1,11 +1,10 @@
-use std::hash::{DefaultHasher, Hasher};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
-use avian3d::prelude::*;
 use bevy::ecs::component::HookContext;
 use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
+use lightyear::netcode::{Key, NetcodeClient, NetcodeServer};
 use lightyear::prelude::client::WebTransportClientIo;
 use lightyear::prelude::server::{Start, Started, WebTransportServerIo};
 use lightyear::prelude::*;
@@ -24,7 +23,7 @@ impl Plugin for CornNetworkingPlugin {
             tick_duration, 
         }); 
         app.add_plugins(server::ServerPlugins { });
-        app.add_plugins(client::ClientPlugins { }); 
+        app.add_plugins(client::ClientPlugins { });
 
         app.add_systems(Update, network_on_start_system.run_if(run_once));
         app.insert_resource(NetworkCrap {
@@ -33,6 +32,7 @@ impl Plugin for CornNetworkingPlugin {
         });
 
         app.register_component::<Name>();
+        app.add_systems(Update, ReplicateAuto::dumb);
 
         // app.register_component::<ReplicateOtherClients>();
         // app.add_systems(FixedUpdate, replicate_other_clients);
@@ -64,6 +64,13 @@ fn start_client(mut commands: Commands, crap: Res<NetworkCrap>) {
         .as_ref()
         .map(|c| RecvLinkConditioner::new(c.clone()));
 
+    let auth = Authentication::Manual {
+        server_addr: crap.address.clone(),
+        client_id: 0,
+        private_key: Key::default(),
+        protocol_id: 0,
+    };
+    
     let mut client = commands.spawn((
         Client::default(),
         Link::new(crap.address, conditioner),
@@ -71,6 +78,12 @@ fn start_client(mut commands: Commands, crap: Res<NetworkCrap>) {
         PredictionManager::default(),
         InterpolationManager::default(),
         Name::from("Client"),
+        NetcodeClient::new(auth, client::NetcodeConfig::default()).unwrap(),
+        ReplicationSender::new(
+            Duration::from_millis(100),
+            SendUpdatesMode::SinceLastAck,
+            false,
+        )
     ));
 
     let certificate_digest = {
@@ -106,12 +119,17 @@ fn start_server(mut commands: Commands, crap: Res<NetworkCrap>) {
 
     let mut server = commands.spawn((
         Name::from("server"),
+        Started, // webtransport code doesn't add this.
         WebTransportServerIo {
             server_addr,
             certificate,
         },
+        NetcodeServer::new(server::NetcodeConfig::default()),
     ));
-    server.with_child(Observer::new(handle_new_client));
+    server.with_child((
+        Name::from("on_connect"),
+        Observer::new(handle_new_client),
+    ));
     server.trigger(Start);
 }
 
@@ -126,6 +144,7 @@ fn handle_new_client(
     crap: Res<NetworkCrap>,
     mut commands: Commands,
 ) {
+    info!(client = %trigger.target(), "new client connected");
     let conditioner = crap
         .conditioner
         .as_ref()
@@ -148,11 +167,13 @@ impl ReplicateAuto {
     /// Hook to automatically add Replicate with the correct mode depending on presence of Server or Client.
     pub fn on_insert(mut world: DeferredWorld, context: HookContext) {
         world.commands().queue(move |world: &mut World| {
-            if world.get::<Replicating>(context.entity).is_some() {
-                // came from network, but we might add this in on add logic, so just ignore
+            // Note: Replicating doesn't seem to work
+            if world.get::<Replicated>(context.entity).is_some() {
+                // came from network, but we might add this in on-add logic, so just ignore
                 world.entity_mut(context.entity).remove::<Self>();
+                return
             }
-            if !world
+            if world
                 .query_filtered::<Entity, With<Client>>()
                 .single(&world)
                 .is_ok()
@@ -161,7 +182,7 @@ impl ReplicateAuto {
                     .entity_mut(context.entity)
                     .insert(Replicate::to_server());
             } else if world
-                .query_filtered::<Entity, (With<Server>, With<Started>)>()
+                .query_filtered::<Entity, With<Server>>()
                 .single(&world)
                 .is_ok()
             {
@@ -170,6 +191,26 @@ impl ReplicateAuto {
                     .insert(Replicate::to_clients(NetworkTarget::All));
             }
         });
+    }
+
+    pub fn dumb(
+        new_client: Query<Entity, Added<Client>>,
+        // new_server: Query<Entity, (With<Server>, Added<Started>)>, Started is never added
+        new_server: Query<Entity, Added<Server>>,
+        query: Query<Entity, With<ReplicateAuto>>, 
+        mut commands: Commands
+    ){
+        if new_client.is_empty() && new_server.is_empty() {
+            return
+        }
+        for e in query.iter() {
+            trace!("rerun ReplicateAuto logic");
+            if ! new_client.is_empty(){
+                commands.entity(e).insert(Replicate::to_server());
+            }else{
+                commands.entity(e).insert(Replicate::to_clients(NetworkTarget::All));
+            }
+        }
     }
 }
 

@@ -96,7 +96,8 @@ lightyear = { version = "0.21.0-rc.1", features = [
   "websocket",
   "webtransport",
   "udp",
-  "netcode"
+  "netcode",
+  "webtransport_dangerous_configuration" #disable cert checking
 ]}
 leafwing-input-manager = "0.17.0"
 # bevy_edge_detection = "0.15.4"
