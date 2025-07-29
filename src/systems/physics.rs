@@ -53,8 +53,7 @@ impl Plugin for CornPhysicsPlugin {
     fn build(&self, app: &mut App) {
         // init physics plugins
         app
-            .add_plugins(PhysicsPlugins::default().build().disable::<SyncPlugin>() /*handled by lightyear */)
-            .add_plugins(CornPhysicsPluginNetworkPlugin)
+            .add_plugins(PhysicsPlugins::default().build().disable::<SyncPlugin>() /*handled by lightyear, unfortionately */)
             // .register_type::<ColliderFor>()
             .register_type::<DebugRender>()
             .register_type::<DampedPhysics>()
@@ -109,6 +108,5 @@ impl Plugin for CornPhysicsPluginNetworkPlugin {
         app.register_component::<Transform>()
             .add_interpolation(InterpolationMode::Full)
             .add_interpolation_fn(TransformLinearInterpolation::lerp);
-    
     }
 }

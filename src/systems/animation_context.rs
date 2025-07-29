@@ -25,7 +25,7 @@ impl<'a> AnimationParamsItem<'a> {
             return Err(format!("{} has no animation {}", self.entity, name).into());
         };
 
-        let active = match &mut self.transition {
+        let mut active = match &mut self.transition {
             Some(t) => t.play(&mut *self.player, *handle, fade),
             None => {
                 if !fade.is_zero() {
@@ -120,6 +120,13 @@ impl AnimationContext {
         }
 
         Ok(())
+    }
+
+    // TODO I want to be able to add it in code, and work when scene loads
+    fn update_system(
+
+    ){
+
     }
 }
 

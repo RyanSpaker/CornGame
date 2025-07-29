@@ -13,9 +13,14 @@
 // just base it on the
 
 
+use std::time::Duration;
+
 pub use bevy::prelude::*;
+use frunk::labelled::chars::Q;
 use lightyear::prelude::AppComponentExt;
 use serde::{Deserialize, Serialize};
+
+use crate::systems::animation_context::AnimationParams;
 
 #[derive(Debug, Clone, Component, Reflect, PartialEq, Serialize, Deserialize)]
 #[reflect(Component)]
@@ -27,27 +32,15 @@ pub enum MyAnimationState {
 #[expect(unused)]
 impl MyAnimationState {
     fn update_animation(
-        query: Query<(Entity, &MyAnimationState, Option<&Children>), Changed<MyAnimationState>>,
-        // blueprint: Query<(Entity, &BlueprintAnimationPlayerLink, &BlueprintAnimations)>,
-        animation_players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>, //TODO should be more general without case
+        query: Query<(Entity, &MyAnimationState), Changed<MyAnimationState>>,
+        children: Query<&Children>,
+        mut animation: Query<(AnimationParams)>,
     ) {
-        /*  TODO skein
-        for (id, state, children) in query.iter() {
+        for (id, state) in query.iter() {
             // a bunch of ugly code to let player model be a child of the controller
             let mut ids = vec![id];
-            if let Some(children) = children {
-                ids.extend(children.iter())
-            }
-
-            for id in ids {
-                let Ok((id, link, animations)) = blueprint.get(id) else {
-                    continue;
-                };
-
-                let Ok((mut animation_player, mut animation_transitions)) =
-                    animation_players.get_mut(link.0)
-                else {
-                    error!("no AnimationPlayer for {}", link.0);
+            for id in children.iter_descendants(id){
+                let Ok(mut animation) = animation.get_mut(id) else {
                     continue;
                 };
 
@@ -56,29 +49,17 @@ impl MyAnimationState {
                     MyAnimationState::Walk(_vec2) => "walk",
                 };
 
-                let Some(animation) = animations.named_indices.get(anim_name) else {
-                    error!("animation {} does not exist for {}", anim_name, id);
-                    return;
-                };
+                if let Ok(active) = animation.play(anim_name, Duration::from_millis(200)) {
+                    active.repeat();
+                }
 
-                debug!("start animation for {}", id);
-                animation_transitions
-                    .play(
-                        &mut animation_player,
-                        *animation,
-                        Duration::from_millis(200),
-                    )
-                    .repeat();
+                break;
             }
         }
-        */
     }
 }
 
 pub fn plugin(app: &mut App) {
     app.register_type::<MyAnimationState>();
     app.add_systems(Update, MyAnimationState::update_animation);
-    app.register_component::<MyAnimationState>();
-    //app.register_component::<SpawnBlueprint>(ChannelDirection::Bidirectional);
-    //app.register_component::<BlueprintInfo>(ChannelDirection::Bidirectional);
 }

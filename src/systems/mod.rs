@@ -22,6 +22,7 @@ impl Plugin for CornSystemsPlugin {
             network::CornNetworkingPlugin,
             character::MyCharacterPlugin,
             interactions::InteractPlugin,
+            animation_context::plugin,
         ));
         // TODO reimplement edge detection
         // .add_plugins((BlenvyPlugin::default(), EdgeDetectionPlugin::default()));

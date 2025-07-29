@@ -432,4 +432,6 @@ this is because lightyear_avian handles sync itself and disables transform->posi
 
 switched to replicating position/rotation as per example and it works. Perhaps I can ensure all replicated entities which move have position (even without rigidbody). I have confirmed with perrywink that lightyears replacement for SyncPlugin handles position regardless of replication or rigidbody components.
 
-TODO: make editor use any relation for hierarchy, so ClientOf shows as child, as well as AeronetLinkOf. deal with cycles somehow.
+- [ ] TODO: make editor use any relation for hierarchy, so ClientOf shows as child, as well as AeronetLinkOf. deal with cycles somehow.
+
+Had to tweak lightyear alot to get working. Going to try pulling main to see if stuff is fixed.

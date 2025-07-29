@@ -133,6 +133,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "aeronet_steam"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8a9ace175faca9d78213b5f3567080d3d99f5d155ab6f5a115be76071ba40bb"
+dependencies = [
+ "aeronet_io",
+ "anyhow",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_platform",
+ "blocking",
+ "bytes",
+ "derive_more 2.0.1",
+ "oneshot",
+ "steamworks",
+ "sync_wrapper",
+ "tracing",
+]
+
+[[package]]
 name = "aeronet_webtransport"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1173,6 +1193,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_enhanced_input"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41a363bb40bfcf499006ea25a24a2bd751f5b036506f69abfbc3803ecdcc6ab0"
+dependencies = [
+ "bevy",
+ "bevy_enhanced_input_macros",
+ "bitflags 2.9.1",
+ "log",
+ "serde",
+ "variadics_please",
+]
+
+[[package]]
+name = "bevy_enhanced_input_macros"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8dc822dee1e63af3229e07fdd21a8525072a51b8861329c07d7f2896016f1bc1"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bevy_gilrs"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1586,7 +1632,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde",
- "spin 0.9.8",
+ "spin",
  "web-time",
 ]
 
@@ -2797,6 +2843,7 @@ dependencies = [
  "ident_case",
  "proc-macro2",
  "quote",
+ "strsim",
  "syn",
 ]
 
@@ -3292,27 +3339,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "env_filter"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "186e05a59d4c50738528153b83b0b0194d3a29507dfec16eccd4b342903397d0"
-dependencies = [
- "log",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13c863f0904021b108aa8b2f55046443e6b1ebde8fd4a15c399893aae4fa069f"
-dependencies = [
- "anstream",
- "anstyle",
- "env_filter",
- "log",
 ]
 
 [[package]]
@@ -4690,59 +4716,79 @@ dependencies = [
 
 [[package]]
 name = "lightyear"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "aeronet_io",
+ "bevy_app",
+ "bevy_ecs",
  "bevy_web_keepalive",
  "console_error_panic_hook",
+ "document-features",
+ "lightyear_aeronet",
  "lightyear_avian",
  "lightyear_connection",
  "lightyear_core",
+ "lightyear_frame_interpolation",
  "lightyear_inputs",
+ "lightyear_inputs_bei",
  "lightyear_inputs_leafwing",
  "lightyear_inputs_native",
  "lightyear_interpolation",
  "lightyear_link",
- "lightyear_macros",
  "lightyear_messages",
  "lightyear_netcode",
  "lightyear_prediction",
  "lightyear_replication",
  "lightyear_serde",
+ "lightyear_steam",
  "lightyear_sync",
  "lightyear_transport",
  "lightyear_udp",
  "lightyear_utils",
  "lightyear_webtransport",
+ "serde",
+ "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
 name = "lightyear_aeronet"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
  "aeronet_io",
- "bevy",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_reflect",
  "lightyear_link",
+ "tracing",
 ]
 
 [[package]]
 name = "lightyear_avian"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
  "avian3d",
- "bevy",
- "lightyear_core",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_math",
+ "bevy_transform",
+ "bevy_utils",
  "lightyear_frame_interpolation",
  "lightyear_interpolation",
  "lightyear_prediction",
  "lightyear_replication",
+ "tracing",
 ]
 
 [[package]]
 name = "lightyear_connection"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_platform",
+ "bevy_reflect",
+ "bytes",
  "lightyear_core",
  "lightyear_link",
  "lightyear_serde",
@@ -4754,39 +4800,42 @@ dependencies = [
 
 [[package]]
 name = "lightyear_core"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "bevy_app",
+ "bevy_derive",
+ "bevy_ecs",
+ "bevy_platform",
+ "bevy_reflect",
+ "bevy_time",
  "chrono",
  "lightyear_serde",
  "lightyear_utils",
- "numquant",
- "parking_lot",
- "paste",
  "serde",
- "spin 0.10.0",
  "tracing",
 ]
 
 [[package]]
 name = "lightyear_frame_interpolation"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
- "bytes",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_transform",
  "lightyear_core",
  "lightyear_interpolation",
  "lightyear_prediction",
  "lightyear_replication",
- "serde",
  "tracing",
 ]
 
 [[package]]
 name = "lightyear_inputs"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_reflect",
  "lightyear_connection",
  "lightyear_core",
  "lightyear_interpolation",
@@ -4801,11 +4850,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "lightyear_inputs_leafwing"
-version = "0.21.0-rc.1"
+name = "lightyear_inputs_bei"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
- "bytes",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_enhanced_input",
+ "bevy_platform",
+ "bevy_reflect",
+ "lightyear_connection",
+ "lightyear_core",
+ "lightyear_inputs",
+ "lightyear_utils",
+ "serde",
+ "thiserror 2.0.12",
+ "tracing",
+]
+
+[[package]]
+name = "lightyear_inputs_leafwing"
+version = "0.21.0-rc.2"
+dependencies = [
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_input",
+ "bevy_math",
+ "bevy_platform",
+ "bevy_reflect",
  "leafwing-input-manager",
  "lightyear_core",
  "lightyear_inputs",
@@ -4815,10 +4886,11 @@ dependencies = [
 
 [[package]]
 name = "lightyear_inputs_native"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
- "bytes",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_reflect",
  "lightyear_core",
  "lightyear_inputs",
  "serde",
@@ -4827,10 +4899,16 @@ dependencies = [
 
 [[package]]
 name = "lightyear_interpolation"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
- "bytes",
+ "bevy_app",
+ "bevy_derive",
+ "bevy_ecs",
+ "bevy_math",
+ "bevy_platform",
+ "bevy_reflect",
+ "bevy_time",
+ "bevy_utils",
  "lightyear_connection",
  "lightyear_core",
  "lightyear_messages",
@@ -4844,20 +4922,21 @@ dependencies = [
 
 [[package]]
 name = "lightyear_link"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_reflect",
  "bytes",
  "lightyear_core",
  "lightyear_utils",
  "rand 0.9.1",
- "serde",
  "tracing",
 ]
 
 [[package]]
 name = "lightyear_macros"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4866,10 +4945,11 @@ dependencies = [
 
 [[package]]
 name = "lightyear_messages"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
- "bincode",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_reflect",
  "bytes",
  "lightyear_connection",
  "lightyear_core",
@@ -4884,9 +4964,13 @@ dependencies = [
 
 [[package]]
 name = "lightyear_netcode"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "aeronet_io",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_reflect",
+ "bevy_time",
  "bytes",
  "chacha20poly1305",
  "lightyear_connection",
@@ -4904,10 +4988,15 @@ dependencies = [
 
 [[package]]
 name = "lightyear_prediction"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
- "bytes",
+ "bevy_app",
+ "bevy_diagnostic",
+ "bevy_ecs",
+ "bevy_math",
+ "bevy_platform",
+ "bevy_reflect",
+ "bevy_time",
  "lightyear_connection",
  "lightyear_core",
  "lightyear_link",
@@ -4924,10 +5013,17 @@ dependencies = [
 
 [[package]]
 name = "lightyear_replication"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_platform",
+ "bevy_ptr",
+ "bevy_reflect",
+ "bevy_time",
+ "bevy_transform",
  "bytes",
+ "dashmap",
  "lightyear_connection",
  "lightyear_core",
  "lightyear_link",
@@ -4943,9 +5039,13 @@ dependencies = [
 
 [[package]]
 name = "lightyear_serde"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "bevy_derive",
+ "bevy_ecs",
+ "bevy_platform",
+ "bevy_ptr",
+ "bevy_reflect",
  "bincode",
  "bytes",
  "no_std_io2",
@@ -4956,11 +5056,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "lightyear_sync"
-version = "0.21.0-rc.1"
+name = "lightyear_steam"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
- "bytes",
+ "aeronet_io",
+ "aeronet_steam",
+ "bevy_app",
+ "bevy_ecs",
+ "lightyear_aeronet",
+ "lightyear_core",
+ "lightyear_link",
+ "thiserror 2.0.12",
+ "tracing",
+]
+
+[[package]]
+name = "lightyear_sync"
+version = "0.21.0-rc.2"
+dependencies = [
+ "bevy_app",
+ "bevy_derive",
+ "bevy_diagnostic",
+ "bevy_ecs",
+ "bevy_reflect",
+ "bevy_time",
+ "bevy_utils",
  "lightyear_connection",
  "lightyear_core",
  "lightyear_link",
@@ -4968,19 +5088,21 @@ dependencies = [
  "lightyear_serde",
  "lightyear_transport",
  "lightyear_utils",
- "parking_lot",
  "serde",
- "test-log",
  "tracing",
 ]
 
 [[package]]
 name = "lightyear_transport"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_platform",
+ "bevy_reflect",
+ "bevy_time",
+ "bevy_utils",
  "bytes",
- "chrono",
  "crossbeam-channel",
  "enum_dispatch",
  "governor",
@@ -5000,35 +5122,44 @@ dependencies = [
 
 [[package]]
 name = "lightyear_udp"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "aeronet_io",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_platform",
  "bytes",
+ "lightyear_core",
  "lightyear_link",
+ "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
 name = "lightyear_utils"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
- "bevy",
+ "bevy_ecs",
+ "bevy_platform",
+ "bevy_reflect",
  "hashbrown 0.15.4",
  "lightyear_serde",
  "paste",
- "serde",
 ]
 
 [[package]]
 name = "lightyear_webtransport"
-version = "0.21.0-rc.1"
+version = "0.21.0-rc.2"
 dependencies = [
  "aeronet_io",
  "aeronet_webtransport",
- "bevy",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_reflect",
  "lightyear_aeronet",
- "lightyear_connection",
  "lightyear_link",
  "thiserror 2.0.12",
+ "tracing",
 ]
 
 [[package]]
@@ -5590,15 +5721,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "numquant"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54809e43d79aa532432c0d03c6adf62fdd96f2e152b90cef6cd9a316c3da4d99"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "objc"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5954,6 +6076,12 @@ name = "once_cell_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
+
+[[package]]
+name = "oneshot"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4ce411919553d3f9fa53a0880544cda985a112117a0444d5ff1e870a893d6ea"
 
 [[package]]
 name = "opaque-debug"
@@ -7468,12 +7596,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "spin"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
-
-[[package]]
 name = "spinning_top"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7519,6 +7641,24 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "steamworks"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a79d6f059322f73a4586cc2d0ca595ce1583104b2b1574ae1bb87f2c05bf4c67"
+dependencies = [
+ "bitflags 1.3.2",
+ "lazy_static",
+ "steamworks-sys",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "steamworks-sys"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ef6b00f8fe8eaaaff22cb9b70822a48c1a5d772bc682c202a57c0b438175845"
 
 [[package]]
 name = "strict-num"
@@ -7587,6 +7727,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "sync_wrapper"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
 
 [[package]]
 name = "synstructure"
@@ -7659,28 +7805,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755"
 dependencies = [
  "winapi-util",
-]
-
-[[package]]
-name = "test-log"
-version = "0.2.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7f46083d221181166e5b6f6b1e5f1d499f3a76888826e6cb1d057554157cd0f"
-dependencies = [
- "env_logger",
- "test-log-macros",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "test-log-macros"
-version = "0.2.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "888d0c3c6db53c0fdab160d2ed5e12ba745383d3e85813f2ea0f2b1475ab553f"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

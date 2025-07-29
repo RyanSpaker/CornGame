@@ -19,12 +19,13 @@ use avian3d::prelude::*;
 use controller::{look_handler, CornGameCharController};
 use leafwing_input_manager::plugin::InputManagerPlugin;
 use lightyear::prelude::{
-    AppComponentExt,
-    Replicated,
+    AppComponentExt, Client, DisableReplicateHierarchy, Replicated
 };
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::cameras::MainCamera;
+use crate::scenes::LoadScene;
+use crate::systems::network::ReplicateAuto;
 
 use self::input::CornCharacterInput;
 
@@ -82,10 +83,17 @@ impl Plugin for MyCharacterPlugin {
         );
 
         app.register_type::<Character>();
-        app.register_component::<Character>();
         app.add_systems(FixedPostUpdate, Player::init_network_character);
 
         app.add_plugins(animation::plugin);
+    }
+}
+
+pub struct CharacterNetworkPlugin;
+impl Plugin for CharacterNetworkPlugin {
+    fn build(&self, app: &mut App) {
+        app.register_component::<Character>();
+        app.register_component::<MyAnimationState>();
     }
 }
 
@@ -117,16 +125,17 @@ impl Player {
             },
             // MaxAngularSpeed(2.0*PI * 10.0),
             CornCharacterInput::default_input_map(),
-            // BlueprintInfo::from_path("blueprints/construction_worker.glb"),
-            // SpawnBlueprint,
             DehydratedChild::new(|_| {
                 (
                     Transform::from_xyz(0.0, -1.5, 0.0),
+                    LoadScene::new("models/mixamo.glb"),
+
                     // BlueprintInfo::from_path("blueprints/construction_worker.glb"), //TODO skein
                     // SpawnBlueprint,
                     // ReplicateOtherClients(true),
                 )
             }),
+            ReplicateAuto,
             // ReplicateOtherClients(false),
             // SyncTarget {
             //     interpolation: lightyear::prelude::NetworkTarget::All,
@@ -162,9 +171,24 @@ impl Player {
     pub fn init_network_character(
         mut commands: Commands,
         query: Query<Entity, (Added<Character>, With<Replicated>)>,
+        client: Query<&Client>,
     ) {
+        if client.is_empty() {
+            return
+        }
+        
         for entity in query.iter() {
-            commands.entity(entity).insert(RigidBody::Kinematic);
+            commands.entity(entity).insert((
+                Name::new("Player R"),
+                RigidBody::Kinematic,
+                //bevy_tnua_avian3d::TnuaAvian3dSensorShape(Collider::cylinder(0.2, 0.0)), //XXX configure this in CornGameCharacterController
+                DehydratedChild::new(|_| {
+                    (
+                        Transform::from_xyz(0.0, -1.5, 0.0),
+                        LoadScene::new("models/mixamo.glb"),
+                    )
+                })
+            ));
         }
     }
 }

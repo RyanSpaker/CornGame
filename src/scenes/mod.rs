@@ -53,7 +53,14 @@ impl LoadScene {
                 let gltf = gltf.get(h.0.id()).unwrap();
                 let path = asset_server.get_path(h.0.id()).map(|p| p.to_string());
                 debug!(path, "{:#?}", gltf);
-                match gltf.named_scenes.get(&l.scene.clone().into_boxed_str()) {
+
+                let scene = if l.scene != "" {
+                    l.scene.clone().into_boxed_str()
+                } else {
+                    gltf.named_scenes.keys().next().unwrap().clone()
+                };
+
+                match gltf.named_scenes.get(&scene) {
                     Some(s) => {
                         commands.entity(entity).insert(SceneRoot(s.clone()));
                     }

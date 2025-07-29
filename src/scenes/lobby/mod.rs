@@ -28,6 +28,7 @@ impl LobbyScene {
         materials: Res<SimpleMaterials>,
         cli: Res<Cli>,
     ) {
+        commands.spawn(TestCube);
         commands.entity(parent.0).with_children(|parent| {
             parent.spawn((
                 Name::from("Floor"),
@@ -67,8 +68,6 @@ impl LobbyScene {
                     // EDIT: weirder things happen with nested RigidBodys
                 ));
             }
-
-            parent.spawn(TestCube);
         });
     }
 }

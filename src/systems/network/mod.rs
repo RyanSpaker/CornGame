@@ -6,11 +6,15 @@ use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use lightyear::netcode::{Key, NetcodeClient, NetcodeServer};
 use lightyear::prelude::client::WebTransportClientIo;
+#[cfg(not(target_family = "wasm"))]
 use lightyear::prelude::server::{Start, Started, WebTransportServerIo};
 use lightyear::prelude::*;
 
 use bevy::ecs::system::{Query, Res};
-use lightyear::shared::SharedPlugins;
+use serde::{Deserialize, Serialize};
+
+use crate::systems::character::CharacterNetworkPlugin;
+use crate::systems::physics::CornPhysicsPluginNetworkPlugin;
 
 pub struct CornNetworkingPlugin;
 impl Plugin for CornNetworkingPlugin {
@@ -19,11 +23,12 @@ impl Plugin for CornNetworkingPlugin {
         let tick_duration = Duration::from_secs_f64(1.0 / 64.0);
 
         // add both plugins, runtime config.
-        app.add_plugins(SharedPlugins {
-            tick_duration, 
-        }); 
-        app.add_plugins(server::ServerPlugins { });
-        app.add_plugins(client::ClientPlugins { });
+        // app.add_plugins(SharedPlugins {
+        //     tick_duration, 
+        // }); 
+        #[cfg(not(target_family = "wasm"))]
+        app.add_plugins(server::ServerPlugins { tick_duration });
+        app.add_plugins(client::ClientPlugins { tick_duration });
 
         app.add_systems(Update, network_on_start_system.run_if(run_once));
         app.insert_resource(NetworkCrap {
@@ -32,8 +37,16 @@ impl Plugin for CornNetworkingPlugin {
         });
 
         app.register_component::<Name>();
+        app.register_component::<ReplicateAuto>()
+            .with_replication_config(
+                ComponentReplicationConfig { replicate_once: true, ..Default::default() }
+            );
         app.add_systems(Update, ReplicateAuto::dumb);
 
+        app.add_plugins((
+            CornPhysicsPluginNetworkPlugin,
+            CharacterNetworkPlugin
+        ));
         // app.register_component::<ReplicateOtherClients>();
         // app.add_systems(FixedUpdate, replicate_other_clients);
     }
@@ -53,32 +66,36 @@ fn network_on_start_system(mut commands: Commands, res: Res<crate::Cli>) {
         commands.run_system_cached(start_server);
         #[cfg(target_arch = "wasm32")]
         unimplemented!()
-    } else if res.client {
+    }
+    
+    if res.client {
         commands.run_system_cached(start_client);
     }
 }
 
-fn start_client(mut commands: Commands, crap: Res<NetworkCrap>) {
+fn start_client(server: Query<Entity, With<Server>>, mut commands: Commands, crap: Res<NetworkCrap>) {
     let conditioner = crap
         .conditioner
         .as_ref()
         .map(|c| RecvLinkConditioner::new(c.clone()));
 
+    let id = std::process::id();
+
     let auth = Authentication::Manual {
         server_addr: crap.address.clone(),
-        client_id: 0,
+        client_id: id.into(),
         private_key: Key::default(),
         protocol_id: 0,
     };
     
     let mut client = commands.spawn((
         Client::default(),
-        Link::new(crap.address, conditioner),
+        
+        Link::new(conditioner),
         ReplicationReceiver::default(),
         PredictionManager::default(),
         InterpolationManager::default(),
         Name::from("Client"),
-        NetcodeClient::new(auth, client::NetcodeConfig::default()).unwrap(),
         ReplicationSender::new(
             Duration::from_millis(100),
             SendUpdatesMode::SinceLastAck,
@@ -89,21 +106,32 @@ fn start_client(mut commands: Commands, crap: Res<NetworkCrap>) {
     let certificate_digest = {
         #[cfg(target_family = "wasm")]
         {
-            include_str!("../../certificates/digest.txt").to_string()
+            //include_str!("../../certificates/digest.txt").to_string()
+            "".to_string()
         }
         #[cfg(not(target_family = "wasm"))]
         {
             "".to_string()
         }
     };
-    client.insert(WebTransportClientIo {
-        server_addr: crap.address,
-        certificate_digest,
-    });
+
+    if server.is_empty(){
+        info!("starting client");
+        client.insert(
+            NetcodeClient::new(auth, client::NetcodeConfig::default()).unwrap());
+        client.insert(WebTransportClientIo {
+            certificate_digest,
+        });
+    }else{
+        // hostserver
+        info!("starting host-client");
+        client.insert(LinkOf { server: server.single().unwrap() });
+    }
 
     client.trigger(Connect);
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn start_server(mut commands: Commands, crap: Res<NetworkCrap>) {
     let server_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), crap.address.port());
 
@@ -120,8 +148,8 @@ fn start_server(mut commands: Commands, crap: Res<NetworkCrap>) {
     let mut server = commands.spawn((
         Name::from("server"),
         Started, // webtransport code doesn't add this.
+        LocalAddr(server_addr),
         WebTransportServerIo {
-            server_addr,
             certificate,
         },
         NetcodeServer::new(server::NetcodeConfig::default()),
@@ -160,28 +188,33 @@ fn handle_new_client(
     ));
 }
 
-#[derive(Debug, Component)]
+#[derive(Debug, Component, Serialize, Deserialize, PartialEq)]
 #[component(on_add = ReplicateAuto::on_insert)]
+#[require(DisableReplicateHierarchy)]
 pub struct ReplicateAuto;
 impl ReplicateAuto {
     /// Hook to automatically add Replicate with the correct mode depending on presence of Server or Client.
     pub fn on_insert(mut world: DeferredWorld, context: HookContext) {
         world.commands().queue(move |world: &mut World| {
             // Note: Replicating doesn't seem to work
-            if world.get::<Replicated>(context.entity).is_some() {
+            if let Some(r) = world.get::<Replicated>(context.entity) {
+                let peer = r.from;
+                
+                if world
+                    .query_filtered::<Entity, With<Server>>()
+                    .single(&world)
+                    .is_ok() 
+                {
+                    world
+                        .entity_mut(context.entity)
+                        .insert(Replicate::to_clients(NetworkTarget::AllExceptSingle(peer)));
+                }
                 // came from network, but we might add this in on-add logic, so just ignore
                 world.entity_mut(context.entity).remove::<Self>();
-                return
+                return;
             }
+            
             if world
-                .query_filtered::<Entity, With<Client>>()
-                .single(&world)
-                .is_ok()
-            {
-                world
-                    .entity_mut(context.entity)
-                    .insert(Replicate::to_server());
-            } else if world
                 .query_filtered::<Entity, With<Server>>()
                 .single(&world)
                 .is_ok()
@@ -189,6 +222,15 @@ impl ReplicateAuto {
                 world
                     .entity_mut(context.entity)
                     .insert(Replicate::to_clients(NetworkTarget::All));
+            }
+            else if world
+                .query_filtered::<Entity, With<Client>>()
+                .single(&world)
+                .is_ok()
+            {
+                world
+                    .entity_mut(context.entity)
+                    .insert(Replicate::to_server());
             }
         });
     }
