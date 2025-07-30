@@ -154,7 +154,7 @@ fn start_client(
             NetcodeClient::new(
                 auth,
                 client::NetcodeConfig {
-                    client_timeout_secs: 4,
+                    client_timeout_secs: 15,
                     ..default()
                 },
             )

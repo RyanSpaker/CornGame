@@ -474,3 +474,23 @@ dedicated server has to load RenderPlugin etc, because random shit expects it's 
 
 ALSO: what is with physics going haywire when framerate drops (such as with the bug when two windows are open)
 
+# Wed Jul 30 03:22:09 AM EDT 2025 
+turns out lag at browser load is probably shader compilation.
+does not seem that browser is caching them: **why?**
+
+webgpu requires https if not localhost. setting up reverse proxy on my desktop. with aradia.xn--pxaaa.com/4000
+obviously also needed to set up router port forwarding
+annoying 
+
+networked character controller is working in browers, but only because I increased the client timeout. 
+TODO: why does networking break on reconnect.
+
+```
+# after reconnect (repeated)
+2025-07-30T06:43:28.154220Z  WARN lightyear_netcode::error: Netcode error: ClientEntityInUse(138v3#12884902026)
+
+2025-07-30T06:52:07.972991Z ERROR lightyear_sync::ping::manager: Received a ping that is not present in the ping-store anymore
+
+# after disconnect (repeated)
+2025-07-30T06:54:59.033429Z  WARN lightyear_netcode::error: Netcode error: Packet(TokenExpired)
+```

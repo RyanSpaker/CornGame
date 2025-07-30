@@ -1,5 +1,5 @@
 use avian3d::math::PI;
-use avian3d::prelude::{Collider, ColliderOf, LinearVelocity};
+use avian3d::prelude::{Collider, ColliderOf, LinearVelocity, PhysicsTime};
 use bevy::prelude::*;
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 use bevy_tnua::prelude::*;
@@ -106,6 +106,9 @@ pub fn input_handler(
     >,
     mut camera: Query<&mut Transform, With<crate::ecs::cameras::MainCamera>>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
+
+    mut time: ResMut<Time<avian3d::prelude::Physics>>,
+    mut local: Local<bool>,
 ) {
     let mut camera = match camera.single_mut() {
         Err(error) => {
@@ -141,6 +144,12 @@ pub fn input_handler(
         // TODO need a generic framework for claiming inputs
         if let Ok(mut window) = window.single_mut() {
             if input.just_pressed(&CornCharacterInput::Toggle) {
+                // unpause physics on first mouse grab
+                if ! *local {
+                    *local = true;
+                    time.unpause();
+                }
+
                 window.cursor_options.grab_mode = match window.cursor_options.grab_mode {
                     CursorGrabMode::None => CursorGrabMode::Locked,
                     CursorGrabMode::Confined => CursorGrabMode::Locked,
