@@ -90,7 +90,7 @@ wgpu = "24"
 bevy-tnua = "0.24.0"
 bevy-tnua-avian3d = "0.5.0"
 avian3d = { version = "0.3.0", features = ["serialize"]}
-lightyear = { version = "0.21.0-rc.1", features = [
+lightyear = { version = "0.22.5", features = [
   "avian3d", 
   # "metrics", 
   "websocket",
@@ -122,6 +122,10 @@ aligned-vec = "0.6.4"
 bevy_mod_outline = "0.10.0"
 
 async-compat = "*"
+we_clap = "0.1.6"
+web-sys = "0.3.77"
+x509-parser = "0.17.0"
+tokio = "1.47.0"
 
 
 [patch.crates-io]

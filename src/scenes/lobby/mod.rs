@@ -1,4 +1,4 @@
-use avian3d::prelude::{Collider, RigidBody};
+use avian3d::prelude::{Collider, PhysicsTime, RigidBody};
 use bevy::{pbr::FogVolume, prelude::*};
 // use blenvy::{BlueprintInfo, GameWorldTag, SpawnBlueprint};
 use crate::{
@@ -27,7 +27,9 @@ impl LobbyScene {
         shapes: Res<SimpleMeshes>,
         materials: Res<SimpleMaterials>,
         cli: Res<Cli>,
+        mut time: ResMut<Time<avian3d::prelude::Physics>>,
     ) {
+        time.pause();
         commands.spawn(TestCube);
         commands.entity(parent.0).with_children(|parent| {
             parent.spawn((

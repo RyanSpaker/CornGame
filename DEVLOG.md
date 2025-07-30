@@ -435,3 +435,42 @@ switched to replicating position/rotation as per example and it works. Perhaps I
 - [ ] TODO: make editor use any relation for hierarchy, so ClientOf shows as child, as well as AeronetLinkOf. deal with cycles somehow.
 
 Had to tweak lightyear alot to get working. Going to try pulling main to see if stuff is fixed.
+
+# Thu Jul 17 07:04:02 PM EDT 2025 
+Setting lightyear up with host-client bc it seems the path of least resistance. Might want in processes dedicated server instead, to avoid bugs.
+
+- [x] reimplement character networking
+- [ ] implement message for light switch
+- [ ] get item pickup working
+- [x] get working with dedicated server
+- [ ] web demo
+  
+options for character:
+- network inputs
+- network animation state
+
+options for light switch
+- custom message
+- network trigger
+
+If I can just get through this annoying bit
+
+# Thu Jul 17 07:04:15 PM EDT 2025
+we should have a bug item that runs away like in white knuckle
+
+# Tue Jul 29 03:29:51 AM EDT 2025
+wasm build is working, also have networking working with dedicated server.
+dedicated server currently doesn't load any of the corngame plugins except networking.
+dedicated server has to load RenderPlugin etc, because random shit expects it's resources to be registered.
+- [ ] fix these issues.
+  
+- [ ] get wasm client talking to the dedicated server.
+- [ ] dummy client (headless? how?) 
+      have player randomly walk around and interact with stuff.
+- [ ] server state ownership / level spawning / etc.
+- [ ] in process native server
+- [ ] host-client fallback
+- [ ] debug for dedicated server
+
+ALSO: what is with physics going haywire when framerate drops (such as with the bug when two windows are open)
+

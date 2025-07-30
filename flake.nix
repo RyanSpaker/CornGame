@@ -30,7 +30,7 @@
           cacert
           sqlite # for matrix_rust_sdk
           sqlite.dev
- 
+
           alsa-lib alsa-lib.dev
           vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
           lutris

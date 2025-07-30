@@ -134,9 +134,9 @@ dependencies = [
 
 [[package]]
 name = "aeronet_steam"
-version = "0.14.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8a9ace175faca9d78213b5f3567080d3d99f5d155ab6f5a115be76071ba40bb"
+checksum = "8bd10fca3cb706c3f54605ce860f9485b2d6cd98501dddbd49dd12f91888bdff"
 dependencies = [
  "aeronet_io",
  "anyhow",
@@ -620,6 +620,25 @@ dependencies = [
  "nom",
  "num-rational",
  "v_frame",
+]
+
+[[package]]
+name = "avian2d"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7133547d9cc068d527d91fdcb8c8017c89b26ce05dbd30daef9f1ca64824495d"
+dependencies = [
+ "arrayvec",
+ "avian_derive",
+ "bevy",
+ "bevy_heavy",
+ "bevy_math",
+ "bevy_transform_interpolation",
+ "bitflags 2.9.1",
+ "derive_more 1.0.0",
+ "itertools 0.13.0",
+ "nalgebra",
+ "parry2d",
 ]
 
 [[package]]
@@ -1139,7 +1158,6 @@ dependencies = [
  "tracing-core",
  "tracing-error",
  "tracing-log",
- "tracing-tracy",
  "tracing-wasm",
  "transform-gizmo-bevy",
  "valuable",
@@ -2483,6 +2501,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cliw"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "147eea70fc3f16ab8c2d63db7fee09b4399bd74da4e648d6c7933a9d0aabe54f"
+dependencies = [
+ "js-sys",
+ "percent-encoding",
+ "web-sys",
+]
+
+[[package]]
 name = "codespan-reporting"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2672,9 +2701,13 @@ dependencies = [
  "prse",
  "rand 0.9.1",
  "serde",
+ "tokio",
  "uuid",
+ "we_clap",
+ "web-sys",
  "wgpu",
  "wgpu-types",
+ "x509-parser",
 ]
 
 [[package]]
@@ -3759,20 +3792,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "generator"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d18470a76cb7f8ff746cf1f7470914f900252ec36bbc40b569d74b1258446827"
-dependencies = [
- "cc",
- "cfg-if",
- "libc",
- "log",
- "rustversion",
- "windows 0.61.2",
-]
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4492,6 +4511,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-uring"
+version = "0.7.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d93587f37623a1a17d94ef2bc9ada592f5465fe7732084ab7beefabe5c77c0c4"
+dependencies = [
+ "bitflags 2.9.1",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4612,9 +4642,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "leafwing-input-manager"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e5921290ac62f78a4f2f2f9fe3a31c73bbf4309b013bf25f91514ac111e3976"
+checksum = "68ac3ba8262c0e42b22bb917c18ef9dbe773e2b6b279c61a4a520c5d960b5e1a"
 dependencies = [
  "bevy",
  "dyn-clone",
@@ -4716,7 +4746,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "aeronet_io",
  "bevy_app",
@@ -4725,7 +4755,8 @@ dependencies = [
  "console_error_panic_hook",
  "document-features",
  "lightyear_aeronet",
- "lightyear_avian",
+ "lightyear_avian2d",
+ "lightyear_avian3d",
  "lightyear_connection",
  "lightyear_core",
  "lightyear_frame_interpolation",
@@ -4753,7 +4784,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_aeronet"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "aeronet_io",
  "bevy_app",
@@ -4764,8 +4795,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "lightyear_avian"
-version = "0.21.0-rc.2"
+name = "lightyear_avian2d"
+version = "0.22.5"
+dependencies = [
+ "avian2d",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_math",
+ "bevy_time",
+ "bevy_transform",
+ "bevy_utils",
+ "lightyear_core",
+ "lightyear_frame_interpolation",
+ "lightyear_interpolation",
+ "lightyear_link",
+ "lightyear_prediction",
+ "lightyear_replication",
+ "tracing",
+]
+
+[[package]]
+name = "lightyear_avian3d"
+version = "0.22.5"
 dependencies = [
  "avian3d",
  "bevy_app",
@@ -4773,8 +4824,10 @@ dependencies = [
  "bevy_math",
  "bevy_transform",
  "bevy_utils",
+ "lightyear_core",
  "lightyear_frame_interpolation",
  "lightyear_interpolation",
+ "lightyear_link",
  "lightyear_prediction",
  "lightyear_replication",
  "tracing",
@@ -4782,7 +4835,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_connection"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4800,7 +4853,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_core"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -4817,24 +4870,26 @@ dependencies = [
 
 [[package]]
 name = "lightyear_frame_interpolation"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
+ "bevy_time",
  "bevy_transform",
+ "lightyear_connection",
  "lightyear_core",
  "lightyear_interpolation",
- "lightyear_prediction",
  "lightyear_replication",
  "tracing",
 ]
 
 [[package]]
 name = "lightyear_inputs"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
+ "bevy_platform",
  "bevy_reflect",
  "lightyear_connection",
  "lightyear_core",
@@ -4851,7 +4906,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_inputs_bei"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4869,9 +4924,10 @@ dependencies = [
 
 [[package]]
 name = "lightyear_inputs_leafwing"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
+ "bevy_derive",
  "bevy_ecs",
  "bevy_input",
  "bevy_math",
@@ -4886,9 +4942,10 @@ dependencies = [
 
 [[package]]
 name = "lightyear_inputs_native"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
+ "bevy_derive",
  "bevy_ecs",
  "bevy_reflect",
  "lightyear_core",
@@ -4899,7 +4956,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_interpolation"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -4922,7 +4979,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_link"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4935,17 +4992,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "lightyear_macros"
-version = "0.21.0-rc.2"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "lightyear_messages"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -4964,7 +5012,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_netcode"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "aeronet_io",
  "bevy_app",
@@ -4988,9 +5036,10 @@ dependencies = [
 
 [[package]]
 name = "lightyear_prediction"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
+ "bevy_derive",
  "bevy_diagnostic",
  "bevy_ecs",
  "bevy_math",
@@ -4999,6 +5048,8 @@ dependencies = [
  "bevy_time",
  "lightyear_connection",
  "lightyear_core",
+ "lightyear_frame_interpolation",
+ "lightyear_interpolation",
  "lightyear_link",
  "lightyear_messages",
  "lightyear_replication",
@@ -5013,8 +5064,10 @@ dependencies = [
 
 [[package]]
 name = "lightyear_replication"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
+ "avian2d",
+ "avian3d",
  "bevy_app",
  "bevy_ecs",
  "bevy_platform",
@@ -5039,7 +5092,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_serde"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_derive",
  "bevy_ecs",
@@ -5057,13 +5110,14 @@ dependencies = [
 
 [[package]]
 name = "lightyear_steam"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "aeronet_io",
  "aeronet_steam",
  "bevy_app",
  "bevy_ecs",
  "lightyear_aeronet",
+ "lightyear_connection",
  "lightyear_core",
  "lightyear_link",
  "thiserror 2.0.12",
@@ -5072,7 +5126,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_sync"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_derive",
@@ -5094,7 +5148,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_transport"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_app",
  "bevy_ecs",
@@ -5110,7 +5164,6 @@ dependencies = [
  "lightyear_connection",
  "lightyear_core",
  "lightyear_link",
- "lightyear_macros",
  "lightyear_serde",
  "lightyear_utils",
  "nonzero_ext",
@@ -5122,7 +5175,7 @@ dependencies = [
 
 [[package]]
 name = "lightyear_udp"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "aeronet_io",
  "bevy_app",
@@ -5137,19 +5190,19 @@ dependencies = [
 
 [[package]]
 name = "lightyear_utils"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "bevy_ecs",
  "bevy_platform",
  "bevy_reflect",
  "hashbrown 0.15.4",
- "lightyear_serde",
  "paste",
+ "seahash",
 ]
 
 [[package]]
 name = "lightyear_webtransport"
-version = "0.21.0-rc.2"
+version = "0.22.5"
 dependencies = [
  "aeronet_io",
  "aeronet_webtransport",
@@ -5204,19 +5257,6 @@ name = "log"
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
-
-[[package]]
-name = "loom"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "419e0dc8046cb947daa77eb95ae174acfbddb7673b4151f56d1eed8e93fbfaca"
-dependencies = [
- "cfg-if",
- "generator",
- "scoped-tls",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "loop9"
@@ -6175,6 +6215,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "parry2d"
+version = "0.17.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87edd53b1639e011e4765eecfceb0fa2c486da696dcdcfbc9a38bfc3574fb7e0"
+dependencies = [
+ "approx",
+ "arrayvec",
+ "bitflags 2.9.1",
+ "downcast-rs 1.2.1",
+ "either",
+ "ena",
+ "log",
+ "nalgebra",
+ "num-derive",
+ "num-traits",
+ "ordered-float",
+ "rustc-hash 2.1.1",
+ "simba",
+ "slab",
+ "smallvec",
+ "spade",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "parry3d"
 version = "0.17.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6690,7 +6755,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls",
- "socket2",
+ "socket2 0.5.10",
  "thiserror 2.0.12",
  "tokio",
  "tracing",
@@ -6727,7 +6792,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -7074,9 +7139,9 @@ dependencies = [
 
 [[package]]
 name = "ringbuffer"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3df6368f71f205ff9c33c076d170dd56ebf68e8161c733c0caa07a7a5509ed53"
+checksum = "57b0b88a509053cbfd535726dcaaceee631313cef981266119527a1d110f6d2b"
 
 [[package]]
 name = "robust"
@@ -7575,6 +7640,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "socket2"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "233504af464074f9d066d7b5416c5f9b894a5862a6506e306f7b816cdd6f1807"
+dependencies = [
+ "libc",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "spade"
 version = "2.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7972,18 +8047,20 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.45.1"
+version = "1.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75ef51a33ef1da925cea3e4eb122833cb377c61439ca401b770f54902b806779"
+checksum = "43864ed400b6043a4757a25c7a64a8efde741aed79a056a2fb348a406701bb35"
 dependencies = [
  "backtrace",
  "bytes",
+ "io-uring",
  "libc",
  "mio",
  "pin-project-lite",
- "socket2",
+ "slab",
+ "socket2 0.6.0",
  "tokio-macros",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8118,17 +8195,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-tracy"
-version = "0.11.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0eaa1852afa96e0fe9e44caa53dc0bd2d9d05e0f2611ce09f97f8677af56e4ba"
-dependencies = [
- "tracing-core",
- "tracing-subscriber",
- "tracy-client",
-]
-
-[[package]]
 name = "tracing-wasm"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8137,27 +8203,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "tracy-client"
-version = "0.18.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3927832d93178f979a970d26deed7b03510586e328f31b0f9ad7a73985b8332a"
-dependencies = [
- "loom",
- "once_cell",
- "tracy-client-sys",
-]
-
-[[package]]
-name = "tracy-client-sys"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c032d68a49d25d9012a864fef1c64ac17aee43c87e0477bf7301d8ae8bfea7b7"
-dependencies = [
- "cc",
- "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -8618,6 +8663,16 @@ dependencies = [
  "log",
  "once_cell",
  "pkg-config",
+]
+
+[[package]]
+name = "we_clap"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a25109a833077f65670b2ffaed6c87ba712842bfc5baabc130b594cc1baf288"
+dependencies = [
+ "clap",
+ "cliw",
 ]
 
 [[package]]
@@ -9469,7 +9524,7 @@ dependencies = [
  "rustls-pemfile",
  "rustls-pki-types",
  "sha2",
- "socket2",
+ "socket2 0.5.10",
  "thiserror 2.0.12",
  "time",
  "tokio",
