@@ -62,8 +62,8 @@ impl AnimationContext {
         mut commands: Commands,
     ) -> Result {
         for (entity, mut animation_context) in animation_context.iter_mut() {
-            let Some(scene) = tree
-                .iter_ancestors(entity)
+            let Some(scene) = std::iter::once(entity).chain(tree
+                .iter_ancestors(entity))
                 .filter_map(|e| scenes.get(e).ok())
                 .next()
             else {
@@ -75,8 +75,8 @@ impl AnimationContext {
 
             // get all animation_targets
             // TODO stop at child AnimationContext
-            let targets: Vec<Entity> = children
-                .iter_descendants(entity)
+            let targets: Vec<Entity> = std::iter::once(entity).chain(children
+                .iter_descendants(entity))
                 .filter(|e| animation_targets.get(*e).is_ok())
                 .collect();
 

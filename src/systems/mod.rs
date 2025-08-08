@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod soundtrack;
 pub mod character;
 pub mod interactions;
 pub mod network;

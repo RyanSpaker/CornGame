@@ -440,7 +440,7 @@ Had to tweak lightyear alot to get working. Going to try pulling main to see if 
 Setting lightyear up with host-client bc it seems the path of least resistance. Might want in processes dedicated server instead, to avoid bugs.
 
 - [x] reimplement character networking
-- [ ] implement message for light switch
+- [x] implement message for light switch
 - [ ] get item pickup working
 - [x] get working with dedicated server
 - [ ] web demo
@@ -494,3 +494,26 @@ TODO: why does networking break on reconnect.
 # after disconnect (repeated)
 2025-07-30T06:54:59.033429Z  WARN lightyear_netcode::error: Netcode error: Packet(TokenExpired)
 ```
+
+# Mon Aug  3 12:50:31 AM EDT 2025
+options for lightswitch
+1. message and custom handler
+   - same as replicate trigger
+2. replicate state and respond to change with animation
+3. message/trigger and process state change on server
+
+I think 1 is simplest for now. But I'll need the server to preserve state for reconnecting clients.
+
+Consider:
+- item pickup
+- light switch sequence
+- key / door
+- monster death
+
+Everything should be client auth so no lag. Server may need to arbitrate.
+
+# Mon Aug  4 12:50:39 AM EDT 2025
+Got basic message + custom handler working for light switch flip.
+It sends state (on off bool) and uid of switch. This deals with desync in the minimal viable way. The message is sent in the same system which triggers the Interact event. 
+- [ ] split interations into two events or event + command and move network stuff out of input processing.
+- [ ] trace level logs show lightyear senting receiving tons of pings/pongs, and a `id: None`

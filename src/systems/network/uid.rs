@@ -1,8 +1,25 @@
+use std::hash::Hasher as _;
+
+use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
+
+pub struct UidPlugin;
+impl Plugin for UidPlugin {
+    fn build(&self, app: &mut App) {
+        app.register_type::<Uid>();
+        app.register_type::<UidGen>();
+        app.register_type::<UidUsePath>();
+        app.register_type::<UidDebug>();
+        app.register_type::<UidSeed>();
+        
+        app.add_observer(Uid::generate);
+    }
+}
 
 /// predicatable Id which is the same on client and server, and unique
 /// is a hierarchical hash, so we can, for example, salt the root of a blueprint to disambiguate multiple instances
 /// should be immutable
-#[derive(Debug, Copy, Clone, Component, Reflect)]
+#[derive(Debug, Copy, Clone, Component, Reflect, PartialEq, Serialize, Deserialize)]
 #[reflect(Component)]
 pub struct Uid(pub u64);
 
@@ -24,10 +41,12 @@ impl Uid {
         // XXX currently Uid not allowed to change
         let root = parents.iter_ancestors(e).find(|e| uids.contains(*e));
 
-        let tree: Vec<_> = parents
+        let mut tree: Vec<_> = parents
             .iter_ancestors(e)
             .take_while(|e| Some(*e) != root)
             .collect();
+        tree.reverse();
+        tree.push(e);
 
         let mut uid = 0;
         if let Some(e) = root {
@@ -46,7 +65,7 @@ impl Uid {
 
             let do_gen = uid_gen.contains(entity);
             if do_gen {
-                let mut hasher = DefaultHasher::new();
+                let mut hasher = std::hash::DefaultHasher::new();
                 hasher.write_u64(uid);
                 debug_str += &format!("{}\n", uid);
 

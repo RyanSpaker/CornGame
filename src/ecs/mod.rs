@@ -3,6 +3,7 @@ pub mod cameras;
 pub mod flycam;
 pub mod framerate;
 pub mod test_cube;
+pub mod sunlight;
 
 use bevy::prelude::*;
 use corn::CornFieldComponentPlugin;
@@ -18,6 +19,7 @@ impl Plugin for CornECSPlugin{
             FlyCamPlugin, 
             // CornFieldComponentPlugin,
             TestCube,
+            sunlight::SunPlugin,
         ));
     }
 }

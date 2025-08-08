@@ -1,12 +1,29 @@
 use std::{collections::HashMap, time::Duration};
 use avian3d::prelude::RigidBodyDisabled;
 use bevy::{
-    animation, audio::Volume, input::keyboard::{Key, KeyboardInput}, picking::{backend::HitData, hover::HoverMap}, platform::time::Instant, prelude::*, render::primitives::Aabb, window::PrimaryWindow
+    animation,
+    audio::Volume,
+    input::keyboard::{Key, KeyboardInput},
+    picking::{backend::HitData, hover::HoverMap},
+    platform::time::Instant,
+    prelude::*,
+    render::primitives::Aabb,
+    window::PrimaryWindow,
 };
 use bevy_easings::EasingsPlugin;
+use clap::Parser;
+use frunk::labelled::chars::{N, Q};
+use lightyear::{
+    connection::{identity::{is_client, is_host_server}, server::is_server},
+    prelude::{
+        server::is_headless_server, ActionsChannel, AppMessageExt, Client, MessageSender, NetworkDirection, NetworkTarget, ServerMultiMessageSender
+    },
+};
 use serde::{Deserialize, Serialize};
 
-use crate::systems::animation_context::AnimationParams;
+use crate::{
+    scenes::resolver::{EntityPointer, EntityResolver}, systems::{animation_context::AnimationParams, network::uid::{Uid, UidUsePath}}, Cli
+};
 
 use super::character::Player;
 
@@ -47,8 +64,162 @@ impl Plugin for InteractPlugin {
 
         app.add_observer(ToggleInteractionBlender::observer);
         app.add_observer(Pickup::observer);
+        app.add_observer(ToggleInteractionBlender::handle_flip);
+        app.add_observer(ToggleInteractionBlender::flip_init);
+
+        app.register_type::<DehydratedController>();
+        app.add_systems(PostUpdate, DehydratedController::hydrate);
         // app.add_observer(ToggleInteractionBlender::handle_flip);
     }
+}
+
+pub struct NetworkInteractPlugin;
+impl Plugin for NetworkInteractPlugin {
+    fn build(&self, app: &mut App) {
+
+        // direction appears needed for MessageSender to be attached
+        app.add_message::<InteractionMessage>().add_direction(NetworkDirection::Bidirectional);
+
+
+        pub(crate) fn receive(
+            mut receiver: Query<
+                &mut lightyear::prelude::MessageReceiver<InteractionMessage>,
+                With<Client>,
+            >,
+            uid: Query<(Entity, &Uid)>,
+            state: Query<&ToggleInteractionState>,
+            mut commands: Commands,
+        )  -> Result {
+
+            for message in receiver.single_mut()?.receive() {
+                info!("Client received message: {:?}", message);
+                let Some((e, _)) = uid.iter().find(|e| *e.1 == message.uid) else {
+                    error!(uid = message.uid.0, "invalid uid");
+                    break;
+                };
+
+                match state.get(e) {
+                    Ok(s) => {
+                        if s.0 != message.state {
+                            info!(entity = %e, "ToggleInteractionState changed to {}", s.0);
+                            commands.trigger_targets(Interaction, e);
+                        } else {
+                            info!(entity = %e, "ToggleInteractionState already set to {}", s.0);
+                        }
+                    }
+                    Err(_) => {
+                        error!(entity = %e, "Entity does not have ToggleInteractionState component");
+                    }
+                }
+            }
+            Ok(())
+        }
+
+
+        /// Returns true if the peer is a client (host-server counts as a server)
+        pub fn is_any_client(query: Query<(), With<Client>>) -> bool {
+            !query.is_empty()
+        }
+
+        app.add_systems(
+            Update,
+            receive
+                .run_if(is_any_client)
+                .in_set(lightyear::prelude::MessageSet::Receive)
+        );
+
+        pub(crate) fn server_receive_and_send(
+            receiver: Query<(
+                &mut lightyear::prelude::RemoteId,
+                &mut lightyear::prelude::MessageReceiver<InteractionMessage>,
+            )>,
+            mut sender: ServerMultiMessageSender,
+            server: Single<&lightyear::prelude::Server>,
+        ) -> Result {
+            for (remote_id, mut receiver) in receiver {
+                for message in receiver.receive() {
+                    info!(peer = ?*remote_id, "Server received message: {:?}", message);
+
+                    sender.send::<_, ActionsChannel>(
+                        &message,
+                        &*server,
+                        &NetworkTarget::AllExceptSingle(remote_id.0),
+                    )?;
+                }
+            }
+
+            Ok(())
+        }
+
+        app.add_systems(
+            PostUpdate,
+            server_receive_and_send
+                // .in_set(lightyear::prelude::MessageSet::Receive)
+                .run_if(is_server),
+        );
+
+        app.add_plugins(InteractDummy(false));
+    }
+}
+
+#[derive(Resource, Debug, Clone, Default, Reflect)]
+struct InteractDummy(bool);
+
+impl Plugin for InteractDummy {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(self.clone());
+        app.add_systems(Startup, |cli: Res<Cli>, mut commands: Commands| {
+            if cli.dummy {
+                commands.insert_resource(InteractDummy(true));
+            }
+        });
+
+        pub fn dummy_interact_loop(
+            mut commands: Commands,
+            mut query: Query<(Entity, &Interactable)>,
+            mut local: Local<Timer>,
+            time: Res<Time>,
+            this: Res<InteractDummy>,
+            
+            mut sender: Query<&mut MessageSender<InteractionMessage>, With<Client>>,
+            state: Query<&ToggleInteractionState>,
+            uid: Query<&Uid>,
+        ) {
+            if !this.0 {
+                return;
+            }
+
+            local.set_duration(Duration::from_millis(3000));
+            local.set_mode(bevy::time::TimerMode::Repeating);
+            if !local.tick(time.delta()).just_finished() {
+                return;
+            }
+            for (entity, interactable) in query.iter_mut() {
+                if interactable.active {
+                    continue;
+                }
+                // TODO this is a dummy loop, should be replaced with actual interaction logic
+                commands.trigger_targets(Interaction, entity);
+                // Send network message
+                if let Ok(mut net) = sender.single_mut() {
+                    net.send::<ActionsChannel>(InteractionMessage {
+                        uid: uid.get(entity).unwrap().clone(),
+                        state: !state.get(entity).unwrap().0,
+                    });
+                } else {
+                    error!("No MessageSender found for InteractionMessage");
+                }
+            }
+        }
+        app.add_systems(Update, dummy_interact_loop);
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct InteractionMessage {
+    pub uid: Uid,
+    pub state: bool,
+    //client_id
 }
 
 #[derive(Debug, Clone, Component, Reflect)]
@@ -81,6 +252,9 @@ pub struct Held; /*{
                  }*/
 
 impl Pickup {
+    /// This should handle the logic of picking up an item.
+    /// It should have special handling for the player (if appropriate)
+    /// It should not handle logic of displaying a held item. That should be done with the Held component (which perhaps should be relation)
     fn observer(
         ev: Trigger<Interaction>,
         mut commands: Commands,
@@ -123,11 +297,47 @@ impl Pickup {
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
 pub struct FlipVisible {
+    /// currently unused
     vis: bool,
-    name: String,
-    marker: String,
-    animation: String,
+    delay: f32,
 }
+
+/// attatched to ex. light switches
+/// TODO deal with many-to-many
+#[derive(Debug, Clone, Component, Reflect)]
+#[relationship_target(relationship = ControlledBy)]
+pub struct Controls(Vec<Entity>);
+
+/// attatched to lights controlled by switches
+#[derive(Debug, Clone, Component, Reflect)]
+#[relationship(relationship_target = Controls)]
+pub struct ControlledBy(Entity);
+
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+pub struct DehydratedController {
+    reference: EntityPointer,
+    this_is_the_controller: bool
+}
+
+impl DehydratedController {
+    fn hydrate(
+        resolve: EntityResolver,
+        query: Query<(Entity, &DehydratedController), Added<DehydratedController>>,
+        mut commands: Commands,
+    ) -> Result {
+        for (entity, item) in query.iter() {
+            let target = resolve.resolve(entity, &item.reference)?;
+            if item.this_is_the_controller {
+                commands.entity(target).insert(ControlledBy(entity));
+            }else{
+                commands.entity(entity).insert(ControlledBy(target));
+            }
+        }
+        Ok(())
+    }
+}
+
 
 #[derive(Debug, Clone, Default, Component, Reflect)]
 #[reflect(Component)]
@@ -143,11 +353,8 @@ pub struct ToggleInteractionBlender {
     off_sfx: Option<String>,
 }
 
-
 impl ToggleInteractionBlender {
-    fn handle_animation_done(
-        mut query: Query<(AnimationParams, &mut Interactable)>,
-    ) {
+    fn handle_animation_done(mut query: Query<(AnimationParams, &mut Interactable)>) {
         for (ref animated, mut state) in query.iter_mut() {
             if animated.player.all_finished() {
                 // TODO what if there is an idle animation
@@ -155,63 +362,51 @@ impl ToggleInteractionBlender {
             }
         }
     }
-    
-    
-    // fn handle_flip(
-    //     // NOTE vecs appear broken in blenvy so I can't add AnimationMarkers
-    //     // TODO revert this back to a component on the breaker
-    //     event: Trigger<AnimationMarkerReached>,
-    //     query: Query<&FlipVisible>,
-    //     mut target: Query<(&Name, &mut Visibility)>,
-    // ) {
-    //     let flip = query.get(event.target());
-    //     dbg!(event.event(), &query);
-    //     if let Ok(flip) = flip {
-    //         let Some((_, mut vis)) = target.iter_mut().find(|n| n.0.as_str() == &flip.name) else {
-    //             error!("flip target {} not found", flip.name);
-    //             return;
-    //         };
-    //         if *vis == Visibility::Hidden {
-    //             *vis = Visibility::Inherited;
-    //         } else {
-    //             *vis = Visibility::Hidden;
-    //         }
-    //     }
 
-    //     // for ev in events.read() {
-    //     //     dbg!(&ev);
+    /// make sure initial light state matches FlipVisible.vis
+    fn flip_init(        
+        event: Trigger<OnAdd, ControlledBy>,
+        mut vis: Query<(&mut Visibility, &ControlledBy)>,
+        flip: Query<(&FlipVisible, &ToggleInteractionState)>,
+    ){
+        let Ok((mut vis, controlled_by)) = vis.get_mut(event.target()) else { return; };
+        if let Ok((flip, _state)) = flip.get(controlled_by.0){
+            *vis = match flip.vis {
+                false => Visibility::Hidden,
+                true => Visibility::Inherited,
+            }
+        }
+    }
 
-    //     //     for flip in query.iter_mut(){
-    //     //         if target.get(ev.entity).is_ok_and(|n| n.as_str() == &flip.name )
-    //     //             && ( &flip.animation == "" || flip.animation == ev.animation_name)
-    //     //             && ( &flip.marker == &ev.marker_name )
-    //     //         {
-    //     //             *vis = match flip.vis {
-    //     //                 true => Visibility::Visible,
-    //     //                 false => Visibility::Hidden,
-    //     //             }
-    //     //         }
-    //     //     }
+    fn handle_flip(
+        // NOTE vecs appear broken in blenvy so I can't add AnimationMarkers
+        // TODO revert this back to a component on the breaker
+        event: Trigger<Interaction>,
+        query: Query<(&FlipVisible, &ToggleInteractionState, &Controls)>,
+        mut target: Query<&mut Visibility>,
+    ) {
+        let flip = query.get(event.target());
+        if let Ok((flip, _state, controls)) = flip {
+            dbg!(event.event(), &flip);
+            for c in controls.iter() {
+                let Ok(mut vis) = target.get_mut(c) else {continue};
+                // TODO deal with state
 
-    //     //     // if let Some((_, mut vis)) = target
-    //     //     //     .iter_mut()
-    //     //     //     .find(|t| *t.0 == Name::from(item.1.target.clone()))
-    //     //     // {
-    //     //     //     *vis = match item.0 .0 {
-    //     //     //         true => Visibility::Visible,
-    //     //     //         false => Visibility::Hidden,
-    //     //     //     }
-    //     //     // } else {
-    //     //     //     warn!("could not find {}", item.1.target);
-    //     //     // }
-    //     // }
-    // }
+                if *vis == Visibility::Hidden {
+                    *vis = Visibility::Inherited;
+                } else {
+                    *vis = Visibility::Hidden;
+                }
+            }
+        }
+    }
 
     fn observer(
         ev: Trigger<Interaction>,
         mut commands: Commands,
         asset_server: ResMut<AssetServer>,
         mut query: Query<(&Self, &mut ToggleInteractionState, &mut Interactable)>,
+        mut uids: Query<&Uid>,
         mut animate: Query<AnimationParams>,
     ) {
         let Ok((conf, mut state, mut interactable)) = query.get_mut(ev.target()) else {
@@ -219,10 +414,6 @@ impl ToggleInteractionBlender {
         };
         state.0 = !state.0;
         debug!("{} toggle {}", ev.target(), state.0);
-
-        //HERE just send lightyear message with Uid or even just Name
-        // with a manual handler which sends it to all other clients (on server)
-        // and triggers this (on client). With something to prevent resending to server. (EventId doesn't exist for Trigger?)
 
         let Ok(mut animate) = animate.get_mut(ev.target()) else {
             error!(entity = %ev.target(), "AnimationContext or required missing");
@@ -236,10 +427,7 @@ impl ToggleInteractionBlender {
 
         debug!("play {}", anim_name);
         interactable.active = true;
-        animate.play(
-            anim_name,
-            Duration::ZERO
-        );
+        animate.play(anim_name, Duration::ZERO);
 
         let sfx = match state.0 {
             true => &conf.on_sfx,
@@ -251,11 +439,11 @@ impl ToggleInteractionBlender {
             if !s.contains("/") {
                 s.insert_str(0, "sounds/".into());
             }
-            //TODO why doesn't this replace current sound?
-            commands.entity(ev.target()).insert((
+            //NOTE originally this attached AudioPlayer to entity instead of spawning a child but for some reason that prevented the sound from being overwritten before it was finished.
+            commands.entity(ev.target()).with_child((
                 AudioPlayer::<AudioSource>(asset_server.load(s)), //TODO preload
                 PlaybackSettings {
-                    mode: bevy::audio::PlaybackMode::Remove,
+                    mode: bevy::audio::PlaybackMode::Despawn,
                     volume: Volume::Linear(0.7),
                     ..Default::default()
                 },
@@ -290,8 +478,9 @@ impl Default for InteractionText {
 
 #[derive(Debug, Clone, Default, Component, Reflect)]
 #[reflect(Component)]
+#[require(super::network::uid::UidUsePath = UidUsePath::Name)] //FIXME
 pub struct Interactable {
-    // is unfinished interaction occuring
+    /// is unfinished interaction occuring
     active: bool,
 }
 
@@ -455,6 +644,11 @@ fn handle_key(
     hover: Query<(Entity, &Interactable, &Hover, Option<&InteractionText>)>,
     mut tooltip: Query<(Entity, &mut Tooltip, &mut Text)>,
     mut commands: Commands,
+
+    // FIXME
+    mut sender: Query<&mut MessageSender<InteractionMessage>, With<Client>>,
+    state: Query<&ToggleInteractionState>,
+    uid: Query<&Uid>,
 ) {
     for h in hover.iter() {
         if let Some((id, mut tooltip, mut text)) = tooltip.iter_mut().find(|t| t.1.target == h.0) {
@@ -501,6 +695,16 @@ fn handle_key(
                     // trigger event
                     // TODO disable tooltip during animation.
                     if tooltip.text == conf.string {
+                        // Send network message FIXME
+                        if let Ok(mut net) = sender.single_mut() {
+                            net.send::<ActionsChannel>(InteractionMessage {
+                                uid: uid.get(h.0).unwrap().clone(),
+                                state: !state.get(h.0).unwrap().0,
+                            });
+                        } else {
+                            error!("No MessageSender found for InteractionMessage");
+                        }
+
                         commands.trigger_targets(Interaction, h.0);
                         tooltip.extra_frames = Some(Instant::now());
                         commands

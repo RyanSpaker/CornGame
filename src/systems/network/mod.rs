@@ -1,3 +1,4 @@
+use core::f32;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::ops::Shl;
 use std::time::Duration;
@@ -12,13 +13,17 @@ use lightyear::prelude::server::{Start, Started, WebTransportServerIo};
 use lightyear::prelude::*;
 
 use bevy::ecs::system::{Query, Res};
+use rand::TryRngCore;
 use serde::{Deserialize, Serialize};
 
 use crate::systems::character::CharacterNetworkPlugin;
+use crate::systems::interactions::NetworkInteractPlugin;
 use crate::systems::physics::CornPhysicsPluginNetworkPlugin;
 use std::fs::{create_dir_all, write};
 use std::path::Path;
 use std::fs::read_to_string;
+
+pub mod uid;
 
 pub struct CornNetworkingPlugin;
 impl Plugin for CornNetworkingPlugin {
@@ -33,6 +38,8 @@ impl Plugin for CornNetworkingPlugin {
         #[cfg(not(target_family = "wasm"))]
         app.add_plugins(server::ServerPlugins { tick_duration });
         app.add_plugins(client::ClientPlugins { tick_duration });
+        let mut channels = app.world_mut().resource_mut::<ChannelRegistry>();
+        channels.settings_mut::<PingChannel>().unwrap().send_frequency = Duration::from_millis(1000);
 
         app.add_systems(Update, network_on_start_system.run_if(run_once));
         app.insert_resource(NetworkCrap {
@@ -48,12 +55,18 @@ impl Plugin for CornNetworkingPlugin {
             });
         app.add_systems(Update, ReplicateAuto::dumb);
 
-        app.add_plugins((CornPhysicsPluginNetworkPlugin, CharacterNetworkPlugin));
+        app.add_plugins((
+            CornPhysicsPluginNetworkPlugin,
+            CharacterNetworkPlugin,
+            NetworkInteractPlugin,
+        ));
         // app.register_component::<ReplicateOtherClients>();
         // app.add_systems(FixedUpdate, replicate_other_clients);
 
         app.register_type::<ReconnectTimer>();
         app.add_systems(Update, reconnect_system);
+
+        app.add_plugins(uid::UidPlugin);
     }
 }
 
@@ -155,6 +168,8 @@ fn start_client(
                 auth,
                 client::NetcodeConfig {
                     client_timeout_secs: 15,
+                    keepalive_packet_send_rate: 1.0,
+                    token_expire_secs: -1, // to avoic TokenExpired on reconnect
                     ..default()
                 },
             )
@@ -164,9 +179,14 @@ fn start_client(
     } else {
         // hostserver
         info!("starting host-client");
-        client.insert(LinkOf {
-            server: server.single().unwrap(),
-        });
+        client.insert((
+            LinkOf {
+                server: server.single().unwrap(),
+            },
+            // https://github.com/cBournhonesque/lightyear/blob/f3f884575f4ec15f090dc3d1bc79f4f262846dd3/lightyear_tests/src/stepper.rs#L119
+            // For Crossbeam we need to mark the IO as Linked, as there is no ServerLink to do that for us
+            Linked,
+        ));
     }
 
     client.trigger(Connect);
@@ -269,7 +289,11 @@ fn start_server(mut commands: Commands, crap: Res<NetworkCrap>) {
         Started, // webtransport code doesn't add this.
         LocalAddr(server_addr),
         WebTransportServerIo { certificate },
-        NetcodeServer::new(server::NetcodeConfig::default().with_client_timeout_secs(4)),
+        NetcodeServer::new(server::NetcodeConfig {
+            keep_alive_send_rate: 1.0,
+            client_timeout_secs: 4,
+            ..Default::default()
+        }),
     ));
     server.with_child((Name::from("on_connect"), Observer::new(handle_new_client)));
     server.trigger(Start);
@@ -301,8 +325,6 @@ fn handle_new_client(
         ReplicationReceiver::default(),
     ));
 }
-
-
 
 #[derive(Debug, Component, Serialize, Deserialize, PartialEq)]
 #[component(on_add = ReplicateAuto::on_insert)]

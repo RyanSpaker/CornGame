@@ -9,7 +9,7 @@ impl MainCamera{
         commands.spawn((
             Self, 
             Camera3d::default(), 
-            Camera{order: 0, hdr: true, ..Default::default()},
+            Camera{order: 0, hdr: false, ..Default::default()},
             Name::from("Main Camera")
         )).id()
     }

@@ -89,7 +89,7 @@ wgpu-types = "24"
 wgpu = "24"
 bevy-tnua = "0.24.0"
 bevy-tnua-avian3d = "0.5.0"
-avian3d = { version = "0.3.0", features = ["serialize"]}
+avian3d = { version = "*", features = ["serialize"]}
 lightyear = { version = "0.22.5", features = [
   "avian3d", 
   # "metrics", 
@@ -105,6 +105,8 @@ bevy_easings = "0.16.0"
 # bevy_asset_loader = "0.23.0"
 bevy-trait-query = "0.16.0" 
 bevy_editor_pls = "0.11"
+# bevy_dog = { git = "https://github.com/arne-berner/bevy_dog", branch = "main" }
+bevy_dog = { path = "forks/bevy_dog" }
 
 serde = "*"
 clap = {version = "4.5.38", features = ["derive"]}
@@ -126,6 +128,7 @@ we_clap = "0.1.6"
 web-sys = "0.3.77"
 x509-parser = "0.17.0"
 tokio = "1.47.0"
+thiserror = "2.0.12"
 
 
 [patch.crates-io]
@@ -141,4 +144,4 @@ egui_dock = { path = "forks/editor/forks/egui-dock/" }
 
 lightyear = { path = "forks/lightyear/lightyear" }
 # bevy_skein = { path = "forks/skein" }
-#avian3d = {git = "https://github.com/Jondolf/avian.git"}
+avian3d = { path = "forks/avian/crates/avian3d" }

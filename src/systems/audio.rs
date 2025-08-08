@@ -1,8 +1,7 @@
-use std::{ops::AddAssign, time::Duration};
+use std::{marker::PhantomData, ops::AddAssign, time::Duration};
 use bevy::{audio::Volume, ecs::{component::HookContext, entity::EntityHashMap, world::DeferredWorld}, prelude::*};
 use crate::{
-    ecs::{cameras::MainCamera, corn::CornSensor, flycam::FlyCamMoveEvent},
-    util::{math::lerp, observer_ext::{ObserveAsAppExt, ObserverParent}},
+    ecs::{cameras::MainCamera, corn::CornSensor, flycam::FlyCamMoveEvent}, systems::{character::Player, soundtrack}, util::{math::lerp, observer_ext::{ObserveAsAppExt, ObserverParent}}
 };
 
 pub struct CornAudioPlugin;
@@ -24,6 +23,8 @@ impl Plugin for CornAudioPlugin {
                 AudioFactor::calculate_volume
             ).chain().in_set(AudioSystems))
             .add_observer_as(Fade::fade_despawn_observer, AudioObservers);
+
+        app.add_plugins(soundtrack::SoundtrackPlugin);
     }
 }
 
@@ -61,7 +62,8 @@ pub struct Ambient;
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, SystemSet)]
 struct AudioSystems;
 impl AudioSystems{
-    fn should_run(query: Query<&AudioSink>) -> bool{query.is_empty()}
+    /// this caused confusing bug
+    fn should_run(query: Query<&AudioSink>) -> bool{ ! query.is_empty() }
 }
 
 /// Component attached as a child of an audio sink. Every frame a system accumulates the factors to set the sink volume and speed
@@ -91,24 +93,25 @@ impl AddAssign for AudioFactor{
 impl AudioFactor{
     /// For a set of volume factors, calculates the audio sink volume
     fn calculate_volume(
-        mut sinks: Query<(Entity, &mut AudioSink, &PlaybackSettings)>,
-        factors: Query<(&ChildOf, &Self)>
+        mut sinks: Query<(Entity, &mut AudioSink, &PlaybackSettings, &AudioFactor)>,
+        // factors: Query<(&ChildOf, &Self)>
     ){
-        let mut calculated_factors: EntityHashMap<Self> = EntityHashMap::default();
-        for (parent, factor) in factors.iter(){
-            let entity = parent.parent();
-            if !calculated_factors.contains_key(&entity) {calculated_factors.insert(entity, Self::default());}
-            let Some(fact) = calculated_factors.get_mut(&entity) else {continue;};
-            *fact += factor.clone();
-        }
-        for (entity, mut sink, settings) in sinks.iter_mut(){
-            let Some(Self{vm, va, sm, sa}) = calculated_factors.get(&entity) else {
-                sink.set_volume(settings.volume);
-                sink.set_speed(settings.speed); 
-                continue;
-            };
-            sink.set_volume(Volume::Linear((settings.volume.to_linear() * vm + va).max(0.0))); //TODO factors should be Volume
-            sink.set_speed((settings.speed*sm+sa).max(0.0));
+        // let mut calculated_factors: EntityHashMap<Self> = EntityHashMap::default();
+        // for (parent, factor) in factors.iter(){
+        //     let entity = parent.parent();
+        //     if !calculated_factors.contains_key(&entity) {calculated_factors.insert(entity, Self::default());}
+        //     let Some(fact) = calculated_factors.get_mut(&entity) else {continue;};
+        //     *fact += factor.clone();
+        // }
+        for (entity, mut sink, settings, factor) in sinks.iter_mut(){
+            // let Some(Self{vm, va, sm, sa}) = calculated_factors.get(&entity) else {
+            //     sink.set_volume(settings.volume);
+            //     sink.set_speed(settings.speed); 
+            //     continue;
+            // };
+            // sink.set_volume(Volume::Linear((settings.volume.to_linear() * vm + va).max(0.0))); //TODO factors should be Volume
+            // sink.set_speed((settings.speed*sm+sa).max(0.0));
+            sink.set_volume(Volume::Linear(settings.volume.to_linear() * factor.vm));
         }
     }
 }
@@ -258,6 +261,7 @@ impl Footsteps{
 
 #[derive(Debug, Clone, PartialEq, Reflect, Component)]
 #[reflect(Component)]
+#[require(AudioFactor)]
 pub struct Fade{
     pub duration: Duration,
     pub target: f32
@@ -269,7 +273,7 @@ impl Fade{
         mut commands: Commands
     ){
         for (entity, mut factor, mut fade) in fades.iter_mut(){
-            let step = (time.delta_secs()/fade.duration.as_secs_f32()).min(1.0);
+            let step = (time.delta_secs()/fade.duration.as_secs_f32());
             factor.vm = lerp(factor.vm, fade.target, step);
             fade.duration = fade.duration.saturating_sub(time.delta());
             if fade.duration.is_zero() {

@@ -33,6 +33,10 @@ struct Cli {
 
     #[arg(long)]
     headless: bool,
+
+    /// auto interact and (TODO) walk around
+    #[arg(long)]
+    dummy: bool,
 }
 
 #[derive(Debug, Resource)]
