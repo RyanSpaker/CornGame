@@ -11,19 +11,6 @@ use simple::SimpleInitPlugin;
 use scan::CornStoredScanPlugin;
 use super::buffer::{CornData, InstanceBuffer, VertexInstanceBuffer};
 
-/*
-    Load Shader from file into Handle<Shader>
-    Create BindGroupLayout per shader
-    Queue pipeline creation using shader and bindgrouplayout
-
-    Create GPU resources containing necessary data for shader invocation
-    Create Bind groups using resources
-
-    Once pipeline is created, we can proceed
-    In a node, Start a compute pass
-    Set pipeline, Set bindgroup, invoke sum # of times
-*/
-
 pub mod prelude{
     pub use super::{InitialCornData, RemakeCornField};
     pub use super::image::{ImageCarvedInitSettings, ImageCarvedHexagonalSettings};
@@ -68,31 +55,6 @@ impl InitialCornData{
     }
 }
 
-/// Tag component added to corn fields when they need to be remade
-#[derive(Default, Debug, Clone, PartialEq, Eq, Reflect, Component)]
-#[reflect(Component)] #[component(storage="SparseSet")]
-pub struct RemakeCornField;
-impl RemakeCornField{
-    pub fn tag_render_world<S: AsCornInitShader>(
-        mut commands: Commands,
-        query: Extract<Query<(RenderEntity, Ref<S::Settings>)>>
-    ){
-        for (render_entity, settings) in query.iter(){
-            if !settings.is_changed() {continue;}
-            if S::get_instance_count(&settings) == 0 {continue;}
-            commands.entity(render_entity).insert(Self);
-        }
-    }
-    pub fn reset_corn_fields(
-        query: Query<Entity, (With<CornLoaded>, With<Self>)>,
-        mut commands: Commands
-    ){
-        for entity in query.iter() {
-            commands.entity(entity).remove::<(Self, CornLoaded)>();
-        }
-    }
-}
-
 /// Global Code for the init shader invocations
 #[derive(Debug, Default, Clone)]
 pub struct CornInitializationPlugin;
@@ -100,12 +62,10 @@ impl Plugin for CornInitializationPlugin{
     fn build(&self, app: &mut App) {
         app
             .register_type::<InitialCornData>()
-            .register_type::<RemakeCornField>()
             .add_plugins(ExtractComponentPlugin::<InitialCornData>::default())
             .add_plugins((CornInitShaderPlugin, CornStoredScanPlugin))
         .sub_app_mut(RenderApp)
-            .add_systems(Render, InitialCornData::upload_data.in_set(RenderSet::PrepareResources))
-            .add_systems(Render, RemakeCornField::reset_corn_fields.in_set(RenderSet::Cleanup));
+            .add_systems(Render, InitialCornData::upload_data.in_set(RenderSet::PrepareResources));
         // Init Shader Plugins
         app.add_plugins((SimpleInitPlugin, ImageInitPlugin));
         // Readback plugin
