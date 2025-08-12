@@ -99,7 +99,7 @@ impl Plugin for CornScenesPlugin {
     }
 }
 
-fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
+fn spawn_global_entities(mut commands: Commands) {
     let cam = MainCamera::spawn_main_camera(&mut commands);
     commands.entity(cam).insert((
         Tonemapping::TonyMcMapface,
@@ -122,10 +122,11 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
         IsDefaultUiCamera,
     ));
 
-    if cli.menu {
+    //if cli.menu {
         commands.spawn(main_menu::MainMenuScene.get_bundle());
-    } else if !cli.scenes.is_empty() {
-        commands.spawn(LobbyScene.get_bundle());
-    }
+    //} else if !cli.scenes.is_empty() {
+    //    println!("B");
+    //    commands.spawn(LobbyScene.get_bundle());
+    //}
     commands.insert_resource(UiScale(1.0));
 }

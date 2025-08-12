@@ -1,5 +1,37 @@
-
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
+
+pub trait ObserverSubApp{
+    fn add_observer<E: Event, B: Bundle, M>(
+        &mut self,
+        observer: impl IntoObserverSystem<E, B, M>,
+    ) -> &mut Self;
+}
+impl ObserverSubApp for SubApp{
+    fn add_observer<E: Event, B: Bundle, M>(
+        &mut self,
+        observer: impl IntoObserverSystem<E, B, M>,
+    ) -> &mut Self {
+        self.world_mut().add_observer(observer);
+        self
+    }
+}
+impl ObserveAsAppExt for SubApp{
+    fn add_observer_as<E: Event, B: Bundle, M, C: Component+PartialEq+ObserverParent>(
+        &mut self, 
+        observer: impl IntoObserverSystem<E, B, M>, 
+        parent_component: C
+    ) -> &mut Self {
+        let mut query = self.world_mut().query::<(Entity, &C)>();
+        let parent = match query.iter(self.world()).find(|(_, comp)| **comp==parent_component) {
+            Some((entity, _)) => entity,
+            _ => self.world_mut().spawn((parent_component.get_name(), parent_component)).id()
+        };
+        let mut obs = self.world_mut().add_observer(observer);
+        obs.insert(ChildOf(parent));
+        trace!(entity = %obs.id(), "spawn {}", std::any::type_name:: <C>());
+        self
+    }
+}
 
 pub trait ObserverParent{
     fn get_name(&self) -> Name;

@@ -19,7 +19,7 @@ fn simple_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workg
   // Add the field's origin position to the corn stalk position
   out.offset = settings.origin_res_width.xyz + vec3<f32>(xz_offset.x, 0.0, xz_offset.y);
   // Add random offsets to the x and z position of the corn stalk
-  out.offset += vec3<f32>(randValue(instance_index), 0.5, randNext())*settings.random_settings.x*2.0 - 1.0;
+  out.offset += (vec3<f32>(randValue(instance_index), 0.5, randNext())*2.0-1.0)*settings.random_settings.x;
   // set the random scale of the corn stalk
   out.scale = randNext() * settings.height_width_min.x + settings.height_width_min.y;
   // set the random rotation of the corn stalk
@@ -42,7 +42,7 @@ fn simple_rect_init(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_
   // Add the field's origin position to the corn stalk position
   out.offset = settings.origin_res_width.xyz + vec3<f32>(xz_offset.x, 0.0, xz_offset.y);
   // Add random offsets to the x and z position of the corn stalk
-  out.offset += vec3<f32>(randValue(instance_index), 0.5, randNext())*settings.random_settings.x*2.0 - 1.0;
+  out.offset += (vec3<f32>(randValue(instance_index), 0.5, randNext())*2.0-1.0)*settings.random_settings.x;
   // set the random scale of the corn stalk
   out.scale = randNext() * settings.height_width_min.x + settings.height_width_min.y;
   // set the random rotation of the corn stalk

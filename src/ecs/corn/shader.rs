@@ -2,6 +2,22 @@ use std::{borrow::Cow, marker::PhantomData};
 use bevy::{prelude::*, render::{render_resource::*, renderer::RenderDevice, RenderApp}};
 use wgpu::{BindGroupLayoutEntry, PushConstantRange};
 
+/// Common shader files used in all shaders
+#[derive(Debug, Clone, PartialEq, Eq, Reflect, Resource)]
+#[reflect(Resource)]
+pub struct CornCommonShader(pub Vec<Handle<Shader>>);
+impl FromWorld for CornCommonShader{
+    fn from_world(world: &mut World) -> Self {
+        let server = world.resource::<AssetServer>();
+        Self(vec![
+            server.load("shaders/noise.wgsl"),
+            server.load("shaders/corn/render/wind.wgsl"),
+            server.load("shaders/corn/corn_common.wgsl"),
+        ])
+    }
+}
+
+
 /// Tag component attached to entities that represent a shader
 #[derive(Default, Debug, Clone, PartialEq, Eq, Component)]
 pub struct CornShader;
@@ -13,6 +29,13 @@ pub struct ShaderPipelineResources{
     pub pipeline: CachedComputePipelineId,
     pub layout: BindGroupLayout
 }
+
+/// Adds global corn shader resources to the app
+#[derive(Debug, Default, Clone)]
+pub struct CornShadersPlugin;
+impl Plugin for CornShadersPlugin{fn build(&self, app: &mut App) {
+    app.register_type::<CornCommonShader>().init_resource::<CornCommonShader>();
+}}
 
 /// Functionality necessary for a init shader.
 pub trait AsCornShader where Self: Component+Sized{

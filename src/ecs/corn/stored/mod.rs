@@ -1,11 +1,12 @@
 pub mod shader;
+pub mod scan;
 pub mod simple;
 
 use bevy::{prelude::*, render::{extract_component::{ExtractComponent, ExtractComponentPlugin}, renderer::RenderDevice, Render, RenderApp, RenderSet}};
 use shader::CornInitShaderPlugin;
 use simple::SimpleInitPlugin;
-
-use super::{CornData, CornLoaded, InstanceBuffer};
+use scan::CornStoredScanPlugin;
+use super::buffer::{CornData, InstanceBuffer, VertexInstanceBuffer};
 
 /*
     Load Shader from file into Handle<Shader>
@@ -19,20 +20,28 @@ use super::{CornData, CornLoaded, InstanceBuffer};
     In a node, Start a compute pass
     Set pipeline, Set bindgroup, invoke sum # of times
 */
+
 #[derive(Debug, Default, Clone, PartialEq, Reflect, Component, ExtractComponent)]
 #[reflect(Component)]
 pub struct InitialCornData(pub Vec<CornData>);
 impl InitialCornData{
     pub fn upload_data(
-        query: Query<(Entity, &Self), (Without<CornLoaded>, Without<InstanceBuffer>)>,
+        query: Query<(Entity, &Self), Without<InstanceBuffer>>,
         mut commands: Commands,
         render_device: Res<RenderDevice>
     ){
         for(entity, InitialCornData(data)) in query.iter(){
-            commands.entity(entity).insert(InstanceBuffer::create_buffer_with_data(
-                "Corn Field Instance Buffer".to_string(), 
-                render_device.as_ref(), 
-                bytemuck::cast_slice::<CornData, u8>(data.as_slice())
+            commands.entity(entity).insert((
+                InstanceBuffer::create_buffer_with_data(
+                    "Corn Field Instance Buffer".to_string(), 
+                    render_device.as_ref(), 
+                    bytemuck::cast_slice::<CornData, u8>(data.as_slice())
+                ),
+                VertexInstanceBuffer::create_buffer(
+                    "Corn Field Vertex Instance Buffer".to_string(), 
+                    data.len() as u64, 
+                    render_device.as_ref()
+                )
             ));
         }
     }
@@ -45,7 +54,7 @@ impl Plugin for CornInitializationPlugin{
     fn build(&self, app: &mut App) {
         app.register_type::<InitialCornData>()
             .add_plugins(ExtractComponentPlugin::<InitialCornData>::default())
-            .add_plugins(CornInitShaderPlugin)
+            .add_plugins((CornInitShaderPlugin, CornStoredScanPlugin))
         .sub_app_mut(RenderApp)
             .add_systems(Render, InitialCornData::upload_data.in_set(RenderSet::PrepareResources));
         // Init Shader Plugins
@@ -70,7 +79,7 @@ pub mod readback{
     }};
     use wgpu::{BufferUsages, Maintain, MapMode};
     use wgpu_types::BufferDescriptor;
-    use crate::ecs::corn::{CornData, CornLoaded, InstanceBuffer};
+    use crate::ecs::corn::buffer::{CornData, InstanceBuffer};
     
     #[derive(Default, Debug, Clone, PartialEq, Eq, Reflect, Component, ExtractComponent)]
     #[reflect(Component)]
@@ -80,16 +89,16 @@ pub mod readback{
     pub struct ReadbackInitBuffer(pub Buffer);
     impl ReadbackInitBuffer{
         fn start_readback(
-            query: Query<(Entity, &InstanceBuffer), (With<CornLoaded>, With<ReadbackInit>, Without<Self>)>,
+            query: Query<(Entity, &InstanceBuffer), (With<ReadbackInit>, Without<Self>)>,
             render_device: Res<RenderDevice>,
             mut commands: Commands,
             mut event_writer: EventWriter<ReadbackInitEvent>
         ){
             let mut events = vec![];
-            for (entity, InstanceBuffer(_, count)) in query.iter(){
+            for (entity, InstanceBuffer{instance_count, ..}) in query.iter(){
                 let buffer = render_device.create_buffer(&BufferDescriptor{
                     label: Some("Init Readback Buffer"),
-                    size: count*CornData::DATA_SIZE,
+                    size: *instance_count*CornData::DATA_SIZE,
                     usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
                     mapped_at_creation: false
                 });
@@ -153,12 +162,12 @@ pub mod readback{
             world: &'w World,
         ) -> Result<(), bevy::render::render_graph::NodeRunError> {
             for entity in self.ready_entities.iter(){
-                let Some(InstanceBuffer(instance, _)) = world.get::<InstanceBuffer>(*entity) else {continue;};
+                let Some(InstanceBuffer{buffer, ..}) = world.get::<InstanceBuffer>(*entity) else {continue;};
                 let Some(ReadbackInitBuffer(readback)) = world.get::<ReadbackInitBuffer>(*entity) else {continue;};
                 render_context.command_encoder().copy_buffer_to_buffer(
-                    instance, 0, 
+                    buffer, 0, 
                     readback, 0, 
-                    instance.size()
+                    buffer.size()
                 );
             }
             Ok(())

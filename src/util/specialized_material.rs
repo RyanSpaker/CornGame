@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, hash::Hash};
+use std::{hash::Hash, marker::PhantomData};
 use bevy::{
     asset::Asset, 
     core_pipeline::{
@@ -11,9 +11,7 @@ use bevy::{
     prelude::*, 
     reflect::Reflect, 
     render::{
-        render_phase::{DrawFunctions, PhaseItem, RenderCommand, RenderCommandState, SetItemPipeline}, 
-        render_resource::AsBindGroup, 
-        RenderApp,
+        render_phase::{DrawFunctions, PhaseItem, RenderCommand, RenderCommandState, SetItemPipeline}, render_resource::AsBindGroup, RenderApp
     }
 };
 
@@ -63,6 +61,7 @@ pub type SpecializedDrawMaterial<M, F> = (
     SetMaterialBindGroup<M, 2>,
     F,
 );
+
 /// Adds the ability to add a draw command to the app which pretends to be a draw command of another type
 pub trait SpoofRenderCommand{
     fn spoof_render_command<P: PhaseItem, R: RenderCommand<P> + Send + Sync + 'static, L: 'static>(

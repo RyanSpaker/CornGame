@@ -109,6 +109,7 @@ impl AsCornInitShader for SimpleInitShader{
 
     fn get_settings_buffer(settings: &Self::Settings, render_device: &RenderDevice) -> Vec<Buffer> {
         let settings_struct = SimpleInitShaderSettings::from(settings);
+        println!("{:?}", settings_struct);
         vec![render_device.create_buffer_with_data(&BufferInitDescriptor{
             label: Some("Simple Corn Init Settings Buffer"),
             usage: BufferUsages::UNIFORM,
@@ -234,6 +235,7 @@ impl AsCornInitShader for SimpleHexagonalInitShader{
 
     fn get_settings_buffer(settings: &Self::Settings, render_device: &RenderDevice) -> Vec<Buffer> {
         let settings_struct = SimpleInitShaderSettings::from(settings);
+        println!("{:?}", settings_struct);
         vec![render_device.create_buffer_with_data(&BufferInitDescriptor{
             label: Some("Simple Corn Init Settings Buffer"),
             usage: BufferUsages::UNIFORM,
@@ -241,9 +243,7 @@ impl AsCornInitShader for SimpleHexagonalInitShader{
         })]
     }
     
-    #[expect(unused)]
     fn get_invocation_count(settings: &Self::Settings) -> UVec3 {
-        todo!();
         let (width, height) = settings.get_resolution();
         UVec3::new(width.div_ceil(16) as u32, height.div_ceil(16) as u32, 1)
     }

@@ -1,11 +1,12 @@
-use crate::util::{observer_ext::ObserveAsAppExt, specialized_material::{SpecializedDrawMaterial, SpecializedDrawPrepass, SpecializedMaterialPlugin}};
-use super::{CornData, CornField, CornFieldObserver, CornLoaded, IndirectBuffer, VertexInstanceBuffer, LOD_COUNT};
+use std::sync::atomic::Ordering;
+use crate::util::{specialized_material::{SpecializedDrawMaterial, SpecializedDrawPrepass, SpecializedMaterialPlugin}};
+use super::{buffer::{CornData, IndirectBuffer, VertexInstanceBuffer}};
 use bevy::{
     asset::Asset, ecs::{query::ROQueryItem, system::{lifetimeless::{Read, SRes}, SystemParamItem}}, pbr::{ExtendedMaterial, MaterialExtension, RenderMeshInstances, StandardMaterial}, prelude::*, reflect::Reflect, render::{
         mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}
-    },
+    }
 };
-use wgpu::{vertex_attr_array, IndexFormat, PushConstantRange, ShaderStages};
+use wgpu::vertex_attr_array;
 
 /// Corn rendering uses a Special Material which expands upon the `StandardMaterial` adding instancing support.
 /// We add this material to the app with `SpecializedMaterialPlugin`, which allows us to override the Draw commands used by the Material.
@@ -18,31 +19,17 @@ mod shaders {
 }
 
 /// The material type of the corn anchor asset
-pub type CornMaterial = ExtendedMaterial<StandardMaterial, CornMaterialExtension>;
+pub type StdCornMaterial = ExtendedMaterial<StandardMaterial, CornMaterialExtension>;
 /// The render draw command used by the corn
-pub type CornDrawRender = SpecializedDrawMaterial<CornMaterial, DrawCorn>;
+pub type StdCornDrawRender = SpecializedDrawMaterial<StdCornMaterial, DrawCorn>;
 /// The prepass draw command used by the corn
-pub type CornDrawPrepass = SpecializedDrawPrepass<CornMaterial, DrawCorn>;
+pub type StdCornDrawPrepass = SpecializedDrawPrepass<StdCornMaterial, DrawCorn>;
 
-/// Automatically replaces std materials on corn fields with Corn Materials
-pub fn replace_standard_materials(
-    trigger: Trigger<OnInsert, MeshMaterial3d<StandardMaterial>>,
-    query: Query<(Entity, &MeshMaterial3d<StandardMaterial>), (With<CornField>, Without<MeshMaterial3d<CornMaterial>>)>,
-    mut commands: Commands,
-    assets: Res<AssetServer>,
-    std_mats: Res<Assets<StandardMaterial>>
-){
-    let Ok((entity, material)) = query.get(trigger.target()) else {return;};
-    let Some(material) = std_mats.get(material.id()) else {error!("Std Material on Corn Field is not Loaded, wierd"); return;};
-    let extd_mat = ExtendedMaterial{base: material.clone(), extension: CornMaterialExtension{}};
-    let handle = assets.add(extd_mat);
-    commands.entity(entity).remove::<MeshMaterial3d<StandardMaterial>>().insert(MeshMaterial3d(handle));
-}
-
+/// Trait to allow all materials to be extended with the CornMaterialExtension
 pub trait ExtendWithCornMaterial: Material{fn extend_with_corn(self) -> ExtendedMaterial<Self, CornMaterialExtension>;}
 impl<M: Material> ExtendWithCornMaterial for M {
     fn extend_with_corn(self) -> ExtendedMaterial<Self, CornMaterialExtension> {
-        ExtendedMaterial { base: self, extension: CornMaterialExtension {} }
+        ExtendedMaterial { base: self, extension: CornMaterialExtension{} }
     }
 }
 
@@ -76,7 +63,6 @@ impl MaterialExtension for CornMaterialExtension {
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: vertex_attr_array![8 => Float32x4, 9 => Float32x4, 10 => Float32x4, 11 => Float32x4].to_vec(),
         });
-        descriptor.push_constant_ranges.push(PushConstantRange{stages: ShaderStages::VERTEX, range: 0..4});
         Ok(())
     }
 }
@@ -86,10 +72,10 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
     type Param = (
         SRes<RenderAssets<RenderMesh>>,
         SRes<RenderMeshInstances>,
-        SRes<MeshAllocator>,
+        SRes<MeshAllocator>
     );
     type ViewQuery = ();
-    type ItemQuery = (Read<VertexInstanceBuffer>, Read<IndirectBuffer>, Has<CornLoaded>);
+    type ItemQuery = (Read<VertexInstanceBuffer>, Read<IndirectBuffer>);
     #[inline]
     fn render<'w>(
         item: &P,
@@ -98,52 +84,31 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
         (meshes, mesh_instances, mesh_allocator): SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let Some((VertexInstanceBuffer(instance_buffer), IndirectBuffer(indirect_buffer), true)) = entity_query.as_ref() 
-        else {return RenderCommandResult::Skip;};
+        let Some((vib, indb)) = entity_query.as_ref() else {return RenderCommandResult::Skip;};
 
-        let meshes = meshes.into_inner();
-        let mesh_instances = mesh_instances.into_inner();
+        if !vib.ready.load(Ordering::Relaxed) {return RenderCommandResult::Skip;}
+
         let mesh_allocator = mesh_allocator.into_inner();
 
-        let Some(mesh_instance) = mesh_instances.render_mesh_queue_data(item.main_entity()) else {
-            return RenderCommandResult::Failure("unknown");
-        };
-        let mesh_asset_id = mesh_instance.mesh_asset_id;
-
-        let Some(gpu_mesh) = meshes.get(mesh_asset_id) else {
-            return RenderCommandResult::Skip;
-        };
-        let Some(vertex_buffer_slice) = mesh_allocator.mesh_vertex_slice(&mesh_asset_id) else {
-            return RenderCommandResult::Skip;
-        };
+        let Some(mesh_instance) = mesh_instances.render_mesh_queue_data(item.main_entity()) 
+        else {return RenderCommandResult::Skip;};
+        let Some(gpu_mesh) = meshes.get(mesh_instance.mesh_asset_id) 
+        else {return RenderCommandResult::Skip;};
+        let Some(vertex_buffer_slice) = mesh_allocator.mesh_vertex_slice(&mesh_instance.mesh_asset_id) 
+        else {return RenderCommandResult::Skip;};
+        let Some(index_buffer_slice) = mesh_allocator.mesh_index_slice(&mesh_instance.mesh_asset_id) 
+        else {return RenderCommandResult::Failure("Corn failed to render as its mesh was not indexed");};
 
         pass.set_vertex_buffer(0, vertex_buffer_slice.buffer.slice(..));
-        pass.set_vertex_buffer(1, instance_buffer.slice(..));
-        pass.set_push_constants(ShaderStages::VERTEX, 0, bytemuck::cast_slice(&[item.batch_range().start]));
+        pass.set_vertex_buffer(1, vib.buffer.slice(..));
 
         // Draw either directly or indirectly, as appropriate.
         match &gpu_mesh.buffer_info {
-            RenderMeshBufferInfo::Indexed {
-                index_format, ..
-            } => {
-                let Some(index_buffer_slice) = mesh_allocator.mesh_index_slice(&mesh_asset_id)
-                else {return RenderCommandResult::Skip;};
-                let (start, end) = match index_format{
-                    IndexFormat::Uint16 => {
-                        (index_buffer_slice.range.start as u64*2, index_buffer_slice.range.end as u64*2)
-                    },
-                    IndexFormat::Uint32 => {
-                        (index_buffer_slice.range.start as u64*4, index_buffer_slice.range.end as u64*4)
-                    }
-                };
-                pass.set_index_buffer(index_buffer_slice.buffer.slice(start..end), 0, *index_format);
-                trace!("Rendering Corn, indexed: {}", true);
-                pass.multi_draw_indexed_indirect(indirect_buffer, 0, LOD_COUNT);
+            RenderMeshBufferInfo::Indexed {index_format, ..} => {
+                pass.set_index_buffer(index_buffer_slice.buffer.slice(..), 0, *index_format);
+                pass.multi_draw_indexed_indirect(&indb.buffer, 0, indb.lod_count as u32);
             }
-            RenderMeshBufferInfo::NonIndexed => {
-                trace!("Rendering Corn, indexed: {}", false);
-                pass.multi_draw_indirect(indirect_buffer, 0, LOD_COUNT);
-            }
+            _ => {return RenderCommandResult::Failure("Corn failed to render, as its mesh is not indexed!")}
         }
         RenderCommandResult::Success
     }
@@ -154,10 +119,9 @@ pub struct CornRenderPlugin;
 impl Plugin for CornRenderPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(SpecializedMaterialPlugin::<
-            CornMaterial,
-            CornDrawRender,
-            CornDrawPrepass,
-        >::default())
-        .add_observer_as(replace_standard_materials, CornFieldObserver);
+            StdCornMaterial,
+            StdCornDrawRender,
+            StdCornDrawPrepass,
+        >::default());
     }
 }
