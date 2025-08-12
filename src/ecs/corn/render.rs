@@ -67,6 +67,7 @@ impl MaterialExtension for CornMaterialExtension {
     }
 }
 
+
 pub struct DrawCorn;
 impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
     type Param = (

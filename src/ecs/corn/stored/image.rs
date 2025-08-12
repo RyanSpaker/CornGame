@@ -1,11 +1,11 @@
 use std::{borrow::Cow, mem::swap};
-use bevy::{prelude::*, render::{extract_component::ExtractComponent, render_resource::*, renderer::RenderDevice}};
+use bevy::{prelude::*, render::{extract_component::ExtractComponent, render_asset::RenderAssets, render_resource::*, renderer::RenderDevice, texture::GpuImage}};
 use crate::ecs::corn::shader::AsCornShader;
 use super::{shader::{AsCornInitShader, CornInitShaderAppExt}, CornInitShaderSettings};
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Reflect, Component, ExtractComponent)]
+#[derive(Debug, Clone, PartialEq, Reflect, Component, ExtractComponent)]
 #[reflect(Component)]
-pub struct SimpleInitShader{
+pub struct ImageCarvedInitSettings{
     /// World Space center of the corn field
     center: Vec3,
     /// Half extents of the corn field
@@ -15,18 +15,21 @@ pub struct SimpleInitShader{
     /// Min and Max height scalars
     height_range: Vec2,
     /// How much the corn can shift as a percentage of the distance between the corn normally
-    rand_offset_factor: f32
+    rand_offset_factor: f32,
+    /// Image used to carve the path
+    image: Handle<Image>
 }
-impl SimpleInitShader{
+impl ImageCarvedInitSettings{
     /// Returns new Corn Field
-    pub fn new(center: Vec3, half_extents: Vec2, resolution: UVec2, height_range: Vec2, rand_offset: f32) -> Self{
+    pub fn new(center: Vec3, half_extents: Vec2, resolution: UVec2, height_range: Vec2, rand_offset: f32, image: Handle<Image>) -> Self{
         assert!(resolution != UVec2::ZERO, "Tried to create empty corn field!");
         Self{
             center, 
             half_extents, 
             resolution,
             height_range,
-            rand_offset_factor: rand_offset
+            rand_offset_factor: rand_offset,
+            image
         }
     }
     /// Returns the origin of the corn field, bottom left corner
@@ -50,9 +53,26 @@ impl SimpleInitShader{
         return self.get_step()*self.rand_offset_factor;
     }
 }
-impl AsCornShader for SimpleInitShader{
+impl From<&ImageCarvedInitSettings> for CornInitShaderSettings{
+    fn from(value: &ImageCarvedInitSettings) -> Self {
+        Self { 
+            origin: value.get_origin(),
+            height_range: value.height_range.y - value.height_range.x,
+            minimum_height: value.height_range.x,
+            step_size: value.get_step(),
+            resolution_width: value.resolution.x,
+            random_settings: value.get_random_offset_range(),
+            uv_scale: (value.half_extents*2.0).recip()
+         }
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Reflect, Component)]
+#[reflect(Component)]
+pub struct ImageCarvedInitShader;
+impl AsCornShader for ImageCarvedInitShader{
     fn load_shader(assets: &AssetServer) -> Handle<Shader> {
-        assets.load("shaders/corn/init/simple.wgsl")
+        assets.load("shaders/corn/init/image.wgsl")
     }
 
     fn get_bindgroup_layout() -> Vec<BindGroupLayoutEntry> {
@@ -74,20 +94,35 @@ impl AsCornShader for SimpleInitShader{
                     has_dynamic_offset: false, 
                     min_binding_size: None },
                 count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Texture { 
+                    sample_type: TextureSampleType::Float { filterable: true }, 
+                    view_dimension: TextureViewDimension::D2, 
+                    multisampled: false },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None
             }
         ]
     }
 
     fn get_entry_point() -> impl Into<Cow<'static, str>> {
-        "simple_rect_init"
+        "image_rect_init"
     }
 
     fn get_label() -> impl Into<Cow<'static, str>> {
-        "Corn Simple Init Shader"
+        "Corn Image Carved Init Shader"
     }
 }
-impl AsCornInitShader for SimpleInitShader{
-    type Settings = Self;
+impl AsCornInitShader for ImageCarvedInitShader{
+    type Settings = ImageCarvedInitSettings;
 
     fn get_instance_count(settings: &Self::Settings) -> u64 {
         settings.resolution.x as u64 * settings.resolution.y as u64
@@ -96,7 +131,7 @@ impl AsCornInitShader for SimpleInitShader{
     fn get_settings_buffer(settings: &Self::Settings, render_device: &RenderDevice) -> Vec<Buffer> {
         let settings_struct = CornInitShaderSettings::from(settings);
         vec![render_device.create_buffer_with_data(&BufferInitDescriptor{
-            label: Some("Simple Corn Init Settings Buffer"),
+            label: Some("Corn Image Carved Init Settings Buffer"),
             usage: BufferUsages::UNIFORM,
             contents: bytemuck::cast_slice(&[settings_struct])
         })]
@@ -105,25 +140,23 @@ impl AsCornInitShader for SimpleInitShader{
     fn get_invocation_count(settings: &Self::Settings) -> UVec3 {
         UVec3::new(settings.resolution.x.div_ceil(16), settings.resolution.y.div_ceil(16), 1)
     }
-}
-impl From<&SimpleInitShader> for CornInitShaderSettings{
-    fn from(value: &SimpleInitShader) -> Self {
-        Self { 
-            origin: value.get_origin(),
-            height_range: value.height_range.y - value.height_range.x,
-            minimum_height: value.height_range.x,
-            step_size: value.get_step(),
-            resolution_width: value.resolution.x,
-            random_settings: value.get_random_offset_range(),
-            uv_scale: Vec2::ZERO
-         }
+
+    fn append_texture_bindgroups<'a>(settings: &Self::Settings, image_assets: &'a RenderAssets<GpuImage>, entries: &mut Vec<BindGroupEntry<'a>>) {
+        let Some(image) = image_assets.get(settings.image.id()) else {return;};
+        let next_entry = entries.len();
+        entries.push(BindGroupEntry { binding: next_entry as u32, resource: wgpu::BindingResource::TextureView(&image.texture_view) });
+        entries.push(BindGroupEntry { binding: next_entry as u32+1, resource: wgpu::BindingResource::Sampler(&image.sampler) });
+    }
+
+    fn check_assets_loaded(settings: &Self::Settings, assets: &RenderAssets<GpuImage>) -> bool {
+        assets.get(settings.image.id()).is_some()
     }
 }
-pub type SimpleInitSettings = SimpleInitShader;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Reflect, Component, ExtractComponent)]
+
+#[derive(Debug, Clone, PartialEq, Reflect, Component, ExtractComponent)]
 #[reflect(Component)]
-pub struct SimpleHexagonalInitShader{
+pub struct ImageCarvedHexagonalSettings{
     /// World Space center of the Corn Field
     center: Vec3,
     /// How far left and right the corn field extends.
@@ -133,17 +166,20 @@ pub struct SimpleHexagonalInitShader{
     /// The minimum and maximum height scalar
     height_range: Vec2,
     /// percentage of dist between of which corn can shift randomly
-    rand_offset_factor: f32
+    rand_offset_factor: f32,
+    /// Image used to carve the path
+    image: Handle<Image>
 }
-impl SimpleHexagonalInitShader{
+impl ImageCarvedHexagonalSettings{
     /// Creates new Corn Field
-    pub fn new(center: Vec3, half_extents: Vec2, seperation_distance: f32, height_range: Vec2, rand_offset: f32) -> Self{
+    pub fn new(center: Vec3, half_extents: Vec2, seperation_distance: f32, height_range: Vec2, rand_offset: f32, image: Handle<Image>) -> Self{
         Self{
             center, 
             half_extents, 
             dist_between: seperation_distance,
             height_range,
-            rand_offset_factor: rand_offset
+            rand_offset_factor: rand_offset,
+            image
         }
     }
     /// Finds the resoltuion of expanded coords (checkerboard pattern)
@@ -165,7 +201,6 @@ impl SimpleHexagonalInitShader{
         let mut true_width = (expanded_res.x as f32-1.0)*self.dist_between*0.5;
         let mut true_height = (expanded_res.y as f32-1.0)*self.dist_between*3f32.sqrt()/6.0;
         if self.half_extents.x < self.half_extents.y {swap(&mut true_height, &mut true_width);}
-
         return self.center - Vec3::new(true_width*0.5, 0.0, true_height*0.5);
     }
     /// Returns the step between spots on the corn field grid
@@ -180,9 +215,48 @@ impl SimpleHexagonalInitShader{
         return self.dist_between*self.rand_offset_factor;
     }
 }
-impl AsCornShader for SimpleHexagonalInitShader{
+impl From<&ImageCarvedHexagonalSettings> for CornInitShaderSettings{
+    fn from(value: &ImageCarvedHexagonalSettings) -> Self {
+        let mut output = Self {
+            origin: value.get_origin(),
+            height_range: value.height_range.y - value.height_range.x,
+            minimum_height: value.height_range.x,
+            step_size: value.get_step(),
+            resolution_width: value.get_expanded_resolution().x,
+            random_settings: Vec2::new(value.get_random_offset_range(), if value.half_extents.x >= value.half_extents.y {0.0} else {1.0}),
+            uv_scale: (value.half_extents*2.0).recip()
+         };
+         if !output.step_size.x.is_finite() || output.step_size.x.is_nan(){
+            output.origin.x = value.center.x;
+            output.step_size.x = 0.0;
+         }
+         if !output.step_size.y.is_finite() || output.step_size.y.is_nan(){
+            output.origin.y = value.center.y;
+            output.step_size.y = 0.0;
+         }
+         return output;
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Reflect, Component)]
+#[reflect(Component)]
+pub struct ImageCarvedHexagonalInitShader{
+    /// World Space center of the Corn Field
+    center: Vec3,
+    /// How far left and right the corn field extends.
+    half_extents: Vec2,
+    /// The minimum distance between adjacent pieces of corn
+    dist_between: f32,
+    /// The minimum and maximum height scalar
+    height_range: Vec2,
+    /// percentage of dist between of which corn can shift randomly
+    rand_offset_factor: f32,
+    /// Image used to carve the path
+    image: Handle<Image>
+}
+impl AsCornShader for ImageCarvedHexagonalInitShader{
     fn load_shader(assets: &AssetServer) -> Handle<Shader> {
-        assets.load("shaders/corn/init/simple.wgsl")
+        assets.load("shaders/corn/init/image.wgsl")
     }
 
     fn get_bindgroup_layout() -> Vec<BindGroupLayoutEntry> {
@@ -204,20 +278,35 @@ impl AsCornShader for SimpleHexagonalInitShader{
                     has_dynamic_offset: false, 
                     min_binding_size: None },
                 count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Texture { 
+                    sample_type: TextureSampleType::Float { filterable: true }, 
+                    view_dimension: TextureViewDimension::D2, 
+                    multisampled: false },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::COMPUTE,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None
             }
         ]
     }
 
     fn get_entry_point() -> impl Into<Cow<'static, str>> {
-        "simple_init"
+        "image_init"
     }
 
     fn get_label() -> impl Into<Cow<'static, str>> {
-        "Corn Simple Hexagonal Init Shader"
+        "Corn Image Carved Hexagonal Init Shader"
     }
 }
-impl AsCornInitShader for SimpleHexagonalInitShader{
-    type Settings = Self;
+impl AsCornInitShader for ImageCarvedHexagonalInitShader{
+    type Settings = ImageCarvedHexagonalSettings;
 
     fn get_instance_count(settings: &Self::Settings) -> u64 {
         let expanded_res = settings.get_expanded_resolution();
@@ -231,7 +320,7 @@ impl AsCornInitShader for SimpleHexagonalInitShader{
     fn get_settings_buffer(settings: &Self::Settings, render_device: &RenderDevice) -> Vec<Buffer> {
         let settings_struct = CornInitShaderSettings::from(settings);
         vec![render_device.create_buffer_with_data(&BufferInitDescriptor{
-            label: Some("Simple Corn Init Settings Buffer"),
+            label: Some("Corn Image Carved Hexagonal Init Settings Buffer"),
             usage: BufferUsages::UNIFORM,
             contents: bytemuck::cast_slice(&[settings_struct])
         })]
@@ -242,39 +331,30 @@ impl AsCornInitShader for SimpleHexagonalInitShader{
         let width = expanded_res.x.div_ceil(2);
         UVec3::new(width.div_ceil(16), expanded_res.y.div_ceil(16), 1)
     }
-}
-impl From<&SimpleHexagonalInitShader> for CornInitShaderSettings{
-    fn from(value: &SimpleHexagonalInitShader) -> Self {
-        let mut output = Self {
-            origin: value.get_origin(),
-            height_range: value.height_range.y - value.height_range.x,
-            minimum_height: value.height_range.x,
-            step_size: value.get_step(),
-            resolution_width: value.get_expanded_resolution().x,
-            random_settings: Vec2::new(value.get_random_offset_range(), if value.half_extents.x >= value.half_extents.y {0.0} else {1.0}),
-            uv_scale: Vec2::ZERO
-         };
-         if !output.step_size.x.is_finite() || output.step_size.x.is_nan(){
-            output.origin.x = value.center.x;
-            output.step_size.x = 0.0;
-         }
-         if !output.step_size.y.is_finite() || output.step_size.y.is_nan(){
-            output.origin.y = value.center.y;
-            output.step_size.y = 0.0;
-         }
-         return output;
+
+    fn append_texture_bindgroups<'a>(settings: &Self::Settings, image_assets: &'a RenderAssets<GpuImage>, entries: &mut Vec<BindGroupEntry<'a>>) {
+        let Some(image) = image_assets.get(settings.image.id()) else {return;};
+        let next_entry = entries.len();
+        entries.push(BindGroupEntry { binding: next_entry as u32, resource: wgpu::BindingResource::TextureView(&image.texture_view) });
+        entries.push(BindGroupEntry { binding: next_entry as u32+1, resource: wgpu::BindingResource::Sampler(&image.sampler) });
+    }
+
+    fn check_assets_loaded(settings: &Self::Settings, assets: &RenderAssets<GpuImage>) -> bool {
+        assets.get(settings.image.id()).is_some()
     }
 }
-pub type SimpleHexagonalSettings = SimpleHexagonalInitShader;
+
 
 #[derive(Default, Debug, Clone)]
-pub struct SimpleInitPlugin;
-impl Plugin for SimpleInitPlugin{
+pub struct ImageInitPlugin;
+impl Plugin for ImageInitPlugin{
     fn build(&self, app: &mut App) {
         app
-            .register_type::<SimpleInitShader>()
-            .register_type::<SimpleHexagonalInitShader>()
-            .register_init_shader::<SimpleInitShader>()
-            .register_init_shader::<SimpleHexagonalInitShader>();
+            .register_type::<ImageCarvedInitShader>()
+            .register_type::<ImageCarvedHexagonalInitShader>()
+            .register_type::<ImageCarvedInitSettings>()
+            .register_type::<ImageCarvedHexagonalSettings>()
+            .register_init_shader::<ImageCarvedInitShader>()
+            .register_init_shader::<ImageCarvedHexagonalInitShader>();
     }
 }
