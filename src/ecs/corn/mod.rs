@@ -50,7 +50,7 @@ impl Plugin for CornFieldComponentPlugin{
             stored::CornInitializationPlugin
         ));
 
-        app.add_systems(OnSpawnScene(LobbyScene), test_init);
+        // app.add_systems(OnSpawnScene(LobbyScene), test_init);
     }
 }
 

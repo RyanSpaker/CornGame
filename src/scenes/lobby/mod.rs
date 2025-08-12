@@ -1,8 +1,8 @@
-use avian3d::prelude::{Collider, RigidBody};
-use bevy::{pbr::FogVolume, prelude::*};
+use avian3d::prelude::{Collider, PhysicsTime, RigidBody};
+use bevy::{pbr::FogVolume, prelude::*, scene::SceneLoader};
 // use blenvy::{BlueprintInfo, GameWorldTag, SpawnBlueprint};
 use crate::{
-    ecs::{cameras::MainCamera, test_cube::TestCube},
+    ecs::{cameras::MainCamera, sunlight::{Moon, NoRotationChild, Sun}, test_cube::TestCube},
     systems::{
         scenes::{CornScene, CurrentScene, OnSpawnScene, SceneTransitionApp},
         util::default_resources::{SimpleMaterials, SimpleMeshes},
@@ -26,8 +26,15 @@ impl LobbyScene {
         parent: Res<CurrentScene>,
         shapes: Res<SimpleMeshes>,
         materials: Res<SimpleMaterials>,
+        mut ambient: ResMut<AmbientLight>,
         cli: Res<Cli>,
+        mut time: ResMut<Time<avian3d::prelude::Physics>>,
     ) {
+        //TODO can we make ambient not a resource
+        ambient.brightness = 0.2;
+
+        time.pause();
+        commands.spawn(TestCube);
         commands.entity(parent.0).with_children(|parent| {
             parent.spawn((
                 Name::from("Floor"),
@@ -37,16 +44,37 @@ impl LobbyScene {
                 // MeshMaterial3d(materials.white.clone()),
                 RigidBody::Static,
             ));
+            // parent.spawn((
+            //     Name::from("Box"),
+            //     Mesh3d(shapes.cube.clone()),
+            //     MeshMaterial3d(materials.red.clone()),
+            // ));
             parent.spawn((
-                Name::from("Box"),
-                Mesh3d(shapes.cube.clone()),
-                MeshMaterial3d(materials.red.clone()),
+                Sun, 
+                DirectionalLight{
+                    illuminance: 1000.0,  
+                    ..default()
+                },
+                Transform::from_translation(Vec3::new(-1.0,-1.0,-1.0) * 2000.0).looking_at(Vec3::ZERO, Vec3::Y),
+            )).with_child((
+                Transform::from_scale(Vec3::splat(45.0)),
+                NoRotationChild, //TODO should make directional light the child instead
+                LoadScene::new("models/sky.glb#sun")
             ));
             parent.spawn((
-                DirectionalLight::default(),
-                Transform::from_translation(Vec3::ONE).looking_at(Vec3::ZERO, Vec3::Y),
+                Moon, 
+                DirectionalLight{
+                    illuminance: 30.0,  
+                    ..default()
+                },
+                Transform::from_translation(Vec3::new(-1.0, 1.0, -2.0).normalize() * 1000.0).looking_at(Vec3::ZERO, Vec3::Y).with_scale(Vec3::splat(30.0)),//scale does weird things here
+                LoadScene::new("models/sky.glb#moon")
             ));
+            parent.spawn((Transform::from_xyz(0.0, 500.0, 0.0).with_scale(Vec3::splat(10.0)), LoadScene::new("models/sky.glb#sky")));
+
+
             parent.spawn((
+                // TODO keep centered on player
                 Name::from("Fog Volume"),
                 FogVolume {
                     density_factor: 0.0001,
@@ -67,8 +95,6 @@ impl LobbyScene {
                     // EDIT: weirder things happen with nested RigidBodys
                 ));
             }
-
-            parent.spawn(TestCube);
         });
     }
 }

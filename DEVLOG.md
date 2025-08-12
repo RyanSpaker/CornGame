@@ -263,13 +263,8 @@ add this to .git/config
 
 ```
 [credential]
-	helper = /run/current-system/sw/bin/git-credential-manager
-	credentialStore = plaintext
-	useHttpPath = true
+	helper = /run/current-system/sw/bin/git-credential-managerbevy_cli
 ```
-
-the first time you clone you should be able to use a password
-see clone->generate git credentials
 
 # Wed Apr 30 04:20:40 PM EDT 2025
 bevy trace breaks asset loader.
@@ -367,7 +362,8 @@ Needed for demo:
 - [x] merge ryan    
 - [ ] 0.16
   - [x] editor compiling
-  - [ ] reimplement bevy-inspector-egui tweaks
+    - [ ] fix editor camera
+    - [ ] reimplement bevy-inspector-egui tweaks
   - [ ] test lightyear
 - [ ] blenvy -> skein
   - [x] rework cctest
@@ -386,9 +382,138 @@ Needed for demo:
 Then get it working in the browser?
 Then cleanup?
 
-# 
+# Wed May 28 04:33:14 PM EDT 2025
 wasm:
-- cringe: 
 
-somehow fucked up the flake.nix and getting:
+somehow messed up the flake.nix and getting:
 `target/debug/corn_game: error while loading shared libraries: libudev.so.1: cannot open shared object file: No such file or directory`
+
+ANSWER: https://doc.rust-lang.org/cargo/reference/config.html#buildrustflags
+
+We need webgpu for compute shaders.
+Webgpu is experimental and disabled by default in chrome for linux (stable on windows/mac). Webgpu in firefox is nightly-only.
+
+I ran the bevy_new_2d template with webgpu and [bevy_cli]. It **totally lags out** in chromium unless I start it with `chromium --enable-features=Vulkan --enable-unsafe-webgpu`. Doesn't work in brave, still lags.
+
+I get 404 not found for all our assets. It appears to be trying to load from imported_assets which might be the issue.
+
+[bevy_cli]: https://github.com/TheBevyFlock/bevy_cli
+
+# Thu May 29 04:19:04 PM EDT 2025
+daily annoyances: https://github.com/rust-lang/rust/issues/34162
+
+# Wed Jun  4 04:04:20 AM EDT 2025
+I am reimplementing animations. The new AnimationContext will be used to mark in blender what object is the animation root, and on the bevy side will collect all the info needed to play animations by name. (find child AnimationTargets, build AnimationGraph, etc.)
+
+I also added a QueryParam to make working with the info easier.
+
+I also added a custom view impl for the editor so you can play animations.
+Meanwhile I have update the editor to support picking and outlines for selected entities.
+- [x] there is a bug with picking which is either due to camera viewport not covering full window, ~~or perhaps picking is using the main camera instead of the editor camera.~~
+  - https://github.com/bevyengine/bevy/issues/18856 16.1 seems to have fixed it
+
+now, why aren't interactions working.
+A: because I didn't uncomment plugins in the system
+
+# Thu Jun 12 01:57:48 PM EDT 2025
+
+Trying to get lightyear/main working. 
+Having trouble starting the server. Turns out ConnectionPlugin is only added by netcode feature (surely a bug)
+
+Can't get client to connect. The connection fails but there are no error messages on client or server.
+
+I'm not a fan of events to enact behavior, if nothing is listening (because of missing plugin) they fail silently. And there is no record of it.
+Much better is marker components which get removed by the system which reacts to them. So we can see in the inspector that it was not handled.
+
+# Thu Jun 19 06:47:32 PM EDT 2025
+something seems broken with the avian transform->position sync. Changing transform in editor doesn't update position.
+
+this is because lightyear_avian handles sync itself and disables transform->position by default, as supposedly this still causes issues.
+
+switched to replicating position/rotation as per example and it works. Perhaps I can ensure all replicated entities which move have position (even without rigidbody). I have confirmed with perrywink that lightyears replacement for SyncPlugin handles position regardless of replication or rigidbody components.
+
+- [ ] TODO: make editor use any relation for hierarchy, so ClientOf shows as child, as well as AeronetLinkOf. deal with cycles somehow.
+
+Had to tweak lightyear alot to get working. Going to try pulling main to see if stuff is fixed.
+
+# Thu Jul 17 07:04:02 PM EDT 2025 
+Setting lightyear up with host-client bc it seems the path of least resistance. Might want in processes dedicated server instead, to avoid bugs.
+
+- [x] reimplement character networking
+- [x] implement message for light switch
+- [ ] get item pickup working
+- [x] get working with dedicated server
+- [ ] web demo
+  
+options for character:
+- network inputs
+- network animation state
+
+options for light switch
+- custom message
+- network trigger
+
+If I can just get through this annoying bit
+
+# Thu Jul 17 07:04:15 PM EDT 2025
+we should have a bug item that runs away like in white knuckle
+
+# Tue Jul 29 03:29:51 AM EDT 2025
+wasm build is working, also have networking working with dedicated server.
+dedicated server currently doesn't load any of the corngame plugins except networking.
+dedicated server has to load RenderPlugin etc, because random shit expects it's resources to be registered.
+- [ ] fix these issues.
+  
+- [ ] get wasm client talking to the dedicated server.
+- [ ] dummy client (headless? how?) 
+      have player randomly walk around and interact with stuff.
+- [ ] server state ownership / level spawning / etc.
+- [ ] in process native server
+- [ ] host-client fallback
+- [ ] debug for dedicated server
+
+ALSO: what is with physics going haywire when framerate drops (such as with the bug when two windows are open)
+
+# Wed Jul 30 03:22:09 AM EDT 2025 
+turns out lag at browser load is probably shader compilation.
+does not seem that browser is caching them: **why?**
+
+webgpu requires https if not localhost. setting up reverse proxy on my desktop. with aradia.xn--pxaaa.com/4000
+obviously also needed to set up router port forwarding
+annoying 
+
+networked character controller is working in browers, but only because I increased the client timeout. 
+TODO: why does networking break on reconnect.
+
+```
+# after reconnect (repeated)
+2025-07-30T06:43:28.154220Z  WARN lightyear_netcode::error: Netcode error: ClientEntityInUse(138v3#12884902026)
+
+2025-07-30T06:52:07.972991Z ERROR lightyear_sync::ping::manager: Received a ping that is not present in the ping-store anymore
+
+# after disconnect (repeated)
+2025-07-30T06:54:59.033429Z  WARN lightyear_netcode::error: Netcode error: Packet(TokenExpired)
+```
+
+# Mon Aug  3 12:50:31 AM EDT 2025
+options for lightswitch
+1. message and custom handler
+   - same as replicate trigger
+2. replicate state and respond to change with animation
+3. message/trigger and process state change on server
+
+I think 1 is simplest for now. But I'll need the server to preserve state for reconnecting clients.
+
+Consider:
+- item pickup
+- light switch sequence
+- key / door
+- monster death
+
+Everything should be client auth so no lag. Server may need to arbitrate.
+
+# Mon Aug  4 12:50:39 AM EDT 2025
+Got basic message + custom handler working for light switch flip.
+It sends state (on off bool) and uid of switch. This deals with desync in the minimal viable way. The message is sent in the same system which triggers the Interact event. 
+- [ ] split interations into two events or event + command and move network stuff out of input processing.
+- [ ] trace level logs show lightyear senting receiving tons of pings/pongs, and a `id: None`

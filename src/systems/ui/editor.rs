@@ -1,9 +1,38 @@
 
 use std::env;
+use std::sync::Arc;
 
 use bevy::prelude::*;
 use bevy_editor_pls::controls::{self, EditorControls};
-use bevy_editor_pls::{spawn_default_windows, EditorPlugin, EguiPlugin};
+use bevy_editor_pls::editor_window::{EditorWindow, EditorWindowContext};
+use bevy_editor_pls::{egui, spawn_default_windows, AddEditorWindow, EditorPlugin, EguiPlugin};
+use parking_lot::RwLock;
+
+use crate::scenes::LoadScene;
+use crate::systems::network::NetworkWindow;
+
+fn eguibad<T: Send + Sync + Default + 'static>(ui: &mut egui::Ui, id: egui::Id) -> Arc<RwLock<T>>{
+    ui.ctx().data_mut(|d| d.get_temp_mut_or_insert_with::<Arc<RwLock<T>>>(id, Default::default).clone())
+}
+
+#[derive(Debug, Clone, Default, Component)]
+struct SceneLoadWindow;
+
+impl EditorWindow for SceneLoadWindow {
+    fn ui(&self, world: &mut World, _cx: EditorWindowContext, ui: &mut egui::Ui) {
+        // TODO tab complete
+        let buffer = eguibad::<String>(ui, ui.auto_id_with("path"));
+        ui.horizontal(|ui| {
+            ui.label("Scene to load:");
+            ui.text_edit_singleline(&mut *buffer.write());
+        });
+
+        // Add a button to trigger scene loading
+        if ui.button("Load Scene").clicked() {
+            world.spawn(LoadScene::new(&**buffer.read()));
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct MyEditorPlugin;
@@ -15,7 +44,9 @@ impl Plugin for MyEditorPlugin{
             });
             app.add_plugins(EditorPlugin::default());
             app.insert_resource(editor_controls());
+            app.add_editor_window::<SceneLoadWindow>();
             app.add_systems(Startup, spawn_default_windows);
+            app.add_plugins(NetworkWindow);
         }
 
         app.add_systems(Startup, |mut window: Query<&mut Window>, cli: Res<crate::Cli>|{

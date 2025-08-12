@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod soundtrack;
 pub mod character;
 pub mod interactions;
 pub mod network;
@@ -6,6 +7,7 @@ pub mod physics;
 pub mod scenes;
 pub mod ui;
 pub mod util;
+pub mod animation_context;
 
 use bevy::{pbr::FogVolume, prelude::*};
 
@@ -21,6 +23,7 @@ impl Plugin for CornSystemsPlugin {
             network::CornNetworkingPlugin,
             character::MyCharacterPlugin,
             interactions::InteractPlugin,
+            animation_context::plugin,
         ));
         // TODO reimplement edge detection
         // .add_plugins((BlenvyPlugin::default(), EdgeDetectionPlugin::default()));

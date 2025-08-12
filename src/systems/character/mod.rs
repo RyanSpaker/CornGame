@@ -19,12 +19,13 @@ use avian3d::prelude::*;
 use controller::{look_handler, CornGameCharController};
 use leafwing_input_manager::plugin::InputManagerPlugin;
 use lightyear::prelude::{
-    AppComponentExt,
-    Replicated,
+    AppComponentExt, Client, DisableReplicateHierarchy, Replicated
 };
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::cameras::MainCamera;
+use crate::scenes::LoadScene;
+use crate::systems::network::ReplicateAuto;
 
 use self::input::CornCharacterInput;
 
@@ -58,7 +59,7 @@ impl Plugin for MyCharacterPlugin {
         app.add_systems(
             FixedUpdate, // Update was causing jitter. but it might have just been gizmos.
             self::controller::round_velocity
-                .in_set(lightyear::client::input::InputSystemSet::WriteClientInputs),
+                // .in_set(lightyear::client::input::InputSystemSet::WriteClientInputs),
         );
         app.add_systems(Update, look_handler);
         // app.add_systems(Update, animation_test); //TODO skein
@@ -82,10 +83,17 @@ impl Plugin for MyCharacterPlugin {
         );
 
         app.register_type::<Character>();
-        app.register_component::<Character>(lightyear::prelude::ChannelDirection::Bidirectional);
         app.add_systems(FixedPostUpdate, Player::init_network_character);
 
         app.add_plugins(animation::plugin);
+    }
+}
+
+pub struct CharacterNetworkPlugin;
+impl Plugin for CharacterNetworkPlugin {
+    fn build(&self, app: &mut App) {
+        app.register_component::<Character>();
+        app.register_component::<MyAnimationState>();
     }
 }
 
@@ -117,17 +125,18 @@ impl Player {
             },
             // MaxAngularSpeed(2.0*PI * 10.0),
             CornCharacterInput::default_input_map(),
-            // BlueprintInfo::from_path("blueprints/construction_worker.glb"),
-            // SpawnBlueprint,
             DehydratedChild::new(|_| {
                 (
                     Transform::from_xyz(0.0, -1.5, 0.0),
+                    LoadScene::new("models/mixamo.glb"),
+
                     // BlueprintInfo::from_path("blueprints/construction_worker.glb"), //TODO skein
                     // SpawnBlueprint,
-                    ReplicateOtherClients(true),
+                    // ReplicateOtherClients(true),
                 )
             }),
-            ReplicateOtherClients(false),
+            ReplicateAuto,
+            // ReplicateOtherClients(false),
             // SyncTarget {
             //     interpolation: lightyear::prelude::NetworkTarget::All,
             //     ..default()
@@ -162,9 +171,24 @@ impl Player {
     pub fn init_network_character(
         mut commands: Commands,
         query: Query<Entity, (Added<Character>, With<Replicated>)>,
+        client: Query<&Client>,
     ) {
+        if client.is_empty() {
+            return
+        }
+        
         for entity in query.iter() {
-            commands.entity(entity).insert(RigidBody::Kinematic);
+            commands.entity(entity).insert((
+                Name::new("Player R"),
+                RigidBody::Kinematic,
+                //bevy_tnua_avian3d::TnuaAvian3dSensorShape(Collider::cylinder(0.2, 0.0)), //XXX configure this in CornGameCharacterController
+                DehydratedChild::new(|_| {
+                    (
+                        Transform::from_xyz(0.0, -1.5, 0.0),
+                        LoadScene::new("models/mixamo.glb"),
+                    )
+                })
+            ));
         }
     }
 }
@@ -191,6 +215,7 @@ struct SpawnQuery {
 }
 
 // TODO refactor as command
+// TODO do character controller calclation to place character at correct height + valid location
 fn move_player_to_spawn_obs(
     trigger: Trigger<SpawnPlayerEvent>,
     mut camera: Query<
@@ -307,7 +332,7 @@ fn spawn_dehydrated_child_obs(
 // use blenvy::{BlueprintAnimationPlayerLink, BlueprintInfo, SpawnBlueprint};
 // use blenvy::BlueprintAnimations;
 
-use super::network::ReplicateOtherClients;
+// use super::network::ReplicateOtherClients;
 
 // TODO: reimplment animation stuff for skein
 // KEEP this, default behavior should be to play animations

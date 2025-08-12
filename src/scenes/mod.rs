@@ -2,6 +2,7 @@
 //! Mainly consists of OnEnter(state) and OnExit(state) functions and spawning entities that are statescoped
 pub mod lobby;
 pub mod main_menu;
+pub mod resolver;
 
 use bevy::{
     core_pipeline::{bloom::Bloom, tonemapping::Tonemapping},
@@ -24,7 +25,7 @@ pub struct LoadScene {
     scene: String,
 }
 impl LoadScene {
-    fn new<'a>(path: impl Into<&'a str>) -> Self {
+    pub fn new<'a>(path: impl Into<&'a str>) -> Self {
         let mut path = path.into().split("#");
         Self {
             file: path.next().unwrap_or_default().to_string(),
@@ -53,7 +54,14 @@ impl LoadScene {
                 let gltf = gltf.get(h.0.id()).unwrap();
                 let path = asset_server.get_path(h.0.id()).map(|p| p.to_string());
                 debug!(path, "{:#?}", gltf);
-                match gltf.named_scenes.get(&l.scene.clone().into_boxed_str()) {
+
+                let scene = if l.scene != "" {
+                    l.scene.clone().into_boxed_str()
+                } else {
+                    gltf.named_scenes.keys().next().unwrap().clone()
+                };
+
+                match gltf.named_scenes.get(&scene) {
                     Some(s) => {
                         commands.entity(entity).insert(SceneRoot(s.clone()));
                     }
@@ -71,7 +79,7 @@ impl LoadScene {
 
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
-pub struct SceneGltf(Handle<Gltf>);
+pub struct SceneGltf(pub Handle<Gltf>);
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, Reflect, Component)]
 #[reflect(Component)]
@@ -95,7 +103,7 @@ impl Plugin for CornScenesPlugin {
                 SpawnScene, //PostUpdate causes falling through floor
                 LoadScene::load_handler.before(scene_spawner),
             )
-            .add_plugins((main_menu::MainMenuPlugin, lobby::LobbyPlugin));
+            .add_plugins((main_menu::MainMenuPlugin, lobby::LobbyPlugin, bevy_dog::plugin::DoGPlugin));
     }
 }
 
@@ -112,21 +120,23 @@ fn spawn_global_entities(mut commands: Commands) {
         }),
         // TODO need way to specify camera settings as asset, at commandline, or as part of scene
         // bevy_edge_detection::EdgeDetection::default(), //post-process shader
+        bevy_dog::settings::DoGSettings::default(),
+        bevy_dog::settings::PassesSettings::default(),
         VolumetricFog {
             ambient_intensity: 0.0,
             ..default()
         },
-        ScreenSpaceReflections::default(),
+        // ScreenSpaceReflections::default(), // problems on wasm
         CornSensor::default(),
         FlyCam,
         IsDefaultUiCamera,
     ));
 
-    //if cli.menu {
+    if cli.menu {
         commands.spawn(main_menu::MainMenuScene.get_bundle());
-    //} else if !cli.scenes.is_empty() {
-    //    println!("B");
-    //    commands.spawn(LobbyScene.get_bundle());
-    //}
+    } else if !cli.scenes.is_empty() || cli.lobby {
+        commands.spawn(LobbyScene.get_bundle());
+    }
+    
     commands.insert_resource(UiScale(1.0));
 }
