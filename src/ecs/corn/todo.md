@@ -7,3 +7,4 @@
 - Setup some sort of stencil operation to allow texture sampling for the corn to be deferred
 - Setup timing for the gpu tasks
 - Remake vote-scan-compact so that Corn data is generated there every frame isntead of in init shaders
+- Add back wind to rendering

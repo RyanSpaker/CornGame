@@ -6,6 +6,7 @@ pub mod ui;
 pub mod character;
 pub mod physics;
 pub mod interactions;
+pub mod options;
 
 use bevy::{pbr::FogVolume, prelude::*};
 use bevy_edge_detection::EdgeDetectionPlugin;
