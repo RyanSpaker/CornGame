@@ -16,7 +16,7 @@ use frunk::labelled::chars::{N, Q};
 use lightyear::{
     connection::{identity::{is_client, is_host_server}, server::is_server},
     prelude::{
-        server::is_headless_server, ActionsChannel, AppMessageExt, Client, MessageSender, NetworkDirection, NetworkTarget, ServerMultiMessageSender
+        ActionsChannel, AppMessageExt, Client, MessageSender, NetworkDirection, NetworkTarget, ServerMultiMessageSender
     },
 };
 use serde::{Deserialize, Serialize};

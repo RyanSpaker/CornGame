@@ -10,3 +10,6 @@
 [submodule "forks/bevy-tnua"]
 	path = forks/bevy-tnua
 	url = git@github.com:segfault-s-pull-requests/bevy-tnua.git
+[submodule "forks/avian"]
+	path = forks/avian
+	url = git@github.com:segfault-s-pull-requests/avian.git

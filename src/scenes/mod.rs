@@ -120,8 +120,8 @@ fn spawn_global_entities(mut commands: Commands) {
         }),
         // TODO need way to specify camera settings as asset, at commandline, or as part of scene
         // bevy_edge_detection::EdgeDetection::default(), //post-process shader
-        bevy_dog::settings::DoGSettings::default(),
-        bevy_dog::settings::PassesSettings::default(),
+        // bevy_dog::settings::DoGSettings::OUTLINE_DITHER,
+        // bevy_dog::settings::PassesSettings::default(),
         VolumetricFog {
             ambient_intensity: 0.0,
             ..default()
