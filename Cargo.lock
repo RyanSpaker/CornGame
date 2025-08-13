@@ -1049,6 +1049,7 @@ dependencies = [
 [[package]]
 name = "bevy_dog"
 version = "0.1.0"
+source = "git+https://github.com/arne-berner/bevy_dog?branch=main#901ed936c97866b50e4fec0b9ee5f587c9153887"
 dependencies = [
  "bevy",
  "bytemuck",

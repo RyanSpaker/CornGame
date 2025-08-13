@@ -117,6 +117,7 @@ impl AnimationContext {
                 .insert(AnimationPlayer::default())
                 .insert(AnimationTransitions::default())
                 .insert(AnimationGraphHandle(graph));
+
         }
 
         Ok(())
@@ -130,9 +131,30 @@ impl AnimationContext {
     }
 }
 
+#[derive(Debug, Component, Reflect)]
+#[reflect(Component)]
+pub struct AutoPlayAnimation;
+
+fn do_autoplay(
+    mut query: Query<(Entity, AnimationParams), With<AutoPlayAnimation>>,
+    mut commands: Commands
+) -> Result{
+    for (entity, mut anim) in query.iter_mut(){
+        if anim.player.playing_animations().next().is_none() {
+            let Some((name,_)) = anim.context.named_animations.iter().next() else { continue };
+
+            anim.play(name, Duration::ZERO)?.repeat();
+            commands.entity(entity).remove::<AutoPlayAnimation>();
+        }
+    }
+    Ok(())
+}
+
 pub fn plugin(app: &mut App) {
     app.add_systems(Update, AnimationContext::init_system);
+    app.add_systems(Update, do_autoplay);
     app.register_type::<AnimationContext>();
+    app.register_type::<AutoPlayAnimation>();
     app.register_type_data::<AnimationContext, bevy_editor_pls::InspectorEguiImpl>();
 }
 

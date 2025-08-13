@@ -38,8 +38,11 @@ impl Plugin for CornNetworkingPlugin {
         #[cfg(not(target_family = "wasm"))]
         app.add_plugins(server::ServerPlugins { tick_duration });
         app.add_plugins(client::ClientPlugins { tick_duration });
-        let mut channels = app.world_mut().resource_mut::<ChannelRegistry>();
-        channels.settings_mut::<PingChannel>().unwrap().send_frequency = Duration::from_millis(1000);
+
+        // EAS: this didn't work, and periwink said lowering ping freq was a bad idea
+        // settings_mut was a function I added and I deleted it
+        //let mut channels = app.world_mut().resource_mut::<ChannelRegistry>();
+        //channels.settings_mut::<PingChannel>().unwrap().send_frequency = Duration::from_millis(1000);
 
         app.add_systems(Update, network_on_start_system.run_if(run_once));
         app.insert_resource(NetworkCrap {
