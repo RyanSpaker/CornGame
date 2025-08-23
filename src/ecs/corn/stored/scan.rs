@@ -1,4 +1,4 @@
-use std::{num::NonZero, sync::atomic::Ordering};
+use std::sync::atomic::Ordering;
 use bevy::{
     asset::AsAssetId, core_pipeline::core_3d::graph::Core3d, ecs::system::lifetimeless::Read, pbr::graph::NodePbr, prelude::*, 
     render::{
@@ -87,9 +87,6 @@ struct ConfigData{
     vertex_offset: u32,
     _padding: u32
 }
-impl ConfigData{
-    pub const DATA_SIZE: NonZero<u64> = NonZero::new(160).unwrap();
-}
 
 /// Custom component containing the global transform of the corn field.
 #[derive(Default, Debug, Clone, PartialEq, Reflect, Component)]
@@ -114,7 +111,7 @@ impl StoredScanConfigBuffer{
         for entity in query.iter(){
             commands.entity(entity).insert(Self(render_device.create_buffer(&BufferDescriptor{
                 label: Some("Corn Field Scan Prepass Config Buffer"), 
-                size: ConfigData::DATA_SIZE.into(), 
+                size: size_of::<ConfigData>() as u64, 
                 usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST | BufferUsages::COPY_SRC, 
                 mapped_at_creation: false
             })));

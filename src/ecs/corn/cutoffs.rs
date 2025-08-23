@@ -74,7 +74,7 @@ impl LodCutoffBuffer{
     pub fn new(cutoffs: Vec<f32>, render_device: &RenderDevice) -> Self{
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor{
             label: Some("Corn Field Lod Cutoff Buffer"),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
             contents: bytemuck::cast_slice::<f32, u8>(cutoffs.as_slice())
         });
         Self(buffer)

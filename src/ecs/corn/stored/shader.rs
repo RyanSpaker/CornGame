@@ -1,8 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use bevy::{prelude::*, render::{
-    render_graph::*, render_resource::*, 
-    renderer::{RenderContext, RenderDevice}, 
-    Render, RenderApp, RenderSet
+    render_asset::RenderAssets, render_graph::*, render_resource::*, renderer::{RenderContext, RenderDevice}, texture::GpuImage, Render, RenderApp, RenderSet
 }};
 use crate::{ecs::corn::{buffer::{InstanceBuffer, VertexInstanceBuffer}, shader::*}, util::extract_changed::ExtractChangedComponentPlugin};
 
@@ -18,6 +16,10 @@ pub trait AsCornInitShader: Component+Sized+AsCornShader{
     fn get_invocation_count(settings: &Self::Settings) -> UVec3;
     /// Function which converts a settings component into a collection of settings buffers
     fn get_settings_buffer(settings: &Self::Settings, render_device: &RenderDevice) -> Vec<Buffer>;
+    /// Appends the texture bindgroups entries necessary for this shader
+    fn append_texture_bindgroups<'a>(_settings: &Self::Settings, _image_assets: &'a RenderAssets<GpuImage>, _entries: &mut Vec<BindGroupEntry<'a>>) {}
+    /// Determines if all assets are loaded for this shader
+    fn check_assets_loaded(_settings: &Self::Settings, _assets: &RenderAssets<GpuImage>) -> bool {true}
 }
 
 /// Tag component for shaders that initialize the corn
@@ -35,6 +37,7 @@ impl CornInitInvocation{
         mut commands: Commands
     ){
         for (entity, settings) in settings.iter(){
+            if S::get_instance_count(settings) == 0 {warn!(name: "Invalid 0 instances", ?entity, ?settings); continue;}
             commands.entity(*shader).with_child((
                 Self(entity),
                 settings.clone()
@@ -94,15 +97,21 @@ impl CornInitBinding{
         query: Query<(Entity, &S::Settings, &InstanceBuffer, &CornInitBuffers), (With<CornInitInvocation>, Without<Self>)>,
         shader: Single<&ShaderPipelineResources, (With<CornInitShader>, With<S>)>,
         render_device: Res<RenderDevice>,
+        images: Res<RenderAssets<GpuImage>>,
         mut commands: Commands
     ){
         for (entity, settings, instance_buffer, settings_buffers) in query.iter(){
+            if !S::check_assets_loaded(settings, &images) {continue;}
+
             let dispatch_count = S::get_invocation_count(settings);
             let finished = AtomicBool::new(false);
+
             let mut entries = vec![BindGroupEntry{binding: 0, resource: instance_buffer.buffer.as_entire_binding()}];
             for (i, buffer) in settings_buffers.0.iter().enumerate(){
                 entries.push(BindGroupEntry { binding: (i+1) as u32, resource: buffer.as_entire_binding() });
             }
+            S::append_texture_bindgroups(settings, &images, &mut entries);
+            
             let bindgroup = render_device.create_bind_group(
                 Some((S::get_label().into().to_string() + " Bind Group").as_str()), 
                 &shader.layout,
@@ -122,7 +131,9 @@ impl CornInitBinding{
             commands.entity(entity).queue(|mut entity: EntityWorldMut|{
                 let Some((invocation, instance, vib)) = 
                     entity.take::<(CornInitInvocation, InstanceBuffer, VertexInstanceBuffer)>() else {return;};
-                entity.into_world_mut().entity_mut(invocation.0).insert((instance, vib, UseStoredScanPipeline));
+                if let Ok(mut entity) = entity.into_world_mut().get_entity_mut(invocation.0) {
+                    entity.insert((instance, vib, UseStoredScanPipeline));
+                }
             }).despawn();
         }
     }

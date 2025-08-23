@@ -4,14 +4,12 @@ pub mod asset;
 pub mod cutoffs;
 pub mod render;
 pub mod stored;
+pub mod sensor;
 
 use bevy::{prelude::*, render::{
     batching::NoAutomaticBatching, extract_component::{ExtractComponent, ExtractComponentPlugin}, view::NoFrustumCulling
 }};
-use cutoffs::LodCutoffs;
-use render::{ExtendWithCornMaterial, StdCornMaterial};
-use stored::simple::SimpleHexagonalInitShader;
-use crate::{scenes::lobby::LobbyScene, systems::{scenes::OnSpawnScene, util::default_resources::SimpleMaterials}, util::observer_ext::ObserverParent};
+use crate::util::observer_ext::ObserverParent;
 
 /// Top level Tag Component for Corn Fields. 
 /// Each entity with a CornField and CornPositionInitializer Component has a corresponding Buffer of corn stalk instances in the render app.
@@ -47,39 +45,9 @@ impl Plugin for CornFieldComponentPlugin{
             asset::CornModelPlugin, 
             cutoffs::CornCutoffPlugin,
             render::CornRenderPlugin,
-            stored::CornInitializationPlugin
+            stored::CornInitializationPlugin,
         ));
 
-        app.add_systems(OnSpawnScene(LobbyScene), test_init);
+        app.add_plugins(sensor::CornSensorPlugin);
     }
-}
-
-
-
-#[derive(Clone, Component, Default, Debug, Reflect)]
-pub struct CornSensor{
-    pub is_in_corn: f32
-}
-
-pub fn test_init(
-    mut commands: Commands,
-    default_resources: Res<SimpleMaterials>,
-    std_mats: Res<Assets<StandardMaterial>>,
-    mut corn_mats: ResMut<Assets<StdCornMaterial>>
-){
-    let mat = std_mats.get(default_resources.green.id()).unwrap().clone().extend_with_corn();
-    commands.spawn((
-        Name::from("Test Corn Field"),
-        CornField,
-        SimpleHexagonalInitShader::new(
-            Vec3::ZERO, 
-            Vec2::ONE*10.0, 
-            1.0, 
-            Vec2::new(0.9, 1.1), 
-            0.0
-        ),
-        Transform::from_xyz(0.0, 0.0, 0.0),
-        MeshMaterial3d(corn_mats.add(mat)),
-        LodCutoffs(vec![20.0, 50.0, 100.0, 200.0, 500.0, 1000.0])
-    ));
 }

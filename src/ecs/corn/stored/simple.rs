@@ -20,7 +20,6 @@ pub struct SimpleInitShader{
 impl SimpleInitShader{
     /// Returns new Corn Field
     pub fn new(center: Vec3, half_extents: Vec2, resolution: UVec2, height_range: Vec2, rand_offset: f32) -> Self{
-        assert!(resolution != UVec2::ZERO, "Tried to create empty corn field!");
         Self{
             center, 
             half_extents, 
@@ -110,8 +109,7 @@ impl From<&SimpleInitShader> for CornInitShaderSettings{
     fn from(value: &SimpleInitShader) -> Self {
         Self { 
             origin: value.get_origin(),
-            height_range: value.height_range.y - value.height_range.x,
-            minimum_height: value.height_range.x,
+            height_range: value.height_range,
             step_size: value.get_step(),
             resolution_width: value.resolution.x,
             random_settings: value.get_random_offset_range(),
@@ -238,17 +236,15 @@ impl AsCornInitShader for SimpleHexagonalInitShader{
     }
     
     fn get_invocation_count(settings: &Self::Settings) -> UVec3 {
-        let expanded_res = settings.get_expanded_resolution();
-        let width = expanded_res.x.div_ceil(2);
-        UVec3::new(width.div_ceil(16), expanded_res.y.div_ceil(16), 1)
+        let instances = Self::get_instance_count(settings);
+        UVec3::new(instances.div_ceil(256) as u32, 1, 1)
     }
 }
 impl From<&SimpleHexagonalInitShader> for CornInitShaderSettings{
     fn from(value: &SimpleHexagonalInitShader) -> Self {
         let mut output = Self {
             origin: value.get_origin(),
-            height_range: value.height_range.y - value.height_range.x,
-            minimum_height: value.height_range.x,
+            height_range: value.height_range,
             step_size: value.get_step(),
             resolution_width: value.get_expanded_resolution().x,
             random_settings: Vec2::new(value.get_random_offset_range(), if value.half_extents.x >= value.half_extents.y {0.0} else {1.0}),

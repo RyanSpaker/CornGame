@@ -3,17 +3,17 @@ pub mod scan;
 pub mod simple;
 pub mod image;
 
-use bevy::{prelude::*, render::{extract_component::{ExtractComponent, ExtractComponentPlugin}, renderer::RenderDevice, sync_world::RenderEntity, Extract, Render, RenderApp, RenderSet}};
+use bevy::{prelude::*, render::{extract_component::{ExtractComponent, ExtractComponentPlugin}, renderer::RenderDevice, Render, RenderApp, RenderSet}};
 use bytemuck::{Pod, Zeroable};
 use image::ImageInitPlugin;
-use shader::{AsCornInitShader, CornInitShaderPlugin};
+use shader::CornInitShaderPlugin;
 use simple::SimpleInitPlugin;
 use scan::CornStoredScanPlugin;
 use super::buffer::{CornData, InstanceBuffer, VertexInstanceBuffer};
 
 pub mod prelude{
-    pub use super::{InitialCornData, RemakeCornField};
-    pub use super::image::{ImageCarvedInitSettings, ImageCarvedHexagonalSettings};
+    pub use super::InitialCornData;
+    pub use super::image::{ImageCarvedSettings, ImageCarvedHexagonalSettings};
     pub use super::simple::{SimpleInitSettings, SimpleHexagonalSettings};
 }
 
@@ -22,8 +22,7 @@ pub mod prelude{
 pub struct CornInitShaderSettings{
     origin: Vec3,
     resolution_width: u32,
-    height_range: f32,
-    minimum_height: f32,
+    height_range: Vec2,
     step_size: Vec2,
     random_settings: Vec2,
     uv_scale: Vec2

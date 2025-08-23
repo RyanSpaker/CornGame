@@ -245,7 +245,7 @@ impl CornModifyTask{
 pub struct CornModelIndirectBuffer(pub Buffer, pub Vec<(usize, usize)>);
 impl CornModelIndirectBuffer{
     /// Creates a new buffer from lod info
-    pub fn new(lod_info: Vec<(usize, usize)>, render_device: &RenderDevice) -> Self{
+    pub fn new(lod_info: &Vec<(usize, usize)>, render_device: &RenderDevice) -> Self{
         let data: Vec<u32> = lod_info.iter().map(|(total, start)| 
             [*total as u32, 0, *start as u32, 0, 0]
         ).flatten().collect();
