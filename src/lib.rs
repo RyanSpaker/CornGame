@@ -110,6 +110,7 @@ impl Plugin for CornGame {
                 scenes::CornScenesPlugin,
                 ecs::CornECSPlugin,
                 bevy_skein::SkeinPlugin::default(),
+                bevy_mod_skinned_aabb::SkinnedAabbPlugin::default(), // fixes issue with frustum cull of animated objects by recomputing aabb every frame, minor perf hit supposedly
             ));
 
             app.add_debug_plugins((

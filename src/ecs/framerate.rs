@@ -1,7 +1,5 @@
 use bevy::{
-    prelude::*,
-    color::palettes::css,
-    diagnostic::{Diagnostic, DiagnosticPath, DiagnosticsStore, FrameTimeDiagnosticsPlugin}
+    color::palettes::css, dev_tools::picking_debug::{DebugPickingMode, DebugPickingPlugin}, diagnostic::{Diagnostic, DiagnosticPath, DiagnosticsStore, FrameTimeDiagnosticsPlugin}, picking::hover::HoverMap, prelude::*
 };
 use super::cameras::MainCamera;
 
@@ -19,6 +17,41 @@ pub fn update_position(
     }
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component)]
+pub struct DiagPicking;
+
+pub fn update_picking(
+    mut query: Query<&mut TextSpan, With<DiagPicking>>,
+    hovermap: Res<HoverMap>,
+    name: Query<&Name>,
+    parent: Query<&ChildOf>,
+){  
+    let mut t = String::new();
+    for (pointer, hovermap) in hovermap.iter() {
+        for (entity, hit) in hovermap.iter(){
+            let mut path = String::new();
+
+            let mut ls = parent.iter_ancestors(*entity).collect::<Vec<_>>();
+            ls.reverse();
+            ls.push(*entity);
+
+            for e in ls{
+                path += &e.to_string();
+                if let Ok(name) = name.get(*entity) {
+                    path += "#";
+                    path += name.as_str();
+                }
+                path += "/";
+            }
+            t += &format!("{}", path);
+        }
+    }
+
+    for mut text in query.iter_mut(){
+        text.0 = t.to_string();
+    }
+}
+
 pub struct FrameRatePlugin;
 impl Plugin for FrameRatePlugin{
     fn build(&self, app: &mut bevy::prelude::App) {
@@ -27,7 +60,24 @@ impl Plugin for FrameRatePlugin{
             .add_systems(Update, (
                 update_diagnostics,
                 update_position,
+                update_picking,
             ));
+        app.add_plugins(DebugPickingPlugin)        
+        .insert_resource(DebugPickingMode::Disabled)
+        // A system that cycles the debugging state when you press F3:
+        .add_systems(
+            PreUpdate,
+            (|mut mode: ResMut<DebugPickingMode>| {
+                *mode = match *mode {
+                    DebugPickingMode::Disabled => DebugPickingMode::Normal,
+                    DebugPickingMode::Normal => DebugPickingMode::Noisy,
+                    DebugPickingMode::Noisy => DebugPickingMode::Disabled,
+                }
+            })
+            .distributive_run_if(bevy::input::common_conditions::input_just_pressed(
+                KeyCode::F4,
+            )),
+        );
     }
 }
 
@@ -75,6 +125,9 @@ pub fn spawn_fps_text(mut commands: Commands){
 
         builder.spawn(TextSpan::new("\nPos: ")).with_children(|builder|{
             builder.spawn((TextSpan::default(), DiagPos));    
+        }); 
+        builder.spawn(TextSpan::new("\nHover: ")).with_children(|builder|{
+            builder.spawn((TextSpan::default(), DiagPicking));    
         }); 
     });
 }

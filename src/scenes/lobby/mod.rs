@@ -31,7 +31,7 @@ impl LobbyScene {
         mut time: ResMut<Time<avian3d::prelude::Physics>>,
     ) {
         //TODO can we make ambient not a resource
-        ambient.brightness = 0.2;
+        // ambient.brightness = 0.2;
 
         time.pause();
         commands.spawn(TestCube);

@@ -7,7 +7,11 @@ struct SoundRange{
     falloff: EaseFunction,
 }
 
+
+struct Crickets;
+
 // uses a grid to fake it.
 struct Fake{
     size: f32
 }
+

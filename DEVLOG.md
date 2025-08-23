@@ -623,3 +623,110 @@ nice errors macros https://github.com/benfrankel/tiny_bail
 
 # Wed Aug 13 02:48:01 AM EDT 2025
 bug: shadows flicker in lobby. could be related to frustum culling errors
+
+# Thu Aug 14 03:56:43 AM EDT 2025
+looked into frustum culling issue. It seems that whether you clear parent inverse in blender changes where the incorrect aabb is, but nothing I did on the child fixed it.
+it turned out that I had to apply **all** transforms on the armature to get correct aabb's in bevy
+
+strangely children of the armature have zero transforms in bevy. regardless of clearing parent inverse in blender.
+
+NOTE: parent inverse cannot be viewed in blender, https://devtalk.blender.org/t/reevaluating-worldspace-and-localspace-treatment-need-some-dev-triage/9665/29
+
+going to need to deal with animated meshes as well: https://github.com/bevyengine/bevy/issues/4971
+
+NOTE: the way skinned meshes are exported from blender is weird (mesh is baked to world coordinates):
+
+nothing I tried fixed the aabb issue (ie transform applied twice)
+bevy_mod_skinned_aabb does fix the aabb's but doesn't work with picking?
+
+# Thu Aug 14 01:20:16 PM EDT 2025
+EDITOR FEATURE:
+want an animation debug menu which I can specify at command line (scene) and will 
+1. autoplay gltf animations
+2. spawn an always visible editor window for controlling / viewing animation state 
+ 
+---
+
+also need a pin button in inspector window. plus a pin to diag. plus a popout to window.
+
+---
+
+also save restore original, save / reload
+
+# Sun Aug 17 06:32:16 PM EDT 2025 
+suddently backface / nearfield culling isn't working for the player model the way it used to. What changed? 
+
+ANSWER: probably the skinned_aabb fix makes culling on player model correct, it shouldn't have been working before.
+
+# Sun Aug 17 06:32:16 PM EDT 2025 
+work for editor:
+1. implement hooks for sigils/color
+2. get detection of multiple relations working
+3. split up / clean up the code for drawing, to support column stacked
+4. figure out how to represent multiple relations
+5. figure out how to support multiple selection + focus
+6. add searching
+7. add global query search
+8. line drawing attachments
+
+1. get "bundles" of required components
+2. try naive interface
+3. autoshow for simple types
+4. pinning
+5. copy type path / entity path
+
+# Sat Aug 23 07:15:56 AM EDT 2025 
+There seems to be a bug with lightyear transform sync effecting static collider body
+to replicate: open editor, select tower root, select transform, activate controls
+
+---
+
+Thoughts on ui.
+
+Ui comes down to **navigation**, **information + scanning**, and **emergence**.
+Navigation is how easy it is to get between different data. (ex. vim keybinds)
+Information is how much information you can fit on the screen. Scanning is how the eye is drawn to that infomation. (ex. tables)
+Emergence, for lack of a better term, is how the ui becomes more usefull as you use it, by "remembering". (ex. collapsible headers, desktop metaphor)
+
+Different kinds of navigation, and what/how information is included, also tend to effect scanning and emergence.
+
+Ex. filter vs find.
+
+Filter *only* shows matches. Find emphasises matches.
+Filter effects layout. Find doesn't.
+Filter can fit more results on the screen (better information).
+Find is easier on the eye, ie. better for scanning.
+
+Dropdowns vs Panels.
+We say panels don't effect layout, because info that stays the same stays in the same place. The children are replaced, and parents / siblings stay in the same place.
+We say dropdowns change the layout, because anything after the dropdown is moved down.
+
+The purpose of animations is to smooth over layout modifying actions, to help the eye follow where things have moved, maintaining brain's the spacial map. 
+
+Emergence is largely a tradeoff with navigation, since better nav normally means simple+predicable. Dropdowns make it easy to access things you recently accessed, and annoying enough to keep them open that you close things you don't care about anymore. Tabs are the similar.
+
+The goal of good nav is to make traversing views so easy that emergence is not needed, you have access to everything without thinking. Only at the limit of this, we add in memory (say, for the editor state overall). 
+
+We can also costlessly improve emergence whereever a decision is arbitrary (ex. navigation "down" requires picking one of the children.)  The selected child can be remembered. If this information is made visible, without cluttering things up or leading to layout thrashing (harming scanning), this is free.
+
+Immediate mode is good for nav ui, because the restrictions it places on layout are precisely those which prevent layout thrashing. We additionally need to make sure the most static elements of ui are earliest in the flow (if we had columns parents-children-siblings, for example, then when moving between siblings, the sibling column (which has not changed) might move horizontally as the children column's width fits to it's new elements. Since the siblings column moved without changing, this is a layout change.)
+
+
+editor todo:
+-  [ ] changed by
+-  [ ] disable components
+-  [ ] remove components
+-  [ ] relations / relation-like in nav
+-  [ ] emph nav with selected components
+-  [ ] mode for ungrouped components
+-  [ ] fix material in inspector
+-  [ ] clickable entities (not inspector dropdowns)
+-  [ ] scroll components
+-  [ ] scroll entities (harder)
+-  [ ] overlay / transparent mode
+-  [ ] mutliheaded req comp bundls
+-  [ ] disable entity
+-  [ ] disabled sigil in nav
+-  [ ] save-load prototype
+-  [ ] / to search
+-  [ ] // to pop up to next search (list->panel->global, with default panel=global)

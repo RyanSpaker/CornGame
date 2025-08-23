@@ -10,6 +10,7 @@ use parking_lot::RwLock;
 
 use crate::scenes::LoadScene;
 use crate::systems::network::NetworkWindow;
+mod compat;
 
 fn eguibad<T: Send + Sync + Default + 'static>(ui: &mut egui::Ui, id: egui::Id) -> Arc<RwLock<T>>{
     ui.ctx().data_mut(|d| d.get_temp_mut_or_insert_with::<Arc<RwLock<T>>>(id, Default::default).clone())
