@@ -14,6 +14,38 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct DampedPhysics;
 
+use bevy::ecs::reflect::ReflectBundle;
+#[derive(Debug, Default, Clone, Bundle, Reflect)]
+#[reflect(Bundle, Default)]
+struct BlenderRigidBody(
+    RigidBody,
+    DampedPhysics,
+    AutoCollider,
+);
+
+/// create collider based on all children
+#[derive(Debug, Clone, PartialEq, Reflect, Component)]
+#[reflect(Component, Default)]
+struct AutoCollider(ColliderConstructor);
+fn process_autocollider(
+    trigger: Trigger<OnAdd, AutoCollider>,
+    children: Query<&Children>,
+    colliders: Query<&RigidBodyColliders>,
+    constructors: Query<&ColliderConstructor>,
+){
+    // TODO if the RigidBody has colliders or children with collider constructor then skip
+    let _ = colliders;
+
+    todo!();
+
+}
+
+impl Default for AutoCollider {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
 // helper which was used for mesh colliders in blender scenes but isn't actually needed or used.
 // #[derive(Debug, Reflect, Serialize, Deserialize)]
 // #[reflect(Component)]

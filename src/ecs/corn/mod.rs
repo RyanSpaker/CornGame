@@ -6,9 +6,10 @@ pub mod render;
 pub mod stored;
 pub mod sensor;
 
-use bevy::{prelude::*, render::{
+use bevy::{ecs::{entity, entity_disabling::Disabled}, prelude::*, render::{
     batching::NoAutomaticBatching, extract_component::{ExtractComponent, ExtractComponentPlugin}, view::NoFrustumCulling
-}};
+}, scene::scene_spawner_system};
+use serde::Deserialize;
 use crate::{ecs::corn::{render::{ExtendWithCornMaterial, StdCornMaterial}, stored::{readback::ReadbackInit, simple::SimpleHexagonalSettings}}, scenes::lobby::LobbyScene, systems::{scenes::OnSpawnScene, util::default_resources::SimpleMaterials}, util::observer_ext::ObserverParent};
 
 /// Top level Tag Component for Corn Fields. 
@@ -31,6 +32,66 @@ impl ObserverParent for CornFieldObserver{
     }
 }
 
+
+
+#[derive(Component, Reflect, Default, Debug, Deserialize)]
+#[reflect(Component)]
+/// test component for loading cornfields from blender
+pub struct BlenderCornField;
+
+fn init_gltf_cornfield(
+    corn: Query<(Entity, &BlenderCornField, Option<&Children>,  &GlobalTransform), Without<CornField>>,
+    mut children: Query<(&MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
+    a_materials: Res<Assets<StandardMaterial>>,
+    mut commands: Commands
+){
+    for (id, _corn, child, transform) in corn.iter() {
+        if ! child.is_some_and(|c| c.len() == 1) {
+            error_once!(entity = %id, "BlenderCornField must have exactly 1 child, the mesh with the image.");
+            dbg!(child);
+            commands.entity(id).insert(Disabled); // TODO perhaps this should be a custom Error component?, it is confusing for the path not to show up
+            return; // TODO this should be system error? (or not, bc for loop)
+        }
+        
+        info!("initializing gltf loaded cornfield entity {}", id);
+
+        let child = child.unwrap();
+        let (h_mat, mut visible) = children.get_mut(*child.first().unwrap()).unwrap();
+
+        // hide the reference plane
+        *visible = Visibility::Hidden;
+
+        let Some(material) = a_materials.get(h_mat) else { break };
+        let h_image = material.base_color_texture.clone().unwrap();
+
+        // NOTE: we use the transform of corn object. 
+        // This means that you CANNOT apply the transform in blender
+        // we fully assume the plane of the model is 1x1
+        // NOTE: rotation not supported yet.
+        // TODO: actually use the mesh in corn render.
+        // TODO: should use global transform
+
+        let transform = transform.compute_transform();
+        let center = transform.translation + Vec3::new(0.0, 0.0, 0.0); 
+
+        let half_extents = transform.scale.xz();
+        dbg!(half_extents, center);
+
+        commands.entity(id).insert((
+            CornField,
+            // ImageCarvedHexagonalShader::new(
+            //     center, half_extents, 
+            //     0.75, Vec2::new(1.1, 1.3), 0.2, 
+            //     h_image,
+            // ),
+            SimpleHexagonalSettings::new(
+                center, half_extents, 
+                0.75, Vec2::new(1.1, 1.3), 0.2, 
+            )
+        ));
+    }
+}
+
 /// Adds all corn field functionality to the app
 pub struct CornFieldComponentPlugin;
 impl Plugin for CornFieldComponentPlugin{
@@ -49,10 +110,15 @@ impl Plugin for CornFieldComponentPlugin{
         ));
 
         app.add_plugins(sensor::CornSensorPlugin);
+
+        // blender defined cornfields
+        app.add_systems(PostUpdate, init_gltf_cornfield ); // systems that post-process scenes should run after SceneSpawn, idk if this is exactly right
+        app.register_type::<BlenderCornField>(); // needed for loading from gltf
         app.add_systems(OnSpawnScene(LobbyScene), test_field);
     }
 }
 
+// TODO make test scenes commands and hook into cli and editor command prompt
 pub fn test_field(
     mut commands: Commands,
     resource: Res<SimpleMaterials>,

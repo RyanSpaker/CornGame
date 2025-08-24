@@ -57,6 +57,7 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "bevy_ui_picking_backend", #	Provides an implementation for picking UI
   "bevy_window", #	Windowing layer
   "bevy_winit", #	winit window and input backend
+  "bevy_dev_tools", 
   # "custom_cursor", #	Enable winit custom cursor support
   "default_font", #	Include a default font, containing only ASCII characters, at the cost of a 20kB binary size increase
   "hdr", #	HDR image format support
@@ -82,11 +83,13 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "bevy_remote",
   "web",
   "webgpu",
+  "configurable_error_handler",
 ]}
-# blenvy = { path = "./forks/Blenvy/crates/blenvy"}
-bevy_skein = "0.2.1"
 wgpu-types = "24"
 wgpu = "24"
+
+# BEVY ECOSYSTEM
+bevy_skein = "0.2.1"
 bevy-tnua = "0.24.0"
 bevy-tnua-avian3d = "0.5.0"
 avian3d = { version = "*", features = ["serialize"]}
@@ -99,6 +102,8 @@ lightyear = { version = "0.22.5", features = [
   "netcode",
   "webtransport_dangerous_configuration" #disable cert checking
 ]}
+lightyear_aeronet = "*"
+
 leafwing-input-manager = "0.17.0"
 # bevy_edge_detection = "0.15.4"
 bevy_easings = "0.16.0"
@@ -106,8 +111,10 @@ bevy_easings = "0.16.0"
 bevy-trait-query = "0.16.0" 
 bevy_editor_pls = "0.11"
 bevy_dog = { git = "https://github.com/arne-berner/bevy_dog", branch = "main" }
-#bevy_dog = { path = "forks/bevy_dog" }
+bevy_mod_outline = "0.10.0"
+bevy_mod_skinned_aabb = "0.2.0"
 
+# GENERIC
 thiserror = "2.0.12"
 serde = "*"
 clap = {version = "4.5.38", features = ["derive"]}
@@ -122,14 +129,14 @@ prse = "1.2.1"
 auto_enums = "0.8.5"
 frunk = "0.4.3"
 aligned-vec = "0.6.4"
-bevy_mod_outline = "0.10.0"
 
 async-compat = "*"
 we_clap = "0.1.6"
 web-sys = "0.3.77"
 x509-parser = "0.17.0"
 tokio = "1.47.0"
-
+smallvec = "1.15.1"
+regex_static = "0.1.1"
 
 [patch.crates-io]
 petgraph = {branch = "master", git = "https://github.com/petgraph/petgraph.git"}
@@ -138,10 +145,12 @@ bevy_editor_pls = { path = "forks/editor/crates/bevy_editor_pls/" }
 bevy-inspector-egui = { path = "forks/editor/forks/bevy-inspector-egui/crates/bevy-inspector-egui" }
 egui_dock = { path = "forks/editor/forks/egui-dock/" }
 # transform-gizmo-bevy = { git = "https://github.com/ActuallyHappening/transform-gizmo" }
+# bevy_dog = { path = "forks/bevy_dog" }
 
 # bevy-tnua-avian3d = { path = "./forks/bevy-tnua/avian3d" }
 # bevy-tnua-physics-integration-layer = { path = "./forks/bevy-tnua/physics-integration-layer" }
 
 lightyear = { path = "forks/lightyear/lightyear" }
+lightyear_aeronet = { path = "forks/lightyear/lightyear_aeronet" }
 # bevy_skein = { path = "forks/skein" }
 avian3d = { path = "forks/avian/crates/avian3d" }

@@ -30,10 +30,10 @@ use bevy::{
     asset::{AsAssetId, AssetPath}, platform::collections::HashMap, prelude::*, render::{render_resource::Buffer, renderer::RenderDevice, sync_component::SyncComponentPlugin, sync_world::RenderEntity, Extract, Render, RenderApp, RenderSet}, tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, Task}
 };
 use wgpu::{util::BufferInitDescriptor, BufferUsages};
-use crate::util::{event_set::{AppEventSet, EventSet}, extract_changed::ExtractChangedComponentPlugin, observer_ext::ObserveAsAppExt};
+use crate::{ecs::corn::render::{ExtendWithCornMaterial, StdCornDrawRender, StdCornMaterial}, util::{event_set::{AppEventSet, EventSet}, extract_changed::ExtractChangedComponentPlugin, observer_ext::ObserveAsAppExt}};
 use super::{CornField, CornFieldObserver, CornFieldSystemSet};
 
-pub const DEFAULT_MODEL_PATH: &'static str = "models/corn3.glb";
+pub const DEFAULT_MODEL_PATH: &'static str = "models/Corn.glb";
 
 /// Error type for when loading a corn mesh from a gltf fails.
 #[derive(Default, Debug, Error)]
@@ -156,9 +156,13 @@ impl CornGltf{
             let meshes = rx.recv().await.map_err(|_| ConvertCornMeshError)?;
             merge_meshes(meshes).await
         });
+
         (Self(gltf_handle), CornMesh(mesh_handle), CornLoadSender(tx))
     }
 }
+
+pub struct MaterialFromGltf;
+
 
 /// Holds the sender used to give the asynchronous mesh load function the meshes of the corn model. 
 #[derive(Debug, Clone, Component)]
@@ -170,6 +174,8 @@ impl CornLoadSender{
         gltf_assets: Res<Assets<Gltf>>,
         scene_assets: ResMut<Assets<Scene>>,
         mesh_assets: Res<Assets<Mesh>>,
+        material_assets: Res<Assets<StandardMaterial>>,
+        mut extended_material_assets: ResMut<Assets<StdCornMaterial>>,
         mut commands: Commands
     ){
         let scene_assets = scene_assets.into_inner();
@@ -180,9 +186,17 @@ impl CornLoadSender{
             let Some((data, lod_info)) = get_mesh_data(asset, scene_assets, mesh_assets) else {continue;};
             // Send data to async load method
             let _ = sender.force_send(data); sender.close();
+
+            // get material 
+            // TODO better asset pipelining
+            let material = asset.materials.get(0).unwrap();
+            let material = material_assets.get(material).unwrap();
+            let material = material.clone().extend_with_corn();
+            let material = extended_material_assets.add(material); 
             
             commands.entity(entity)
                 .insert(CornLodInfo(lod_info))// Add lod info as component
+                .insert_if_new(MeshMaterial3d(material))
                 .remove::<CornLoadSender>();// Remove the corn load sender since we are finished with it
         }
     }
@@ -280,9 +294,30 @@ impl CornModelIndirectBuffer{
 pub fn attach_default_corn_model(
     trigger: Trigger<OnAdd, CornField>,
     default_mesh: Single<Entity, With<IsDefaultCornMesh>>,
+    // mats: Query<&MeshMaterial3d<StdCornMaterial>>,
     mut commands: Commands
 ){
-    commands.entity(trigger.target()).insert_if_new(CornModel(*default_mesh));
+    let mut entity_commands = commands.entity(trigger.target());
+    entity_commands.insert_if_new(CornModel(*default_mesh));
+
+    // Material isn't loaded yet
+    // let material = mats.get(*default_mesh).unwrap().clone();
+    // entity_commands.insert_if_new(material);
+}
+
+pub fn attach_default_corn_material(
+    query: Query<Entity, (With<CornField>, Without<MeshMaterial3d<StdCornMaterial>>)>,
+    default_mesh: Option<Single<
+        &MeshMaterial3d<StdCornMaterial>, 
+        With<IsDefaultCornMesh>
+    >>,
+    mut commands: Commands
+){
+    let Some(material) = default_mesh else { return };
+    for entity in query {
+        let mut entity_commands = commands.entity(entity);
+        entity_commands.insert_if_new(material.clone());
+    }
 }
 
 /// Relation to the corn model used by the field
@@ -345,6 +380,7 @@ impl Plugin for CornModelPlugin{
             .configure_event_set::<AssetEvent<Gltf>>(Update, EventSet::<AssetEvent<Gltf>>::default())
             .add_observer_as(attach_default_corn_model, CornFieldObserver)
             .add_observer_as(CornModel::observe_on_insert, CornFieldObserver)
+            .add_systems(Update, attach_default_corn_material)
             .add_systems(Update, (
                 (CornLoadSender::on_gltf_load, CornModifyTask::on_gltf_change).in_set(EventSet::<AssetEvent<Gltf>>::default()),
                 CornModifyTask::poll_tasks

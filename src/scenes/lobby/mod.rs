@@ -2,7 +2,7 @@ use avian3d::prelude::{Collider, PhysicsTime, RigidBody};
 use bevy::{pbr::FogVolume, prelude::*, scene::SceneLoader};
 // use blenvy::{BlueprintInfo, GameWorldTag, SpawnBlueprint};
 use crate::{
-    ecs::{cameras::MainCamera, sunlight::{Moon, NoRotationChild, Sun}, test_cube::TestCube},
+    ecs::{cameras::MainCamera, corn::{render::{ExtendWithCornMaterial, StdCornMaterial}, stored::{readback::ReadbackInit, scan::readback::ReadbackStoredScan, simple::SimpleHexagonalSettings}, CornField}, sunlight::{Moon, NoRotationChild, Sun}, test_cube::TestCube},
     systems::{
         scenes::{CornScene, CurrentScene, OnSpawnScene, SceneTransitionApp},
         util::default_resources::{SimpleMaterials, SimpleMeshes},
@@ -26,6 +26,7 @@ impl LobbyScene {
         parent: Res<CurrentScene>,
         shapes: Res<SimpleMeshes>,
         materials: Res<SimpleMaterials>,
+        asset_server: ResMut<AssetServer>,
         mut ambient: ResMut<AmbientLight>,
         cli: Res<Cli>,
         mut time: ResMut<Time<avian3d::prelude::Physics>>,
@@ -82,6 +83,25 @@ impl LobbyScene {
                 },
                 Transform::from_scale(Vec3::splat(35.0)),
             ));
+
+            // let material = StandardMaterial::default().extend_with_corn();
+            // let material = asset_server.add(material);
+
+            // parent.spawn((
+            //     // TODO keep centered on player
+            //     Name::from("Corn"),
+            //     CornField,
+            //     SimpleHexagonalSettings::new(
+            //         Vec3::ZERO,
+            //         Vec2::splat(10.0),
+            //         1.0,
+            //         Vec2::new(1.0,2.0),
+            //         0.2
+            //     ),
+            //     // MeshMaterial3d(material),
+            //     ReadbackInit::default(),
+            //     ReadbackStoredScan::default()
+            // ));
 
             for path in cli.scenes.iter() {
                 let path = path.strip_prefix("assets/").unwrap_or(&path);
