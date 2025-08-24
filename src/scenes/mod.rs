@@ -12,7 +12,7 @@ use bevy::{
 };
 use lobby::LobbyScene;
 use crate::{
-    ecs::{cameras::MainCamera, corn::CornSensor, flycam::FlyCam, framerate::spawn_fps_text},
+    ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCam, framerate::spawn_fps_text},
     systems::scenes::{CornScene, SceneTransitionApp},
     Cli,
 };
@@ -107,7 +107,7 @@ impl Plugin for CornScenesPlugin {
     }
 }
 
-fn spawn_global_entities(mut commands: Commands) {
+fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
     let cam = MainCamera::spawn_main_camera(&mut commands);
     commands.entity(cam).insert((
         Tonemapping::TonyMcMapface,

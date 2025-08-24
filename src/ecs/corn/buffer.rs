@@ -8,15 +8,15 @@ use super::{asset::{CornLodInfo, CornModel}, CornField};
 #[repr(C)]
 pub struct CornData{
     /// Offset from the origin for this piece of corn.
-    offset: Vec3,
+    pub offset: Vec3,
     /// Scale of this corn stalk
-    scale: f32,
+    pub scale: f32,
     /// Rotation of this corn stalk in the form <sin(theta), cos(theta)>
-    rotation: Vec2,
+    pub rotation: Vec2,
     /// an id, not used by most corn fields, but can be used to signify special traits
-    uuid: u32,
+    pub uuid: u32,
     /// whether or not the corn piece should be rendered
-    enabled: u32
+    pub enabled: u32
 }
 impl CornData{
     pub const DATA_SIZE: u64 = 32;

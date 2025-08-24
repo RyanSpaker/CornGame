@@ -7,15 +7,15 @@ use super::{shader::{AsCornInitShader, CornInitShaderAppExt}, CornInitShaderSett
 #[reflect(Component)]
 pub struct SimpleInitShader{
     /// World Space center of the corn field
-    center: Vec3,
+    pub center: Vec3,
     /// Half extents of the corn field
-    half_extents: Vec2,
+    pub half_extents: Vec2,
     /// Total resolution of the corn field
-    resolution: UVec2,
+    pub resolution: UVec2,
     /// Min and Max height scalars
-    height_range: Vec2,
+    pub height_range: Vec2,
     /// How much the corn can shift as a percentage of the distance between the corn normally
-    rand_offset_factor: f32
+    pub rand_offset_factor: f32
 }
 impl SimpleInitShader{
     /// Returns new Corn Field
@@ -123,15 +123,15 @@ pub type SimpleInitSettings = SimpleInitShader;
 #[reflect(Component)]
 pub struct SimpleHexagonalInitShader{
     /// World Space center of the Corn Field
-    center: Vec3,
+    pub center: Vec3,
     /// How far left and right the corn field extends.
-    half_extents: Vec2,
+    pub half_extents: Vec2,
     /// The minimum distance between adjacent pieces of corn
-    dist_between: f32,
+    pub dist_between: f32,
     /// The minimum and maximum height scalar
-    height_range: Vec2,
+    pub height_range: Vec2,
     /// percentage of dist between of which corn can shift randomly
-    rand_offset_factor: f32
+    pub rand_offset_factor: f32
 }
 impl SimpleHexagonalInitShader{
     /// Creates new Corn Field

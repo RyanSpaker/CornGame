@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, ops::AddAssign, time::Duration};
 use bevy::{audio::Volume, ecs::{component::HookContext, entity::EntityHashMap, world::DeferredWorld}, prelude::*};
 use crate::{
-    ecs::{cameras::MainCamera, corn::CornSensor, flycam::FlyCamMoveEvent}, systems::{character::Player, soundtrack}, util::{math::lerp, observer_ext::{ObserveAsAppExt, ObserverParent}}
+    ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCamMoveEvent}, systems::{character::Player, soundtrack}, util::{math::lerp, observer_ext::{ObserveAsAppExt, ObserverParent}}
 };
 
 pub struct CornAudioPlugin;

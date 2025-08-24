@@ -76,16 +76,16 @@ impl StoredScanGroupBuffers{
 }
 
 /// Struct mirroring the config data needed for the vote-scan-compact shaders. Passed in as a buffer
-#[derive(Clone, Copy, Default, Debug, Zeroable, Pod, ShaderType)]
+#[derive(Clone, Copy, Default, Debug, Zeroable, Pod, ShaderType, PartialEq, Reflect)]
 #[repr(C)]
-struct ConfigData{
-    field_to_world: Mat4,
-    field_to_clip: Mat4,
-    cam_pos_field: Vec4,
-    lod_count: u32,
-    index_offset: u32,
-    vertex_offset: u32,
-    _padding: u32
+pub struct ConfigData{
+    pub field_to_world: Mat4,
+    pub field_to_clip: Mat4,
+    pub cam_pos_field: Vec4,
+    pub lod_count: u32,
+    pub index_offset: u32,
+    pub vertex_offset: u32,
+    pub _padding: u32
 }
 
 /// Custom component containing the global transform of the corn field.
@@ -350,21 +350,16 @@ impl Plugin for CornStoredScanPlugin{
 #[cfg(debug_assertions)]
 pub mod readback{
     use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
-    use bevy::{core_pipeline::core_3d::graph::Core3d, ecs::{query::QueryData, system::lifetimeless::Read}, prelude::*, render::{
-        extract_component::{ExtractComponent, ExtractComponentPlugin}, 
-        render_graph::{RenderGraph, RenderLabel}, 
-        render_resource::Buffer, renderer::RenderDevice, 
-        Render, RenderApp, RenderSet
+    use bevy::{core_pipeline::core_3d::graph::Core3d, ecs::{query::QueryData, system::lifetimeless::Read}, prelude::*, render::{ 
+        render_graph::{RenderGraph, RenderLabel}, render_resource::Buffer, renderer::RenderDevice, sync_component::SyncComponentPlugin, sync_world::{MainEntity, RenderEntity}, Extract, MainWorld, Render, RenderApp, RenderSet
     }};
     use bytemuck::Pod;
     use wgpu::{BufferUsages, Maintain, MapMode};
     use wgpu_types::BufferDescriptor;
-
     use crate::ecs::corn::{asset::{CornLodInfo, CornModel, CornModelIndirectBuffer}, buffer::{CornData, IndirectBuffer, InstanceBuffer, VertexInstanceBuffer}, cutoffs::LodCutoffBuffer};
-
     use super::{ConfigData, StoredScanBindGroup, StoredScanConfigBuffer, StoredScanGroupBuffers, StoredScanStage, StoredScanVoteBuffer, UseStoredScanPipeline};
     
-    pub fn readback_buffer<T: std::fmt::Debug + Pod>(message: String, buffer: &Buffer, render_device: &RenderDevice){
+    pub fn readback_buffer<T: Pod>(buffer: &Buffer, render_device: &RenderDevice) -> Vec<T>{
         let slice = buffer.slice(..);
         let flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
         let flag_captured = flag.clone();
@@ -372,23 +367,55 @@ pub mod readback{
             if v.is_ok() {flag_captured.store(true, Ordering::Relaxed);}
         });
         render_device.poll(Maintain::Wait);
+        let mut data = vec![];
         if flag.load(Ordering::Relaxed) {
-            let raw = buffer
-                .slice(..).get_mapped_range()
-                .iter().map(|v| *v).collect::<Vec<u8>>();
-            let data = bytemuck::cast_slice::<u8, T>(raw.as_slice()).to_vec();
-            println!("{}", message);
-            for corn in data{
-                println!("{:?}", corn);
-            }
-            println!("");
+            let raw = slice.get_mapped_range();
+            data = bytemuck::cast_slice::<u8, T>(&raw).to_vec();
         }
         buffer.unmap(); 
+        data
     }
 
-    #[derive(Default, Debug, Clone, PartialEq, Eq, Reflect, Component, ExtractComponent)]
+    #[derive(Default, Debug, Clone, PartialEq, Reflect, Component)]
     #[reflect(Component)]
-    pub struct ReadbackStoredScan;
+    pub struct ReadbackStoredScan{
+        pub instances: Vec<CornData>,
+        pub vertex_instances: Vec<Mat4>,
+        pub indirect: Vec<[u32; 5]>,
+        pub model_indirect: Vec<[u32; 5]>,
+        pub lod_count: usize,
+        pub vote: Vec<[u32; 2]>,
+        pub group1: Vec<Vec<u32>>,
+        pub group2: Vec<Vec<u32>>,
+        pub config: ConfigData,
+        pub cutoffs: Vec<f32>
+    }
+    impl ReadbackStoredScan{
+        /// Copies readback data to the main world entity
+        fn copy_data(
+            render: Query<(MainEntity, &Self), Changed<Self>>,
+            mut main_world: ResMut<MainWorld>
+        ){
+            for (entity, data) in render.iter(){
+                if let Some(comp) = main_world.entity_mut(entity).get_mut::<Self>(){
+                    *comp.into_inner() = data.clone();
+                }
+            }
+        }
+        /// Attaches this component to any field in the render app that needs it. Does not copy the data over
+        fn extract_component(
+            main: Extract<Query<RenderEntity, With<Self>>>,
+            render: Query<MainEntity, Without<Self>>,
+            mut commands: Commands
+        ){
+            let mut batch = vec![];
+            for entity in main.iter(){
+                if render.contains(entity) {batch.push((entity, Self::default()));}
+            }
+            commands.insert_batch(batch);
+        }
+    
+    }
 
     #[derive(QueryData)]
     pub struct StoredScanBufferQuery{
@@ -414,6 +441,7 @@ pub mod readback{
         cutoffs: Buffer
     }
     impl ReadbackStoredScanBuffers{
+        /// Creates the readback buffers necessary
         fn create_buffers(
             query: Query<(Entity, StoredScanBufferQuery), (With<ReadbackStoredScan>, Without<Self>, With<UseStoredScanPipeline>, With<StoredScanBindGroup>)>,
             models: Query<&CornModelIndirectBuffer>,
@@ -485,24 +513,25 @@ pub mod readback{
                 });
             }
         }
-        fn print_readback(
-            query: Query<(&Self, &CornLodInfo)>,
+        /// Reads the data from the buffers and copies it into the component
+        fn copy_data(
+            mut query: Query<(&Self, &CornLodInfo, &mut ReadbackStoredScan)>,
             render_device: Res<RenderDevice>
         ){
-            for (Self { 
-                instance, vote, groups, indirect, ind_src, vertex, config, cutoffs
-            }, lod_info) in query.iter(){
-                let lod_count = lod_info.0.len();
-                readback_buffer::<CornData>("Instance Buffer: ".to_string(), instance, render_device.as_ref());
-                readback_buffer::<[u32; 2]>("vote Buffer: ".to_string(), vote, render_device.as_ref());
-                println!("Lod Count: {}", lod_count);
-                readback_buffer::<u32>("Group 1 Buffer: ".to_string(), &groups.0, render_device.as_ref());
-                readback_buffer::<u32>("Group 2 Buffer: ".to_string(), &groups.1, render_device.as_ref());
-                readback_buffer::<[u32; 5]>("Indirect Buffer: ".to_string(), indirect, render_device.as_ref());
-                readback_buffer::<[u32; 5]>("Indirect Src Buffer: ".to_string(), ind_src, render_device.as_ref());
-                readback_buffer::<Mat4>("Vertex Buffer: ".to_string(), vertex, render_device.as_ref());
-                readback_buffer::<ConfigData>("Config Buffer: ".to_string(), config, render_device.as_ref());
-                readback_buffer::<f32>("Cutoff Buffer: ".to_string(), cutoffs, render_device.as_ref());
+            for (buffers, lod_info, mut dst) in query.iter_mut(){
+                dst.lod_count = lod_info.0.len();
+                dst.instances = readback_buffer::<CornData>(&buffers.instance, render_device.as_ref());
+                dst.vertex_instances = readback_buffer::<Mat4>(&buffers.vertex, render_device.as_ref());
+                dst.vote = readback_buffer::<[u32; 2]>(&buffers.vote, render_device.as_ref());
+                dst.group1 = readback_buffer::<u32>(&buffers.groups.0, render_device.as_ref())
+                    .chunks(dst.lod_count).map(|chunk| chunk.to_vec()).collect();
+                dst.group2 = readback_buffer::<u32>(&buffers.groups.1, render_device.as_ref())
+                    .chunks(dst.lod_count).map(|chunk| chunk.to_vec()).collect();
+                dst.indirect = readback_buffer::<[u32; 5]>(&buffers.indirect, render_device.as_ref());
+                dst.model_indirect = readback_buffer::<[u32; 5]>(&buffers.ind_src, render_device.as_ref());
+                dst.config = readback_buffer::<ConfigData>(&buffers.config, render_device.as_ref()).pop().unwrap_or_default();
+                dst.cutoffs = readback_buffer::<f32>(&buffers.cutoffs, render_device.as_ref());
+                debug!(scan_data = ?dst);
             }
         }
     }
@@ -591,11 +620,12 @@ pub mod readback{
         fn build(&self, app: &mut App) {
             app
                 .register_type::<ReadbackStoredScan>()
-                .add_plugins(ExtractComponentPlugin::<ReadbackStoredScan>::default())
+                .add_plugins(SyncComponentPlugin::<ReadbackStoredScan>::default())
             .sub_app_mut(RenderApp)
+                .add_systems(ExtractSchedule, (ReadbackStoredScan::extract_component, ReadbackStoredScan::copy_data))
                 .add_systems(Render, (
                     ReadbackStoredScanBuffers::create_buffers.in_set(RenderSet::PrepareResources),
-                    ReadbackStoredScanBuffers::print_readback.in_set(RenderSet::Cleanup)
+                    ReadbackStoredScanBuffers::copy_data.in_set(RenderSet::Cleanup)
                 ));
             let mut render_graph = app.sub_app_mut(RenderApp)
                 .world_mut().resource_mut::<RenderGraph>();
