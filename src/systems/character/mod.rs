@@ -16,6 +16,7 @@ use bevy::ecs::query::{QueryData, QuerySingleError};
 /// [ ] sight map (for out of sight changes)
 use bevy::prelude::*;
 use avian3d::prelude::*;
+use bevy::render::view::RenderLayers;
 use controller::{look_handler, CornGameCharController};
 use leafwing_input_manager::plugin::InputManagerPlugin;
 use lightyear::prelude::{
@@ -23,7 +24,7 @@ use lightyear::prelude::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::ecs::cameras::MainCamera;
+use crate::ecs::cameras::{MainCamera, THIRD_PERSON_RENDER_LAYER};
 use crate::scenes::LoadScene;
 use crate::systems::network::ReplicateAuto;
 
@@ -109,6 +110,7 @@ impl Player {
     pub fn bundle() -> impl Bundle {
         (
             Player,
+
             Character,
             Name::new("Player"),
             RigidBody::Dynamic,
@@ -129,6 +131,7 @@ impl Player {
                 (
                     Transform::from_xyz(0.0, -1.5, 0.0),
                     LoadScene::new("models/mixamo.glb"),
+                    RenderLayers::layer(THIRD_PERSON_RENDER_LAYER), // NOTE: depends on observer apply_render_layers_to_children to do anything
 
                     // BlueprintInfo::from_path("blueprints/construction_worker.glb"), //TODO skein
                     // SpawnBlueprint,
