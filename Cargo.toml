@@ -84,6 +84,7 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "web",
   "webgpu",
   "configurable_error_handler",
+  "track_location"
 ]}
 wgpu-types = "24"
 wgpu = "24"

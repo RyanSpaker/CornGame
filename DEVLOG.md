@@ -656,7 +656,7 @@ also save restore original, save / reload
 # Sun Aug 17 06:32:16 PM EDT 2025 
 suddently backface / nearfield culling isn't working for the player model the way it used to. What changed? 
 
-ANSWER: probably the skinned_aabb fix makes culling on player model correct, it shouldn't have been working before.
+ANSWER: probably the skinned_aabb fix makes culling on player model correct, ie. it shouldn't have been working before.
 
 # Sun Aug 17 06:32:16 PM EDT 2025 
 work for editor:
@@ -713,20 +713,84 @@ Immediate mode is good for nav ui, because the restrictions it places on layout 
 
 
 editor todo:
--  [ ] changed by
+-  [x] changed by
 -  [ ] disable components
 -  [ ] remove components
 -  [ ] relations / relation-like in nav
 -  [ ] emph nav with selected components
 -  [ ] mode for ungrouped components
 -  [ ] fix material in inspector
--  [ ] clickable entities (not inspector dropdowns)
+-  [ ] clickable entities in value inspector (not dropdowns)
 -  [ ] scroll components
 -  [ ] scroll entities (harder)
 -  [ ] overlay / transparent mode
 -  [ ] mutliheaded req comp bundls
 -  [ ] disable entity
 -  [ ] disabled sigil in nav
--  [ ] save-load prototype
+-  [ ] save-load prototype 
+   -  probably build off uid
 -  [ ] / to search
 -  [ ] // to pop up to next search (list->panel->global, with default panel=global)
+
+
+# Sun Aug 24 10:15:19 PM EDT 2025
+types of selection:
+1. navigation (keyboard nav, hover)
+2. search (find/filter)
+3. selection (click / enter)
+    a. primary
+    b. multi-select
+
+1 and 2 are view. 3 is data. You can see 1 and 2, and other views *might* react to them if the views are linked. But you can only act on 3.
+The viewport is linked to the active view, so you can color the hovered element.
+The inspector should react to selection, not hover/search, unless the inspector is bundled with the navigator.
+
+Rule of thumb: esc in search or nav should go back to selection view.
+
+# Sun Aug 24 10:21:13 PM EDT 2025
+re: transform sync bug
+
+Going to use this as a case study for editor improvements. 
+- [x] first I need to be able to see the changed by component
+- [ ] a read-only mode would be good for the inspector
+- [ ] inspector primitive for btreemap needs to tell # elements (use this to check TicksTimer)
+    - and I might want to create a system for requesting a panel, like a dropdown that can be control clicked to open in side panel
+- [ ] I should seperate nodes with children an without, for faster nav
+- [ ] required by is totally not working
+
+Now I can't replicate the bug :/
+
+# Thu Aug 28 06:01:14 PM EDT 2025
+editor note:
+- darkening non-crate required in component list feels like the right solution.
+- multihead bundles may or may not be a good idea.
+  - but only if I can show the relations
+  - otherwise small text on sigils
+- [x] need indication of marker structs, perhaps ::
+  - case study, lets look at all components in my cctest
+  - relation like and relation target like
+- why does transform not take full avail width but postion does.
+- I like that inspector shows missing required comp
+- [ ] keyboard nav should try to preserve bundle index.
+- [ ] need link to inspector from relations in nav
+- [ ] esc in inspector to unselect, because otherwise navigator get's no relations
+- [ ] context menu button to reset anything to default 
+- [ ] type mapped clipboard could be neat
+- [ ] relation detection not finding RigidBodyCollider
+
+# Fri Aug 29 01:40:27 AM EDT 2025 
+idea rewrite history with rustfmt
+
+this was a massive pain
+- cargo fmt being broken and erroring on some commits
+- `alias git_date "git show -s --format=%ai (cat .git/rebase-merge/stopped-sha)"`
+  - seems it has to be %ai, for author time, *not* %ci ie. commiter because sometimes during rebase that gets clobber to NOW  
+- `alias commit "GIT_COMMITTER_DATE=(git_date) git commit --amend --no-edit --date (git_date)"`
+  - env var is for commiter, --date is for author. Without these date is updated to now (NOT WANTED!!!)
+
+I started with rev 38552e1 preliminary refactor: compiles, untested
+
+example of improvement:
+before: https://github.com/segfault-s-pull-requests/bevy_editor_pls/commit/0cf180e6e53c4985e6031b28154f323272a163c4
+
+after: https://github.com/segfault-s-pull-requests/bevy_editor_pls/commit/1b408b43e48d44c3bfa0b285f87d8ed8c79cf47c
