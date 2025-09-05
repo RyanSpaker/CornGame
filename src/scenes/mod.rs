@@ -2,19 +2,17 @@
 //! Mainly consists of OnEnter(state) and OnExit(state) functions and spawning entities that are statescoped
 pub mod lobby;
 pub mod main_menu;
-pub mod resolver;
 
 use bevy::{
     core_pipeline::{bloom::Bloom, tonemapping::Tonemapping},
     ecs::{component::HookContext, world::DeferredWorld},
-    pbr::{ScreenSpaceReflections, VolumetricFog},
+    pbr::VolumetricFog,
     prelude::*, scene::scene_spawner,
 };
 use lobby::LobbyScene;
 use crate::{
     ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCam, framerate::spawn_fps_text},
-    systems::scenes::{CornScene, SceneTransitionApp},
-    Cli,
+    systems::scenes::prelude::*,
 };
 
 #[derive(Debug, Clone, Component, Reflect)]
@@ -107,7 +105,7 @@ impl Plugin for CornScenesPlugin {
     }
 }
 
-fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
+fn spawn_global_entities(mut commands: Commands) {
     let cam = MainCamera::spawn_main_camera(&mut commands);
     commands.entity(cam).insert((
         Tonemapping::TonyMcMapface,
@@ -130,13 +128,6 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
         CornSensor::default(),
         FlyCam,
         IsDefaultUiCamera,
-    ));
-
-    if cli.menu {
-        commands.spawn(main_menu::MainMenuScene.get_bundle());
-    } else if !cli.scenes.is_empty() || cli.lobby {
-        commands.spawn(LobbyScene.get_bundle());
-    }
-    
+    ));    
     commands.insert_resource(UiScale(1.0));
 }

@@ -7,7 +7,7 @@ use bevy::platform::collections::{HashMap, HashSet};
 use bevy_editor_pls::bevy_inspector_egui::inspector_egui_impls::InspectorPrimitive;
 use bevy_editor_pls::egui::Checkbox;
 
-use crate::scenes::SceneGltf;
+use crate::systems::scenes::stored::GltfSceneHandle;
 
 #[derive(QueryData)]
 #[query_data(mutable)]
@@ -58,7 +58,7 @@ impl AnimationContext {
         children: Query<&Children>,
         mut animation_targets: Query<&mut AnimationTarget>,
         // animation_players: Query<&AnimationPlayer>,
-        scenes: Query<(&SceneRoot, &SceneGltf)>,
+        scenes: Query<(&SceneRoot, &GltfSceneHandle)>,
         mut commands: Commands,
     ) -> Result {
         for (entity, mut animation_context) in animation_context.iter_mut() {

@@ -1,29 +1,33 @@
 
 use bevy::prelude::*;
-use crate::{systems::scenes::{CornScene, DespawnCornScene, DespawnCornSceneMany, SpawnCornScene}, util::observer_ext::*};
+use crate::util::observer_ext::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Reflect, Event)]
 pub struct ButtonEvent(pub Entity, pub Interaction);
 
 #[derive(Debug, Default, Clone, PartialEq, Reflect, Component)]
+#[reflect(Component)]
 pub struct BackgroundSelectedColors{
     pub selected: Color,
     pub unselected: Color
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Reflect, Component)]
+#[reflect(Component)]
 pub struct BorderSelectedColors{
     pub selected: Color,
     pub unselected: Color
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Reflect, Component)]
+#[reflect(Component)]
 pub struct TextSelectedColors{
     pub selected: Color,
     pub unselected: Color
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Reflect, Component)]
+#[reflect(Component)]
 pub struct ButtonObservers;
 impl ObserverParent for ButtonObservers{
     fn get_name(&self) -> Name {Name::from("Button Observers")}
@@ -42,44 +46,6 @@ impl Plugin for ButtonPlugin{
             .add_event::<ButtonEvent>()
             .add_systems(Update, send_button_events)
             .add_observer_as(button_event_observer, ButtonObservers);
-    }
-}
-
-/// Unloads old scene, loads new scene.
-pub fn on_press_switch_scene<S1: CornScene, S2: CornScene>(old_scene: S1, new_scene: S2)  -> 
-    impl FnMut(Trigger<ButtonEvent>, EventWriter<SpawnCornScene<S2>>, EventWriter<DespawnCornSceneMany<S1>>)->() 
-{
-    move |trigger: Trigger<ButtonEvent>, mut spawn: EventWriter<SpawnCornScene<S2>>, mut despawn: EventWriter<DespawnCornSceneMany<S1>>| {
-        match trigger.1 {Interaction::Pressed => {
-            spawn.write(SpawnCornScene(new_scene.clone()));
-            despawn.write(DespawnCornSceneMany(old_scene.clone()));
-        } _ => {}}
-    }
-}
-
-/// Unloads old scene, loads new scene. IF old scene had a parent, new scene will be a child of that parent
-pub fn on_press_swap_scene<S1: CornScene, S2: CornScene>(old_scene: S1, new_scene: S2)  -> 
-    impl FnMut(Trigger<ButtonEvent>, Query<(Entity, &S1, Option<&ChildOf>)>, EventWriter<DespawnCornScene>, Commands)->() 
-{
-    move |
-        trigger: Trigger<ButtonEvent>, 
-        despawn_query: Query<(Entity, &S1, Option<&ChildOf>)>,
-        mut despawn_event_writer: EventWriter<DespawnCornScene>,
-        mut commands: Commands, 
-    | {
-        match trigger.1 {Interaction::Pressed => {
-            let mut despawn_events = vec![];
-            for (entity, scene, parent) in despawn_query.iter(){
-                if *scene != old_scene {continue;}
-                despawn_events.push(DespawnCornScene(entity));
-                if let Some(parent) = parent{
-                    commands.entity(parent.parent()).with_child(new_scene.clone().get_bundle());
-                }else {
-                    commands.spawn(new_scene.clone().get_bundle());
-                }
-            }
-            despawn_event_writer.write_batch(despawn_events);
-        } _ => {}}
     }
 }
 

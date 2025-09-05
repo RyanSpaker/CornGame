@@ -3,10 +3,6 @@ use bevy::{
     prelude::*,
     window::{CursorGrabMode, PrimaryWindow},
 };
-use crate::{
-    scenes::FirstPersonScene,
-    util::scene_set::{AppSceneSet, SceneSet},
-};
 
 #[derive(Component, Debug, Default, Clone, Reflect)]
 pub struct FlyCam;
@@ -67,14 +63,7 @@ impl Plugin for FlyCamPlugin {
             .add_event::<FlyCamMoveEvent>()
             .init_resource::<FlyCamConfig>()
             .init_resource::<FlyCamKeybinds>()
-            .configure_scene_set(Update, FirstPersonScene, SceneSet(FirstPersonScene))
-            .add_systems(
-                Update,
-                (
-                    toggle_focused.in_set(SceneSet(FirstPersonScene)),
-                    read_flycam_button_inputs.in_set(SceneSet(FirstPersonScene)),
-                ),
-            );
+            .add_systems(Update, (toggle_focused, read_flycam_button_inputs));
     }
 }
 

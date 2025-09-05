@@ -17,7 +17,7 @@ impl Plugin for CornSystemsPlugin {
         app.register_type::<FogVolume>().add_plugins((
             ui::editor::MyEditorPlugin,
             util::AppUtilPlugin,
-            scenes::SceneTransition,
+            scenes::CornScenePlugin,
             physics::CornPhysicsPlugin,
             audio::CornAudioPlugin,
             network::CornNetworkingPlugin,

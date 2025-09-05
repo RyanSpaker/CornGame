@@ -22,7 +22,7 @@ use lightyear::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    scenes::resolver::{EntityPointer, EntityResolver}, systems::{animation_context::AnimationParams, network::uid::{Uid, UidUsePath}}, Cli
+    systems::{animation_context::AnimationParams, network::uid::{Uid, UidUsePath}, scenes::resolve::{EntityPointer, EntityResolver}}, DevConfig
 };
 
 use super::character::Player;
@@ -168,7 +168,7 @@ struct InteractDummy(bool);
 impl Plugin for InteractDummy {
     fn build(&self, app: &mut App) {
         app.insert_resource(self.clone());
-        app.add_systems(Startup, |cli: Res<Cli>, mut commands: Commands| {
+        app.add_systems(Startup, |cli: Res<DevConfig>, mut commands: Commands| {
             if cli.dummy {
                 commands.insert_resource(InteractDummy(true));
             }

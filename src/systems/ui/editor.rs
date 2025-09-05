@@ -7,9 +7,8 @@ use bevy_editor_pls::controls::{self, EditorControls};
 use bevy_editor_pls::editor_window::{EditorWindow, EditorWindowContext};
 use bevy_editor_pls::{egui, spawn_default_windows, AddEditorWindow, EditorPlugin, EguiPlugin};
 use parking_lot::RwLock;
-
-use crate::scenes::LoadScene;
 use crate::systems::network::NetworkWindow;
+use crate::systems::scenes::stored::GltfScene;
 
 fn eguibad<T: Send + Sync + Default + 'static>(ui: &mut egui::Ui, id: egui::Id) -> Arc<RwLock<T>>{
     ui.ctx().data_mut(|d| d.get_temp_mut_or_insert_with::<Arc<RwLock<T>>>(id, Default::default).clone())
@@ -29,7 +28,7 @@ impl EditorWindow for SceneLoadWindow {
 
         // Add a button to trigger scene loading
         if ui.button("Load Scene").clicked() {
-            world.spawn(LoadScene::new(&**buffer.read()));
+            world.spawn(GltfScene::new(&**buffer.read()));
         }
     }
 }
@@ -49,7 +48,7 @@ impl Plugin for MyEditorPlugin{
             app.add_plugins(NetworkWindow);
         }
 
-        app.add_systems(Startup, |mut window: Query<&mut Window>, cli: Res<crate::Cli>|{
+        app.add_systems(Startup, |mut window: Query<&mut Window>, cli: Res<crate::DevConfig>|{
             for mut w in window.iter_mut() {
                 dbg!(w.resolution.scale_factor());
                 dbg!(w.resolution.base_scale_factor());

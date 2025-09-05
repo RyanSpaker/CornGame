@@ -24,8 +24,8 @@ use lightyear::prelude::{
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::cameras::MainCamera;
-use crate::scenes::LoadScene;
 use crate::systems::network::ReplicateAuto;
+use crate::systems::scenes::stored::GltfScene;
 
 use self::input::CornCharacterInput;
 
@@ -128,7 +128,7 @@ impl Player {
             DehydratedChild::new(|_| {
                 (
                     Transform::from_xyz(0.0, -1.5, 0.0),
-                    LoadScene::new("models/mixamo.glb"),
+                    GltfScene::new("models/mixamo.glb"),
 
                     // BlueprintInfo::from_path("blueprints/construction_worker.glb"), //TODO skein
                     // SpawnBlueprint,
@@ -185,7 +185,7 @@ impl Player {
                 DehydratedChild::new(|_| {
                     (
                         Transform::from_xyz(0.0, -1.5, 0.0),
-                        LoadScene::new("models/mixamo.glb"),
+                        GltfScene::new("models/mixamo.glb"),
                     )
                 })
             ));

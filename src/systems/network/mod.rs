@@ -101,7 +101,7 @@ pub fn get_digest_on_wasm() -> Option<String> {
     None
 }
 
-fn network_on_start_system(mut commands: Commands, res: Res<crate::Cli>) {
+fn network_on_start_system(mut commands: Commands, res: Res<crate::DevConfig>) {
     // TODO replace with generic cli dev hooks
     if res.server {
         #[cfg(not(target_arch = "wasm32"))]

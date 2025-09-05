@@ -7,7 +7,6 @@ use crate::{
         scenes::{CornScene, CurrentScene, OnSpawnScene, SceneTransitionApp},
         util::default_resources::{SimpleMaterials, SimpleMeshes},
     },
-    Cli,
 };
 
 use super::LoadScene;
@@ -27,7 +26,6 @@ impl LobbyScene {
         shapes: Res<SimpleMeshes>,
         materials: Res<SimpleMaterials>,
         mut ambient: ResMut<AmbientLight>,
-        cli: Res<Cli>,
         mut time: ResMut<Time<avian3d::prelude::Physics>>,
     ) {
         //TODO can we make ambient not a resource

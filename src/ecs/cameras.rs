@@ -5,13 +5,14 @@ use serde::{Deserialize, Serialize};
 #[reflect(Component)]
 pub struct MainCamera;
 impl MainCamera{
+    pub fn get_bundle() -> impl Bundle{(
+        Self, 
+        Camera3d::default(), 
+        Camera{order: 0, hdr: false, ..Default::default()},
+        Name::from("Main Camera")
+    )}
     pub fn spawn_main_camera(commands: &mut Commands) -> Entity{
-        commands.spawn((
-            Self, 
-            Camera3d::default(), 
-            Camera{order: 0, hdr: false, ..Default::default()},
-            Name::from("Main Camera")
-        )).id()
+        commands.spawn(Self::get_bundle()).id()
     }
     pub fn disable_main_camera(mut query: Query<&mut Camera, With<Self>>){
         for camera in query.iter_mut(){camera.into_inner().is_active = false;}
