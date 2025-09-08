@@ -7,8 +7,7 @@ use bevy::{app::ScheduleRunnerPlugin, prelude::*, window::PresentMode};
 use serde::{Deserialize, Serialize};
 use util::debug_app::DebugApp;
 use systems::network::CornNetworkingPlugin;
-
-use crate::systems::scenes::{initial_scenes::InitialSceneExt, prelude::{EmbeddedSceneExt, TestRegisterExt}};
+use crate::systems::scenes::prelude::*;
 
 pub mod prelude{
     pub use super::{CornGameAppAPI, DevConfig};
@@ -65,7 +64,7 @@ impl CornGameAppAPI for App{
         )).add_plugins(CornNetworkingPlugin)
     }
 
-    /// Configures the app to run as a normal graphical client.
+    /// Configures the app to run as a normal graphical application.
     fn setup_game(&mut self, vsync: bool) -> &mut Self{
         self.add_plugins(DefaultPlugins
             .set(WindowPlugin{

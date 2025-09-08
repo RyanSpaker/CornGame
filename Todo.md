@@ -1,10 +1,19 @@
 # TODO:
-- World Inspector plugin needs to be re-added upon the release of bevy 13 (and world-inspector's update to 13).
-- Corn Rendering Optimizations (there's so many options).
-- Corn Rendering Improvements (Better Colors, Color Maps or different materials for each sub-mesh, Better Shadows, Make it night time, Flashlight).
-- Create some sort of "debug mode" for the corn game which can set up entirely different rendering options, like full brightness isntead of night. In the future, having an easy way of switching to a debug view of the scene will be very important.
+- Corn Work: wind, custom shader, shadow map improvements, Per frame position generation, occlusion culling, debug rendering options.
 - Profiling Information: We need a huge amount of profiling data to make decisions about how to optimize the game.
 - Gameplay elements: Better Sample Scene, Actual Character Controller, Main Menu (I really like phasmophobia's interactive main menu)
+
+- Add back in wind and other corn work
+- Fix networking code with main changes
+
+- Options
+- Items with picking for picking them up + inventory
+- Pause menu (Scene Architecture + Time stopping)
+- Journal (Scene Architecture)
+- Monster AI system
+- Round system
+- Character Controller
+- Level system for registering levels
 
 - integrate bevy_console and bevy_mod_scripting
 - debug console pipe to server

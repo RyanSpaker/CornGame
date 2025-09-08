@@ -1,5 +1,6 @@
-use bevy::{ecs::{component::HookContext, world::DeferredWorld}, platform::collections::HashMap, prelude::*};
-use crate::{systems::{scenes::{prelude::{ResolveScene, ScenePath, ScenePathResolveExt}, util::ButtonTriggerSwapParentScene, SceneObservers}, util::button::BackgroundSelectedColors}, util::observer_ext::ObserveAsAppExt, DevConfig};
+use avian3d::prelude::{Collider, PhysicsTime, RigidBody};
+use bevy::{ecs::{component::HookContext, world::DeferredWorld}, pbr::FogVolume, platform::collections::HashMap, prelude::*};
+use crate::{ecs::{cameras::MainCamera, test_cube::TestCube}, systems::{scenes::prelude::*, util::button::BackgroundSelectedColors}, util::observer_ext::ObserveAsAppExt, DevConfig};
 
 /// Trait used to generalize embedded scene behaviour
 pub trait EmbeddedScene: Component+PartialReflect{
@@ -57,7 +58,7 @@ pub trait EmbeddedSceneExt{
 impl EmbeddedSceneExt for App{
     /// Sets up functionality to auto load embedded scenes when they are spawned
     fn register_embedded_scene<S: EmbeddedScene>(&mut self) -> &mut Self {
-        self.add_observer_as(on_add_embedded_scene::<S>, SceneObservers)
+        self.add_observer_as(on_add_embedded_scene::<S>, super::SceneObservers)
     }
     /// Caches a scene components constructed Scene, so that it wont have to be created and stored during runtime. \
     /// Scenes should be cached late in the plugin stage to allow for resources to be initialized
@@ -91,6 +92,9 @@ impl Plugin for EmbeddedScenePlugin{
             .register_embedded_scene::<MainMenuScene>()
             .register_embedded_scene::<MainMenuSubScene>();
         app.register_type::<SpawnLobbyScenes>();
+        app
+            .register_scene_path("lobby".into())
+            .add_systems(Update, LobbyScene::on_spawn.in_set(SceneSpawnSet("lobby".into())));
     }
     fn finish(&self, app: &mut App) {
         app
@@ -116,9 +120,11 @@ impl SpawnLobbyScenes{
     fn on_add(mut world: DeferredWorld, HookContext{entity, ..}: HookContext){
         let Some(SpawnLobbyScenes(scenes)) = world.get::<Self>(entity).cloned() else {return;};
         let Some(ChildOf(parent)) = world.get::<ChildOf>(entity).cloned() else {return;};
-        world.commands().spawn_batch(scenes.into_iter().map(move |scene| {
-            (ResolveScene(scene.0), ChildOf(parent))
-        }));
+        world.commands().spawn_batch(scenes.into_iter().map(move |scene| {(
+            Name::from("Level from: ".to_string()+&scene.0), 
+            ResolveScene(scene.0), 
+            ChildOf(parent)
+        )}));
         world.commands().entity(entity).despawn();
     }
 }
@@ -126,12 +132,72 @@ impl SpawnLobbyScenes{
 #[derive(Default, Debug, Clone, PartialEq, Reflect, Component)]
 #[reflect(Component)]
 pub struct LobbyScene;
+impl LobbyScene{
+    fn on_spawn(
+        mut ambient: ResMut<AmbientLight>,
+        mut time: ResMut<Time<avian3d::prelude::Physics>>,
+        mut cameras: Query<&mut Transform, With<MainCamera>>
+    ){
+        ambient.brightness = 0.2;
+        time.pause();
+        for mut trans in cameras.iter_mut() {
+            *trans = Transform::from_xyz(0.0, 5.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y);
+        }
+    }
+}
 impl EmbeddedScene for LobbyScene{
     fn get_name(&self) -> String {"lobby".into()}
     fn create_scene(&self, world: &World) -> Scene {
         let mut scene = World::new();
+        // Spawn lobby elements
+        scene.spawn((
+            // TODO keep centered on player
+            Name::from("Fog Volume"),
+            FogVolume {
+                density_factor: 0.0001,
+                ..default()
+            },
+            Transform::from_scale(Vec3::splat(35.0)),
+        ));
+        scene.spawn(TestCube);
+        scene.spawn((
+            Name::from("Floor"),
+            Transform::from_scale(Vec3::new(1000.0, 0.0, 1000.0)),
+            Collider::cuboid(1.0, 0.1, 1.0),
+            // Mesh3d(shapes.plane.clone()),
+            // MeshMaterial3d(materials.white.clone()),
+            RigidBody::Static,
+        ));
+
+        // scene.spawn((
+        //     Name::from("Box"),
+        //     Mesh3d(shapes.cube.clone()),
+        //     MeshMaterial3d(materials.red.clone()),
+        // ));
+        // scene.spawn((
+        //     Sun,
+        //     DirectionalLight{illuminance: 1000.0, ..Default::default()},
+        //     Transform::from_translation(Vec3::NEG_ONE*2000.0).looking_at(Vec3::ZERO, Vec3::Y)
+        // )).with_child((
+        //     Transform::from_scale(Vec3::splat(45.0)),
+        //     NoRotationChild, //TODO should make directional light the child instead
+        //     GltfScene::new("models/sky.glb#sun")
+        // ));
+        // scene.spawn((
+        //     Moon,
+        //     DirectionalLight{illuminance: 30.0, ..default()},
+        //     Transform::from_translation(Vec3::new(-1.0, 1.0, -2.0).normalize()*1000.0)
+        //         .looking_at(Vec3::ZERO, Vec3::Y)
+        //         .with_scale(Vec3::splat(30.0)),//scale does weird things here
+        //     GltfScene::new("models/sky.glb#moon")
+        // ));
+        // scene.spawn((Transform::from_xyz(0.0, 500.0, 0.0).with_scale(Vec3::splat(10.0)), GltfScene::new("models/sky.glb#sky")));
+        
+        // Spawn specified scenes
         let dev_config = world.resource::<DevConfig>();
-        scene.spawn(SpawnLobbyScenes(dev_config.scenes.iter().map(|scene| scene.into()).collect()));
+        scene.spawn(SpawnLobbyScenes(dev_config.scenes.iter().map(|scene| 
+            scene.strip_prefix("assets/").unwrap_or(scene).into()
+        ).collect()));
         Scene::new(scene)
     }
 }

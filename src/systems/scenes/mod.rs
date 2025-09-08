@@ -333,7 +333,7 @@ pub mod scene_path_resolve{
         fn on_add_command(mut world: EntityWorldMut){
             let entity = world.id();
             let Some(Self(path)) = world.get::<Self>() else {return;};
-            let scenepath = ScenePath::from(path);
+            let scenepath = ScenePath::from(path.as_str());
             let registered_resolvers = world.resource::<RegisteredScenePathResolvers>().0.clone();
             world.world_scope(|world| {
                 for system_id in registered_resolvers.into_iter(){

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use bevy::{ecs::{entity::EntityHashSet, schedule::ScheduleLabel}, platform::collections::HashMap, prelude::*, scene::SceneInstanceReady};
 use crate::util::observer_ext::ObserveAsAppExt;
@@ -7,18 +7,13 @@ use crate::util::observer_ext::ObserveAsAppExt;
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component)]
 #[reflect(Component)]
 pub struct ScenePath(pub String);
-impl From<&String> for ScenePath{
-    fn from(value: &String) -> Self {
-        Self(value.clone())
-    }
-}
 impl From<&str> for ScenePath{
     fn from(value: &str) -> Self {
-        Self(value.to_owned())
+        Self(value.to_string())
     }
 }
-impl From<&PathBuf> for ScenePath{
-    fn from(value: &PathBuf) -> Self {
+impl From<&Path> for ScenePath{
+    fn from(value: &Path) -> Self {
         Self(value.to_string_lossy().to_string())
     }
 }
@@ -96,6 +91,20 @@ impl SceneSet{
     }
 }
 
+/// System set which runs once every time a scene path is loaded
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, SystemSet)]
+pub struct SceneSpawnSet(pub ScenePath);
+impl SceneSpawnSet{
+    /// Sets up the scene set with the correct run condition
+    pub fn register_set(&self, app: &mut App, schedule: impl ScheduleLabel) {
+        let path = self.0.clone();
+        app.configure_sets(schedule, self.clone().run_if(move |mut event_reader: EventReader<SceneSpawned>| {
+            for event in event_reader.read() {if event.0 == path {return true;}}
+            false
+        }));
+    }
+}
+
 /// Sets up scene tracking to the app
 #[derive(Debug, Default, Clone)]
 pub struct SceneTracking;
@@ -119,7 +128,9 @@ pub trait SceneTrackingExt{
 }
 impl SceneTrackingExt for App{
     fn register_scene_path(&mut self, path: ScenePath) -> &mut Self {
-        self.configure_sets(Update, SceneSet(path.clone()).run_if(on_scene(path)))
+        SceneSet(path.clone()).register_set(self, Update);
+        SceneSpawnSet(path.clone()).register_set(self, Update);
+        self
     }
 }
 
