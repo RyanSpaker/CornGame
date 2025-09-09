@@ -2,8 +2,9 @@ pub mod transition;
 pub mod stored;
 pub mod embedded_scenes;
 
+use avian3d::prelude::Collider;
 use bevy::prelude::*;
-use crate::util::observer_ext::*;
+use crate::{systems::scenes::util::{ForeignComponent, StaticComponent}, util::observer_ext::*};
 
 pub mod prelude{
     pub use super::{
@@ -35,7 +36,7 @@ impl Plugin for CornScenePlugin{
             initial_scenes::InitialScenePlugin,
             testing::TestScenePlugin
         ));
-        app.register_type::<util::ButtonTriggerSwapParentScene>();
+        app.register_type::<StaticComponent>();
     }
 }
 
@@ -92,8 +93,87 @@ pub mod resolve{
 ///Utility functions for common scene operations. Ex Scene Swapping function used with button triggers
 pub mod util{
     use bevy::{ecs::{component::HookContext, system::lifetimeless::Read, world::DeferredWorld}, prelude::*};
-
     use crate::systems::{scenes::prelude::{ResolveScene, ScenePath}, util::button::ButtonEvent};
+
+    /// Component which can be used to register types from foreign crates that dont impl Reflect but need to be added to scenes
+    #[derive(Debug, Component, Clone, Reflect)]
+    #[reflect(Component, opaque, type_path = false)] #[component(on_add=ForeignComponent::<T>::on_add)]
+    pub struct ForeignComponent<T: Component+Clone>{
+        comp: T,
+        primed: bool
+    }
+    /// TODO: Implement this type correctly
+    impl<T: Component+Clone> TypePath for ForeignComponent<T>{
+        fn type_path() -> &'static str {
+            core::any::type_name::<ForeignComponent<T>>()
+        }
+    
+        fn short_type_path() -> &'static str {
+            core::any::type_name::<ForeignComponent<T>>()
+        }
+    }
+    impl<T: Component+Clone> ForeignComponent<T>{
+        fn new(comp: T) -> Self{Self{comp, primed: false}}
+        fn on_add(mut world: DeferredWorld, HookContext{entity, ..}: HookContext){
+            let Some(comp) = world.get_mut::<Self>(entity) else {return;};
+            if !comp.primed {comp.into_inner().primed = true; return;}
+            // spawn component
+            world.commands().entity(entity).queue(|mut entity_world: EntityWorldMut| {
+                let Some(comp) = entity_world.take::<Self>() else {return;};
+                entity_world.insert(comp.comp);
+            });
+        }
+    }
+    pub trait AsForeignComponentExt{
+        fn as_foreign(self) -> ForeignComponent<Self> where Self: Sized+Component+Clone;
+    }
+    impl<C: Sized+Clone+Component> AsForeignComponentExt for C{
+        /// Wraps the component in ForeignComponent, allowing it to be type registered and added to scenes if the underlying type cannot be derive reflect
+        fn as_foreign(self) -> ForeignComponent<Self>{
+            ForeignComponent::new(self)
+        }
+    }
+
+    /// Component which can be used to prevent on add hooks of components from firing when adding it to a scene. Delays the hooks by a single add.
+    #[derive(Debug, Component, Reflect)] #[component(on_add=StaticComponent::on_add)]
+    #[reflect(Component, opaque)]
+    pub struct StaticComponent{
+        components: Vec<Box<dyn PartialReflect>>,
+        primed: bool
+    }
+    impl Clone for StaticComponent{
+        fn clone(&self) -> Self {
+            let components = self.components.iter().map(|reflect| reflect.to_dynamic() ).collect();
+            Self{components, primed: self.primed}
+        }
+    }
+    impl StaticComponent{
+        /// Makes a static component vessel for a PartialReflect Component
+        pub fn new(components: Vec<Box<dyn PartialReflect>>) -> Self{
+            Self{components, primed: false}
+        }
+        /// on add hook for this component. First add primes, second add spawns the contained component
+        fn on_add(mut world: DeferredWorld, HookContext {entity, ..}: HookContext) {
+            let Some(comp) = world.get_mut::<Self>(entity) else {return;};
+            if !comp.primed {comp.into_inner().primed = true; return;}
+            // spawn component
+            world.commands().entity(entity).queue(|mut entity_world: EntityWorldMut| {
+                let Some(comp) = entity_world.take::<Self>() else {return;};
+                for comp in comp.components.into_iter(){
+                    entity_world.insert_reflect(comp);
+                }
+            });
+        }
+    }
+    pub trait AsStaticComponentExt{
+        fn as_static(self) -> StaticComponent;
+    }
+    impl<C: PartialReflect+Component> AsStaticComponentExt for C{
+        /// Wraps the component in StaticComponent, allowing it to be added to a scene without triggering hooks
+        fn as_static(self) -> StaticComponent {
+            StaticComponent::new(vec![Box::new(self)])
+        }
+    }
 
     pub fn button_trigger(
         trigger: Trigger<ButtonEvent>
@@ -160,20 +240,17 @@ pub mod util{
         }
     }
 
-
     /// Component added to button ui entities. Converts to an observer on add. Used to add button observers to scenes
     #[derive(Debug, PartialEq, Reflect, Component)]
-    #[reflect(Component)] #[component(on_add=ButtonTriggerSwapParentScene::on_add)]
-    pub struct ButtonTriggerSwapParentScene(pub ScenePath, pub ScenePath, bool);
-    impl ButtonTriggerSwapParentScene{
-        pub fn new(parent: ScenePath, swap: ScenePath) -> Self {Self(parent, swap, false)}
+    #[reflect(Component)] #[component(on_add=ButtonTriggerSwapParentScene::<S1, S2>::on_add)]
+    pub struct ButtonTriggerSwapParentScene<S1: Component+PartialEq, S2: Bundle+Clone>(pub S1, pub S2);
+    impl<S1: Component+PartialEq, S2: Bundle+Clone> ButtonTriggerSwapParentScene<S1, S2>{
+        pub fn new(parent: S1, swap: S2) -> Self {Self(parent, swap)}
         /// Component hook which replaces this component with an observer on_add.
         fn on_add(mut world: DeferredWorld, HookContext{entity, ..}: HookContext){
-            let Some(comp) = world.get_mut::<Self>(entity) else {return;};
-            if !comp.2 {comp.into_inner().2 = true; return;}
             world.commands().entity(entity).queue(|mut entity_world: EntityWorldMut| {
-                let Some(Self(parent, swap, _)) = entity_world.take::<Self>() else {return;};
-                entity_world.observe(button_trigger.pipe(swap_parent_scenepath(parent, swap)));
+               let Some(Self(parent, swap)) = entity_world.take::<Self>() else {return;};
+               entity_world.observe(button_trigger.pipe(swap_parent_scene(parent, swap)));
             });
         }
     }

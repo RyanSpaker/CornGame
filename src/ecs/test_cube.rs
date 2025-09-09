@@ -2,7 +2,7 @@ use avian3d::prelude::{Collider, RigidBody, SleepingDisabled, SleepingThreshold}
 use bevy::{ecs::{component::HookContext, world::DeferredWorld}, prelude::*};
 use lightyear::prelude::*;
 use serde::{Serialize, Deserialize};
-use crate::{systems::{network::ReplicateAuto, physics::DampedPhysics}};
+use crate::{systems::{network::ReplicateAuto, physics::DampedPhysics}, Headless};
 
 /// Test object for debugging network / replication (or whatever)
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component, Serialize, Deserialize)]
@@ -19,9 +19,9 @@ pub struct TestCube;
 impl TestCube {
     fn add_handles(mut world: DeferredWorld, HookContext { entity,.. } : HookContext){
         // TODO should not be hook
-        //if world.get_resource::<Headless>().is_some() {
-        //    return
-       // }
+        if world.get_resource::<Headless>().is_some() {
+           return
+       }
 
         let assets = world.resource_mut::<AssetServer>();
         let mesh3d = Mesh3d(assets.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0))));

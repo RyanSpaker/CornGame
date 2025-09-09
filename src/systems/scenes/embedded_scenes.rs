@@ -1,6 +1,6 @@
 use avian3d::prelude::{Collider, PhysicsTime, RigidBody};
 use bevy::{ecs::{component::HookContext, world::DeferredWorld}, pbr::FogVolume, platform::collections::HashMap, prelude::*};
-use crate::{ecs::{cameras::MainCamera, test_cube::TestCube}, systems::{scenes::prelude::*, util::button::BackgroundSelectedColors}, util::observer_ext::ObserveAsAppExt, DevConfig};
+use crate::{ecs::{cameras::MainCamera, test_cube::TestCube}, systems::{scenes::prelude::*, util::{button::BackgroundSelectedColors, default_resources::{SimpleMaterial, SimpleMesh}}}, util::observer_ext::ObserveAsAppExt, DevConfig};
 
 /// Trait used to generalize embedded scene behaviour
 pub trait EmbeddedScene: Component+PartialReflect{
@@ -95,6 +95,11 @@ impl Plugin for EmbeddedScenePlugin{
         app
             .register_scene_path("lobby".into())
             .add_systems(Update, LobbyScene::on_spawn.in_set(SceneSpawnSet("lobby".into())));
+        app
+            .register_type::<ButtonTriggerSwapParentScene<MainMenuScene, LobbyScene>>()
+            .register_type::<ButtonTriggerSwapParentScene<MainMenuSubScene, MainMenuSubScene>>()
+            .register_type::<ForeignComponent<Collider>>()
+            .register_type::<ForeignComponent<RigidBody>>();
     }
     fn finish(&self, app: &mut App) {
         app
@@ -159,14 +164,16 @@ impl EmbeddedScene for LobbyScene{
             },
             Transform::from_scale(Vec3::splat(35.0)),
         ));
-        scene.spawn(TestCube);
+        scene.spawn(TestCube.as_static());
         scene.spawn((
             Name::from("Floor"),
             Transform::from_scale(Vec3::new(1000.0, 0.0, 1000.0)),
-            Collider::cuboid(1.0, 0.1, 1.0),
-            // Mesh3d(shapes.plane.clone()),
-            // MeshMaterial3d(materials.white.clone()),
-            RigidBody::Static,
+            Collider::cuboid(1.0, 0.1, 1.0).as_foreign(),
+            StaticComponent::new(vec![
+                SimpleMesh::Plane.to_dynamic(),
+                SimpleMaterial::White.to_dynamic(),
+            ]),
+            RigidBody::Static.as_foreign(),
         ));
 
         // scene.spawn((
@@ -256,7 +263,7 @@ impl EmbeddedScene for MainMenuSubScene{
                 TextFont{font_size: 32.0, ..Default::default()},
                 BackgroundColor(Color::WHITE),
                 BackgroundSelectedColors{selected: bevy::color::palettes::basic::GRAY.into(), unselected: Color::WHITE},
-                ButtonTriggerSwapParentScene::new("embedded#main_menu".into(), "embedded#lobby".into())
+                ButtonTriggerSwapParentScene(MainMenuScene, LobbyScene).as_static()
             ));
             world.spawn((
                 Button,
@@ -265,7 +272,7 @@ impl EmbeddedScene for MainMenuSubScene{
                 TextFont{font_size: 32.0, ..Default::default()},
                 BackgroundColor(Color::WHITE),
                 BackgroundSelectedColors{selected: bevy::color::palettes::basic::GRAY.into(), unselected: Color::WHITE},
-                ButtonTriggerSwapParentScene::new("embedded#main_menu#title".into(), "embedded#main_menu#options".into())
+                ButtonTriggerSwapParentScene(Self::Title, Self::Options).as_static()
             ));
             world.spawn((
                 Button,
@@ -274,7 +281,7 @@ impl EmbeddedScene for MainMenuSubScene{
                 TextFont{font_size: 32.0, ..Default::default()},
                 BackgroundColor(Color::WHITE),
                 BackgroundSelectedColors{selected: bevy::color::palettes::basic::GRAY.into(), unselected: Color::WHITE},
-                ButtonTriggerSwapParentScene::new("embedded#main_menu#title".into(), "embedded#main_menu#credits".into())
+                ButtonTriggerSwapParentScene(Self::Title, Self::Credits).as_static()
             ));
         }
         Self::Options => {
@@ -291,7 +298,7 @@ impl EmbeddedScene for MainMenuSubScene{
                 TextFont{font_size: 32.0, ..Default::default()},
                 BackgroundColor(Color::WHITE),
                 BackgroundSelectedColors{selected: bevy::color::palettes::basic::GRAY.into(), unselected: Color::WHITE},
-                ButtonTriggerSwapParentScene::new("embedded#main_menu#options".into(), "embedded#main_menu#title".into())
+                ButtonTriggerSwapParentScene(Self::Options, Self::Title).as_static()
             ));
         }
         Self::Credits => {
@@ -308,7 +315,7 @@ impl EmbeddedScene for MainMenuSubScene{
                 TextFont{font_size: 32.0, ..Default::default()},
                 BackgroundColor(Color::WHITE),
                 BackgroundSelectedColors{selected: bevy::color::palettes::basic::GRAY.into(), unselected: Color::WHITE},
-                ButtonTriggerSwapParentScene::new("embedded#main_menu#credits".into(), "embedded#main_menu#title".into())
+                ButtonTriggerSwapParentScene(Self::Credits, Self::Title).as_static()
             ));
         }
         }

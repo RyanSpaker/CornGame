@@ -1,12 +1,20 @@
 use std::path::Path;
 
-use bevy::{ecs::{entity::EntityHashSet, schedule::ScheduleLabel}, platform::collections::HashMap, prelude::*, scene::SceneInstanceReady};
+use bevy::{ecs::{component::HookContext, entity::EntityHashSet, schedule::ScheduleLabel, world::DeferredWorld}, platform::collections::HashMap, prelude::*, scene::SceneInstanceReady};
 use crate::util::observer_ext::ObserveAsAppExt;
 
 /// Component of scene entities that determine what scene they are. Needed for scene tracking mechanisms to work
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, Component)]
-#[reflect(Component)]
+#[reflect(Component)] #[component(on_add=ScenePath::on_add)]
 pub struct ScenePath(pub String);
+impl ScenePath{
+    /// Creates a name from the scene path if the entity does not already have one
+    fn on_add(mut world: DeferredWorld, HookContext{entity, ..}: HookContext){
+        let Some(path) = world.get::<Self>(entity) else {return;};
+        let name = path.0.split("#").last().unwrap_or(&path.0).to_string();
+        world.commands().entity(entity).insert_if_new(Name::from(format!("Embedded Scene: {}", name)));
+    }
+}
 impl From<&str> for ScenePath{
     fn from(value: &str) -> Self {
         Self(value.to_string())

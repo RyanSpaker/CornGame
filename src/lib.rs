@@ -28,6 +28,10 @@ pub struct DevConfig {
 }
 impl we_clap::WeParser for DevConfig {}
 
+#[derive(Default, Debug, Clone, PartialEq, Reflect, Resource)]
+#[reflect(Resource)]
+pub struct Headless;
+
 pub trait CornGameAppAPI{
     fn setup_game_headless(&mut self) -> &mut Self;
     fn setup_game(&mut self, vsync: bool) -> &mut Self;
@@ -61,7 +65,8 @@ impl CornGameAppAPI for App{
         ).add_plugins(ScheduleRunnerPlugin::run_loop(
             // Run 60 times per second.
             Duration::from_secs_f64(1.0 / 60.0),
-        )).add_plugins(CornNetworkingPlugin)
+        )).register_type::<Headless>().init_resource::<Headless>()
+        .add_plugins(CornNetworkingPlugin)
     }
 
     /// Configures the app to run as a normal graphical application.
