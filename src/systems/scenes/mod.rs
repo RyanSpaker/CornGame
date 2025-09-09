@@ -2,9 +2,8 @@ pub mod transition;
 pub mod stored;
 pub mod embedded_scenes;
 
-use avian3d::prelude::Collider;
 use bevy::prelude::*;
-use crate::{systems::scenes::util::{ForeignComponent, StaticComponent}, util::observer_ext::*};
+use crate::{systems::scenes::util::{StaticCommand, StaticComponent}, util::observer_ext::*};
 
 pub mod prelude{
     pub use super::{
@@ -37,6 +36,7 @@ impl Plugin for CornScenePlugin{
             testing::TestScenePlugin
         ));
         app.register_type::<StaticComponent>();
+        app.register_type::<StaticCommand>();
     }
 }
 
@@ -92,8 +92,51 @@ pub mod resolve{
 
 ///Utility functions for common scene operations. Ex Scene Swapping function used with button triggers
 pub mod util{
+    use std::sync::Arc;
+
     use bevy::{ecs::{component::HookContext, system::lifetimeless::Read, world::DeferredWorld}, prelude::*};
     use crate::systems::{scenes::prelude::{ResolveScene, ScenePath}, util::button::ButtonEvent};
+
+    /// Component which holds a command that will run the second time it is inserted. Can be used to add components to scenes which are not reflect
+    #[derive(Component, Clone, Reflect)]
+    #[reflect(Component, opaque)] #[component(on_add = StaticCommand::on_add)]
+    pub struct StaticCommand{
+        command: Arc<dyn Fn(EntityWorldMut)+Sync+Send>,
+        primed: bool
+    }
+    impl StaticCommand{
+        /// Constructs a static command from a component, which spawns that component
+        pub fn spawn_component<T: Component+Clone>(component: T) -> Self{
+            Self { command: Arc::new(move |mut world: EntityWorldMut| {
+                world.insert(component.clone());
+            }), primed: false }
+        }
+        /// Constructs a static command from a component, which spawns that component
+        pub fn spawn_bundle<T: Bundle+Clone>(bundle: T) -> Self{
+            Self { command: Arc::new(move |mut world: EntityWorldMut| {
+                world.insert(bundle.clone());
+            }), primed: false }
+        }
+        /// On add hook for this component. First time its added it is primed. Subsequent times it calls the contained command as an entity command
+        fn on_add(mut world: DeferredWorld, HookContext{entity, ..}: HookContext){
+            let Some(comp) = world.get_mut::<Self>(entity) else {return;};
+            if !comp.primed {comp.into_inner().primed = true; return;}
+            // spawn component
+            world.commands().entity(entity).queue(|mut entity_world: EntityWorldMut| {
+                let Some(comp) = entity_world.take::<Self>() else {return;};
+                (comp.command)(entity_world);
+            });
+        }
+    }
+    pub trait AsStaticCommandExt{
+        fn as_static_spawn(self) -> StaticCommand;
+    }
+    impl<C: Bundle+Clone> AsStaticCommandExt for C{
+        /// Turns the component into a static command which spawns the component
+        fn as_static_spawn(self) -> StaticCommand {
+            StaticCommand::spawn_bundle(self)
+        }
+    }
 
     /// Component which can be used to register types from foreign crates that dont impl Reflect but need to be added to scenes
     #[derive(Debug, Component, Clone, Reflect)]
@@ -492,16 +535,23 @@ pub mod initial_scenes{
     /// Empty: Spawn Main
     /// Non-Empty: Spawn Scenes
     /// DNE: Spawn Nothing
-    #[derive(Default, Debug, Clone, PartialEq, Reflect, Resource)]
+    #[derive(Debug, Clone, PartialEq, Reflect, Resource)]
     #[reflect(Resource)]
-    pub struct InitialScenes(pub Vec<ScenePath>);
+    pub struct InitialScenes{
+        pub scenes: Vec<ScenePath>,
+        pub default_main: bool
+    }
+    impl Default for InitialScenes{fn default() -> Self {Self { 
+        scenes: vec![], 
+        default_main: true
+    }}}
     impl InitialScenes{
         /// System which runs during startup that spawns all initial scenes
         fn spawn_scenes(res: Res<Self>, mut commands: Commands){
-            if res.0.is_empty(){
+            if res.scenes.is_empty() && res.default_main{
                 commands.spawn(MainMenuScene);
             }
-            for scene_path in res.0.iter(){
+            for scene_path in res.scenes.iter(){
                 commands.spawn(ResolveScene(scene_path.0.clone()));
             }
         }
@@ -511,7 +561,7 @@ pub mod initial_scenes{
         fn set_global_scene(&mut self, enable: bool) -> &mut Self;
         fn set_initial_scenes(&mut self, scenes: Vec<ScenePath>) -> &mut Self;
         fn add_initial_scenes(&mut self, scenes: Vec<ScenePath>) -> &mut Self;
-        fn remove_initial_scenes(&mut self) -> &mut Self;
+        fn disable_default_main(&mut self) -> &mut Self;
     }
     impl InitialSceneExt for App{
         fn set_global_scene(&mut self, enable: bool) -> &mut Self {
@@ -519,15 +569,15 @@ pub mod initial_scenes{
             self
         }
         fn set_initial_scenes(&mut self, scenes: Vec<ScenePath>) -> &mut Self {
-            self.world_mut().resource_mut::<InitialScenes>().0 = scenes;
+            self.world_mut().resource_mut::<InitialScenes>().scenes = scenes;
             self
         }
         fn add_initial_scenes(&mut self, scenes: Vec<ScenePath>) -> &mut Self {
-            self.world_mut().resource_mut::<InitialScenes>().0.extend(scenes);
+            self.world_mut().resource_mut::<InitialScenes>().scenes.extend(scenes);
             self
         }
-        fn remove_initial_scenes(&mut self) -> &mut Self {
-            self.world_mut().remove_resource::<InitialScenes>();
+        fn disable_default_main(&mut self) -> &mut Self {
+            self.world_mut().resource_mut::<InitialScenes>().default_main = false;
             self
         }
     }
@@ -546,7 +596,7 @@ pub mod initial_scenes{
 /// Code to create a simple testing framework for defining tests
 pub mod testing{
     use bevy::{ecs::{component::HookContext, reflect::ReflectCommandExt, schedule::ScheduleLabel, world::DeferredWorld}, platform::collections::HashMap, prelude::*};
-    use crate::{ecs::{cameras::MainCamera, flycam::FlyCam}, systems::{scenes::{initial_scenes::InitialSceneExt, prelude::{EmbeddedScene, EmbeddedSceneExt}}, util::default_resources::{SimpleMaterials, SimpleMeshes}}};
+    use crate::{ecs::{cameras::MainCamera, flycam::FlyCam}, systems::{scenes::{initial_scenes::InitialSceneExt, prelude::{EmbeddedScene, EmbeddedSceneExt}, util::StaticComponent}, util::default_resources::{SimpleMaterial, SimpleMesh}}};
 
     pub mod prelude{
         pub use super::{TestStartup, TestUpdate, TestScene, TestRegisterExt, EmptyTest, TestDefaultRender};
@@ -568,7 +618,8 @@ pub mod testing{
         fn on_add(mut world: DeferredWorld, HookContext{entity,..}:HookContext){
             let test_name = world.get::<Self>(entity).unwrap().0.clone();
             let cache = world.resource::<TestSceneCache>();
-            let Some(Ok(comp)) = cache.0.get(&test_name).map(|c| c.reflect_clone()) else {return;};
+            let Some(comp) = cache.0.get(&test_name) else {return;};
+            let comp = comp.to_dynamic();
             world.commands().entity(entity).insert_reflect(comp);
         }
         /// System run during startup that runs any TestStartup schedules needed
@@ -616,7 +667,7 @@ pub mod testing{
             self.init_resource::<TestActive>()
         }
         fn activate_test(&mut self, name: String) -> &mut Self {
-            self.activate_tests().set_initial_scenes(vec![]).set_global_scene(false);
+            self.activate_tests().disable_default_main().set_global_scene(false);
             self.world_mut().spawn(TestScene(name));
             self
         }
@@ -652,7 +703,7 @@ pub mod testing{
     pub struct EmptyTest;
 
     /// Simple test with a main camera, and optionally: flycam, directional light, floor plane, and cube
-    #[derive(Default, Debug, Clone, PartialEq, Reflect, Component)]
+    #[derive(Debug, Clone, PartialEq, Reflect, Component)]
     #[reflect(Component)]
     pub struct TestDefaultRender{
         pub flycam: bool,
@@ -660,30 +711,35 @@ pub mod testing{
         pub floor: bool,
         pub cube: bool
     }
+    impl Default for TestDefaultRender{fn default() -> Self {Self {
+        flycam: true, directional_light: true, floor: true, cube: true
+    }}}
     impl EmbeddedScene for TestDefaultRender{
         fn get_name(&self) -> String {"TestDefaultRender".to_string()}
-        fn create_scene(&self, world: &World) -> Scene {
+        fn create_scene(&self, _world: &World) -> Scene {
             let mut scene = World::new();
             if self.directional_light {
-                scene.spawn(DirectionalLight::default());
+                scene.spawn((DirectionalLight::default(), Transform::from_translation(Vec3::ONE).looking_at(Vec3::ZERO, Vec3::Y)));
             }
-            let simple_meshes = world.resource::<SimpleMeshes>();
-            let simple_mats = world.resource::<SimpleMaterials>();
             if self.floor {
                 scene.spawn((
                     Name::from("Floor"), 
-                    Mesh3d(simple_meshes.plane.clone()),
-                    MeshMaterial3d(simple_mats.white.clone())
+                    StaticComponent::new(vec![
+                        SimpleMesh::Plane.to_dynamic(),
+                        SimpleMaterial::White.to_dynamic()
+                    ])
                 ));
             }
             if self.cube{
                 scene.spawn((
-                    Name::from("Cube"), 
-                    Mesh3d(simple_meshes.cube.clone()),
-                    MeshMaterial3d(simple_mats.red.clone())
+                    Name::from("Cube"),
+                    StaticComponent::new(vec![
+                        SimpleMesh::Cube.to_dynamic(),
+                        SimpleMaterial::Red.to_dynamic()
+                    ])
                 ));
             }
-            let cam = scene.spawn(MainCamera::get_bundle()).id();
+            let cam = scene.spawn((MainCamera::get_bundle(), Transform::from_xyz(0.0, 5.0, 5.0).looking_at(Vec3::ZERO, Vec3::Y))).id();
             if self.flycam{
                 scene.entity_mut(cam).insert(FlyCam);
             }

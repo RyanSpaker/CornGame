@@ -71,7 +71,7 @@ fn main() -> AppExit{
     }else if cli.lobby || !cli.scenes.is_empty() {
         app.set_initial_scenes(vec!["embedded#lobby".into()]);
     } else if cli.empty{
-        app.remove_initial_scenes();
+        app.disable_default_main();
     }
     if cli.no_global {app.set_global_scene(false);}
     // Parse test cli

@@ -97,9 +97,7 @@ impl Plugin for EmbeddedScenePlugin{
             .add_systems(Update, LobbyScene::on_spawn.in_set(SceneSpawnSet("lobby".into())));
         app
             .register_type::<ButtonTriggerSwapParentScene<MainMenuScene, LobbyScene>>()
-            .register_type::<ButtonTriggerSwapParentScene<MainMenuSubScene, MainMenuSubScene>>()
-            .register_type::<ForeignComponent<Collider>>()
-            .register_type::<ForeignComponent<RigidBody>>();
+            .register_type::<ButtonTriggerSwapParentScene<MainMenuSubScene, MainMenuSubScene>>();
     }
     fn finish(&self, app: &mut App) {
         app
@@ -168,12 +166,14 @@ impl EmbeddedScene for LobbyScene{
         scene.spawn((
             Name::from("Floor"),
             Transform::from_scale(Vec3::new(1000.0, 0.0, 1000.0)),
-            Collider::cuboid(1.0, 0.1, 1.0).as_foreign(),
+            StaticCommand::spawn_bundle((
+                Collider::cuboid(1.0, 0.1, 1.0),
+                RigidBody::Static
+            )),
             StaticComponent::new(vec![
                 SimpleMesh::Plane.to_dynamic(),
                 SimpleMaterial::White.to_dynamic(),
             ]),
-            RigidBody::Static.as_foreign(),
         ));
 
         // scene.spawn((

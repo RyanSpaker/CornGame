@@ -5,12 +5,14 @@ use bevy::{
 };
 
 #[derive(Component, Debug, Default, Clone, Reflect)]
+#[reflect(Component)]
 pub struct FlyCam;
 #[derive(Default, Debug, Clone, Reflect, Component)]
-#[component(storage = "SparseSet")]
+#[component(storage = "SparseSet")] #[reflect(Component)]
 pub struct Focused;
 
 #[derive(Debug, Clone, Reflect, Resource)]
+#[reflect(Resource)]
 pub struct FlyCamConfig {
     pub movement_speed: f32,
     pub sensitivity: f32,
@@ -25,6 +27,7 @@ impl Default for FlyCamConfig {
 }
 
 #[derive(Debug, Clone, Reflect, Resource)]
+#[reflect(Resource)]
 pub struct FlyCamKeybinds {
     move_forward: KeyCode,
     move_backward: KeyCode,

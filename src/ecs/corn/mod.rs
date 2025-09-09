@@ -9,7 +9,7 @@ pub mod sensor;
 use bevy::{prelude::*, render::{
     batching::NoAutomaticBatching, extract_component::{ExtractComponent, ExtractComponentPlugin}, view::NoFrustumCulling
 }};
-use crate::util::observer_ext::ObserverParent;
+use crate::{systems::scenes::prelude::{TestDefaultRender, TestRegisterExt, TestStartup}, util::observer_ext::ObserverParent};
 
 pub mod prelude{
     pub use super::{
@@ -56,6 +56,8 @@ impl Plugin for CornFieldComponentPlugin{
         ));
 
         app.add_plugins(sensor::CornSensorPlugin);
+        app.register_test("corn".to_string(), TestDefaultRender::default().to_dynamic());
+        app.add_systems(TestStartup("corn".to_string()), test::test_field);
     }
 }
 
