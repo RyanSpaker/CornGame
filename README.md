@@ -1,3 +1,5 @@
+![](screenshots/cabin.png)
+
 # CornGame
 Corn Maze game written in rust with the bevy engine
 
