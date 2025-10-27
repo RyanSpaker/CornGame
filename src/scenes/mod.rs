@@ -12,7 +12,7 @@ use bevy::{
 };
 use lobby::LobbyScene;
 use crate::{
-    ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCam, framerate::spawn_fps_text},
+    ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCam, framerate::spawn_fps_text, menu_main::spawn_main_menu},
     systems::scenes::{CornScene, SceneTransitionApp},
     Cli,
 };
@@ -133,7 +133,8 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
     ));
 
     if cli.menu {
-        commands.spawn(main_menu::MainMenuScene.get_bundle());
+        // commands.spawn(main_menu::MainMenuScene.get_bundle());
+        commands.run_system_cached(spawn_main_menu);
     } else if !cli.scenes.is_empty() || cli.lobby {
         commands.spawn(LobbyScene.get_bundle());
     }

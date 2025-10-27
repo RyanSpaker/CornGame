@@ -8,6 +8,8 @@ pub mod scenes;
 pub mod ui;
 pub mod util;
 pub mod animation_context;
+pub mod camera_target;
+pub mod game;
 
 use bevy::{pbr::FogVolume, prelude::*};
 
@@ -24,6 +26,8 @@ impl Plugin for CornSystemsPlugin {
             character::MyCharacterPlugin,
             interactions::InteractPlugin,
             animation_context::plugin,
+            camera_target::plugin,
+            game::GamePlugin,
         ));
         // TODO reimplement edge detection
         // .add_plugins((BlenvyPlugin::default(), EdgeDetectionPlugin::default()));

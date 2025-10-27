@@ -1,14 +1,7 @@
 use std::{collections::HashMap, time::Duration};
 use avian3d::prelude::RigidBodyDisabled;
 use bevy::{
-    animation,
-    audio::Volume,
-    input::keyboard::{Key, KeyboardInput},
-    picking::{backend::HitData, hover::HoverMap},
-    platform::time::Instant,
-    prelude::*,
-    render::primitives::Aabb,
-    window::PrimaryWindow,
+    animation, audio::Volume, diagnostic::FrameCount, input::keyboard::{Key, KeyboardInput}, picking::{self, backend::HitData, hover::HoverMap, pointer::{Location, PointerId, PointerLocation}}, platform::time::Instant, prelude::*, render::{camera::RenderTarget, primitives::Aabb}, window::{CursorGrabMode, NormalizedWindowRef, PrimaryWindow}
 };
 use bevy_easings::EasingsPlugin;
 use clap::Parser;
@@ -22,7 +15,7 @@ use lightyear::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    scenes::resolver::{EntityPointer, EntityResolver}, systems::{animation_context::AnimationParams, network::uid::{Uid, UidUsePath}}, Cli
+    ecs::cameras::MainCamera, scenes::resolver::{EntityPointer, EntityResolver}, systems::{animation_context::AnimationParams, network::uid::{Uid, UidUsePath}}, Cli
 };
 
 use super::character::Player;
@@ -70,6 +63,22 @@ impl Plugin for InteractPlugin {
         app.register_type::<DehydratedController>();
         app.add_systems(PostUpdate, DehydratedController::hydrate);
         // app.add_observer(ToggleInteractionBlender::handle_flip);
+
+        // deal with cursor lock bug
+        // NOTE: redundant with force_pointer_center
+        app.add_systems(Main, center_cursor_on_camera_viewport.before(bevy::picking::PickSet::Input));
+
+        // XXX Why does this not work?? I am guessing bc Main?
+        // app.add_systems(Main, force_pointer_center
+        //     .after(bevy::picking::pointer::PointerInput::receive)
+        //     .before(bevy::picking::backend::ray::RayMap::repopulate)
+        //     .before(bevy::picking::PickSet::Backend)
+        // );
+        app.add_systems(PreUpdate, force_pointer_center
+            .after(bevy::picking::pointer::PointerInput::receive)
+            .before(bevy::picking::backend::ray::RayMap::repopulate)
+            .in_set(bevy::picking::PickSet::ProcessInput)
+        );
     }
 }
 
@@ -455,8 +464,8 @@ impl ToggleInteractionBlender {
 #[derive(Debug, Clone, Component, Reflect)]
 #[reflect(Component)]
 pub struct InteractionText {
-    string: String,
-    show: String,
+    pub string: String,
+    pub show: String,
 }
 impl InteractionText {
     fn flip() -> Self {
@@ -478,10 +487,10 @@ impl Default for InteractionText {
 
 #[derive(Debug, Clone, Default, Component, Reflect)]
 #[reflect(Component)]
-#[require(super::network::uid::UidUsePath = UidUsePath::Name)] //FIXME
+#[require(super::network::uid::UidGen)] //FIXME
 pub struct Interactable {
     /// is unfinished interaction occuring
-    active: bool,
+    pub active: bool,
 }
 
 #[derive(Debug, Clone, Event, Reflect, Serialize, Deserialize)]
@@ -699,7 +708,7 @@ fn handle_key(
                         if let Ok(mut net) = sender.single_mut() {
                             net.send::<ActionsChannel>(InteractionMessage {
                                 uid: uid.get(h.0).unwrap().clone(),
-                                state: !state.get(h.0).unwrap().0,
+                                state: !state.get(h.0).map(|a|a.0).unwrap_or_default(), //XXX  might not have ToggleState
                             });
                         } else {
                             error!("No MessageSender found for InteractionMessage");
@@ -785,6 +794,62 @@ pub struct DebugForMissingReflect {
 impl DebugForMissingReflect {
     fn system(mut this: ResMut<DebugForMissingReflect>, h: Res<HoverMap>) {
         this.hover = h.0.values().flat_map(|v| v.clone()).collect()
+    }
+}
+
+fn force_pointer_center(
+    mut pointer_inputs: Query<(&mut PointerLocation, &PointerId)>,
+    window: Single<(Entity, &Window), With<PrimaryWindow>>,
+    camera: Single<&Camera, With<MainCamera>>, // or Camera2d, or a marker
+    // frame: Res<FrameCount>
+) {
+    let (w_e, window) = *window;
+    if window.cursor_options.grab_mode == CursorGrabMode::Locked {
+        let center = if let Some(viewport) = &camera.viewport {
+            // viewport physical position + half its size
+            let vp_pos = viewport.physical_position;
+            let vp_size = viewport.physical_size;
+            Vec2::new(
+                (vp_pos.x + vp_size.x / 2) as f32,
+                (vp_pos.y + vp_size.y / 2) as f32,
+            ) / window.scale_factor()
+        } else {
+            // no viewport, fallback to full window
+            Vec2::new(window.width() / 2.0, window.height() / 2.0)
+        };
+
+        // window.set_cursor_position(Some(center));
+        if let Some(mut loc) = pointer_inputs.iter_mut().find(|a| *a.1 == PointerId::Mouse) {
+            // println!("{} {}", frame.0, &center);
+            loc.0.location = Some(Location{
+                target: RenderTarget::Window(bevy::window::WindowRef::Primary).normalize(Some(w_e)).unwrap(),
+                position: center
+            });
+        }
+    }
+}
+
+/// a system to fix locked cursor bug 
+/// TODO support soft cursor, for things like menu
+fn center_cursor_on_camera_viewport(
+    mut window: Single<&mut Window, With<PrimaryWindow>>,
+    camera: Single<&Camera, With<MainCamera>>, // or Camera2d, or a marker
+) {
+    if window.cursor_options.grab_mode == CursorGrabMode::Locked {
+        let center = if let Some(viewport) = &camera.viewport {
+            // viewport physical position + half its size
+            let vp_pos = viewport.physical_position;
+            let vp_size = viewport.physical_size;
+            Vec2::new(
+                (vp_pos.x + vp_size.x / 2) as f32,
+                (vp_pos.y + vp_size.y / 2) as f32,
+            ) / window.scale_factor()
+        } else {
+            // no viewport, fallback to full window
+            Vec2::new(window.width() / 2.0, window.height() / 2.0)
+        };
+
+        window.set_cursor_position(Some(center));
     }
 }
 

@@ -75,9 +75,11 @@ bevy = { version = "0.16.1", default-features = false, features = [
 
   "dynamic_linking", 
   "serialize", 
+ 
   # "asset_processor", 
-  # "file_watcher", # faggots  https://github.com/rust-lang/cargo/issues/1197
-  # "embedded_watcher", 
+  "file_watcher", # https://github.com/rust-lang/cargo/issues/1197
+  "embedded_watcher", 
+ 
   "default_font", 
   "jpeg", 
   "bevy_remote",
@@ -138,6 +140,11 @@ x509-parser = "0.17.0"
 tokio = "1.47.0"
 smallvec = "1.15.1"
 regex_static = "0.1.1"
+bevy_lunex = "0.4.2"
+bevy_flair = "0.4.1"
+bevy_simple_text_input = "0.11.0"
+bevy_ui_text_input = "0.5"
+cosmic-text = "0.14.2"
 
 [patch.crates-io]
 petgraph = {branch = "master", git = "https://github.com/petgraph/petgraph.git"}

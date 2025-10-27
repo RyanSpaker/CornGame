@@ -38,11 +38,30 @@ impl<'a> AnimationParamsItem<'a> {
 
         Ok(active)
     }
+
+    // syncronize to time
+    // hyper annoying since it needs stuff from asset server, and we want to call this from a system
+    // pub fn synchronize(
+    //     &mut self,
+    //     time: Time,
+    // ) -> self {
+    //     if let Some(a) = self.player.playing_animations_mut().next() {
+    //         time.elapsed().as_secs_f64().rem(a.1)
+    //         a.1.seek_time()
+    //     }
+    // }
+}
+
+// TODO better unification between commands and systems
+fn animation_sync(
+    
+){
+    
 }
 
 // added to the root of a object which needs to be able to play animations.
 // finds children with AnimationTarget or AnimationPlayer and grabs applicable animations from parent scene and assets
-#[derive(Debug, Clone, Component, Reflect)]
+#[derive(Debug, Clone, Component, Default, Reflect)]
 #[reflect(Component)]
 pub struct AnimationContext {
     named_animations: HashMap<String, AnimationNodeIndex>,
@@ -134,6 +153,10 @@ impl AnimationContext {
 #[derive(Debug, Component, Reflect)]
 #[reflect(Component)]
 pub struct AutoPlayAnimation;
+
+// #[derive(Debug, Component, Reflect)]
+// #[reflect(Component)]
+// pub struct AutoPlaySync;
 
 fn do_autoplay(
     mut query: Query<(Entity, AnimationParams), With<AutoPlayAnimation>>,

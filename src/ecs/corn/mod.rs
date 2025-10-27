@@ -10,7 +10,7 @@ use bevy::{ecs::{entity, entity_disabling::Disabled}, prelude::*, render::{
     batching::NoAutomaticBatching, extract_component::{ExtractComponent, ExtractComponentPlugin}, view::NoFrustumCulling
 }, scene::scene_spawner_system};
 use serde::Deserialize;
-use crate::{ecs::corn::{render::{ExtendWithCornMaterial, StdCornMaterial}, stored::{readback::ReadbackInit, simple::SimpleHexagonalSettings}}, scenes::lobby::LobbyScene, systems::{scenes::OnSpawnScene, util::default_resources::SimpleMaterials}, util::observer_ext::ObserverParent};
+use crate::{ecs::corn::{render::{ExtendWithCornMaterial, StdCornMaterial}, stored::{image::ImageCarvedHexagonalShader, readback::ReadbackInit, simple::SimpleHexagonalSettings}}, scenes::lobby::LobbyScene, systems::{scenes::OnSpawnScene, util::default_resources::SimpleMaterials}, util::observer_ext::ObserverParent};
 
 /// Top level Tag Component for Corn Fields. 
 /// Each entity with a CornField and CornPositionInitializer Component has a corresponding Buffer of corn stalk instances in the render app.
@@ -79,15 +79,15 @@ fn init_gltf_cornfield(
 
         commands.entity(id).insert((
             CornField,
-            // ImageCarvedHexagonalShader::new(
-            //     center, half_extents, 
-            //     0.75, Vec2::new(1.1, 1.3), 0.2, 
-            //     h_image,
-            // ),
-            SimpleHexagonalSettings::new(
+            ImageCarvedHexagonalShader::new(
                 center, half_extents, 
                 0.75, Vec2::new(1.1, 1.3), 0.2, 
-            )
+                h_image,
+            ),
+            // SimpleHexagonalSettings::new(
+            //     center, half_extents, 
+            //     0.75, Vec2::new(1.1, 1.3), 0.2, 
+            // )
         ));
     }
 }
@@ -112,9 +112,9 @@ impl Plugin for CornFieldComponentPlugin{
         app.add_plugins(sensor::CornSensorPlugin);
 
         // blender defined cornfields
-        app.add_systems(PostUpdate, init_gltf_cornfield ); // systems that post-process scenes should run after SceneSpawn, idk if this is exactly right
+        app.add_systems(PostUpdate, init_gltf_cornfield.after(TransformSystem::TransformPropagate) ); // systems that post-process scenes should run after SceneSpawn, idk if this is exactly right
         app.register_type::<BlenderCornField>(); // needed for loading from gltf
-        app.add_systems(OnSpawnScene(LobbyScene), test_field);
+        // app.add_systems(OnSpawnScene(LobbyScene), test_field);
     }
 }
 

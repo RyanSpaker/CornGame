@@ -9,6 +9,7 @@ use bevy_tnua::builtins::TnuaBuiltinCrouch;
 use leafwing_input_manager::action_state::ActionState;
 use serde::{Deserialize, Serialize};
 use crate::ecs::cameras::MainCamera;
+use crate::systems::camera_target::Targeting;
 
 use super::animation::MyAnimationState;
 use super::input::CornCharacterInput;
@@ -56,17 +57,22 @@ impl Default for CornGameCharController {
 
 pub fn look_handler(
     mut query: Query<&ActionState<CornCharacterInput>, (Without<MainCamera>, With<CornGameCharController>)>,
-    mut camera: Query<&mut Transform, With<MainCamera>>,
+    mut camera: Query<(&mut Transform, Has<Targeting>), With<MainCamera>>,
     window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    let Ok(mut camera) = camera.single_mut() else {
+    let Ok((mut camera, locked)) = camera.single_mut() else {
         return;
     };
+    // camera locked on interaction (ie. computer menu)
+    if locked {
+        return;
+    }
 
     let Ok(input) = query.single_mut() else {
         return;
     };
 
+    // disable look if cursor not locked
     let mut mouse = input.axis_pair(&CornCharacterInput::Pan);
     if let Ok(window) = window.single() {
         if window.cursor_options.grab_mode != CursorGrabMode::Locked {
@@ -104,13 +110,13 @@ pub fn input_handler(
         (&ColliderOf, &mut Collider, &mut Transform),
         (Without<CornGameCharController>, Without<MainCamera>),
     >,
-    mut camera: Query<&mut Transform, With<crate::ecs::cameras::MainCamera>>,
+    mut camera: Query<(&mut Transform, Has<Targeting>), With<crate::ecs::cameras::MainCamera>>,
     mut window: Query<&mut Window, With<PrimaryWindow>>,
 
     mut time: ResMut<Time<avian3d::prelude::Physics>>,
     mut local: Local<bool>,
 ) {
-    let mut camera = match camera.single_mut() {
+    let (mut camera, locked) = match camera.single_mut() {
         Err(error) => {
             error_once!(%error);
             return;
@@ -162,11 +168,20 @@ pub fn input_handler(
             if window.cursor_options.grab_mode != CursorGrabMode::Locked {
                 direction = default();
             } else {
-                let center = Some(window.size() / 2.0);
-                window.set_cursor_position(center);
+                // Do this before picking instead
+                // let center = Some(window.size() / 2.0);
+                // window.set_cursor_position(center);
             }
         }
 
+        // TODO more abstraction
+        // NOTE controller.basis MUST run or else it will use a huge timestep later when the camera lock ends
+        // this was causing the s in "use" to send the player way back when ESCing the computer menu, if use was typed fast enough 
+        if locked {
+            controller.neutralize_basis();
+            continue;
+        }
+        
         camera.translation = transform.translation + Vec3::new(0., 0.0, 0.);
 
         let mut direction = direction.extend(0.0).xzy();

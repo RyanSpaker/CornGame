@@ -1,6 +1,7 @@
 use std::{path::PathBuf, time::Duration};
 
-use bevy::{app::ScheduleRunnerPlugin, prelude::*, render::RenderPlugin};
+use bevy::{app::ScheduleRunnerPlugin, asset::io::AssetSourceBuilder, prelude::*, render::{view::RenderLayers, RenderPlugin}};
+use bevy_editor_pls::bevy_inspector_egui::bevy_inspector::hierarchy::Hierarchy;
 use clap::Parser;
 
 pub mod ecs;
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use util::debug_app::DebugApp;
 use we_clap::WeParser;
 
-use crate::{ecs::test_cube::TestCube, systems::{network::CornNetworkingPlugin, physics::CornPhysicsPluginNetworkPlugin}};
+use crate::{ecs::test_cube::TestCube, systems::{network::CornNetworkingPlugin, physics::CornPhysicsPluginNetworkPlugin}, util::propogate::HierarchyPropagatePlugin};
 
 impl we_clap::WeParser for Cli {}
 #[derive(Debug, Clone, clap::Parser, Default, Reflect, Serialize, Deserialize, Resource)]
@@ -37,6 +38,10 @@ struct Cli {
     /// auto interact and (TODO) walk around
     #[arg(long)]
     dummy: bool,
+
+    /// spawn a test cube
+    #[arg(long)]
+    testcube: bool,
 }
 
 #[derive(Debug, Resource)]
@@ -52,6 +57,11 @@ impl Plugin for CornGame {
         //     app.insert_resource(logger.clone());
         //     Some(logger.boxed())
         // }
+
+        app.register_asset_source(
+            "shaders", // The unique name for your source
+            AssetSourceBuilder::platform_default("shaders", None),
+        );
 
         let mut pg = DefaultPlugins
             .set(WindowPlugin {
@@ -92,7 +102,6 @@ impl Plugin for CornGame {
                 CornNetworkingPlugin, 
             ));
 
-
         }else {
             // .set(LogPlugin {
             //     level: bevy::log::Level::TRACE,
@@ -106,6 +115,8 @@ impl Plugin for CornGame {
             //app.add_plugins(bevy_editor_pls::default_windows::utils::log_plugin::LogPlugin::default());
 
             app.add_plugins((
+                bevy_ui_text_input::TextInputPlugin,
+                bevy_flair::FlairPlugin,
                 systems::CornSystemsPlugin,
                 scenes::CornScenesPlugin,
                 ecs::CornECSPlugin,
@@ -119,5 +130,11 @@ impl Plugin for CornGame {
                 // bevy::remote::http::RemoteHttpPlugin::default(),
             ));
         }
+
+        // TODO: needed for menu, but where to put this?
+        // we have the annoying fact that this is needed in multiple places and will fail silently if this plugin isn't added
+        app.add_plugins(
+            HierarchyPropagatePlugin::<RenderLayers>::default()
+        );
     }
 }

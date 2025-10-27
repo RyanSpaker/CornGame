@@ -35,7 +35,6 @@ impl LobbyScene {
         // ambient.brightness = 0.2;
 
         time.pause();
-        commands.spawn(TestCube);
         commands.entity(parent.0).with_children(|parent| {
             parent.spawn((
                 Name::from("Floor"),
@@ -115,7 +114,11 @@ impl LobbyScene {
                     // EDIT: weirder things happen with nested RigidBodys
                 ));
             }
+
         });
+        if cli.testcube {
+            commands.spawn(TestCube);
+        }   
     }
 }
 

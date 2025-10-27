@@ -9,19 +9,23 @@ pub enum EntityPointer{
 
 #[derive(Debug, Clone, SystemParam)]
 pub struct EntityResolver<'w, 's> {
-    children: Query<'w, 's, &'static Children>,
-    parents: Query<'w, 's, &'static ChildOf>,
-    scene: Query<'w, 's, Entity, With<SceneInstance>>, 
-    name: Query<'w, 's, &'static Name>, // TODO perhaps require a marker component on the target to speed this up
+    pub children: Query<'w, 's, &'static Children>,
+    pub parents: Query<'w, 's, &'static ChildOf>,
+    pub scene: Query<'w, 's, Entity, With<SceneInstance>>, 
+    pub name: Query<'w, 's, &'static Name>, // TODO perhaps require a marker component on the target to speed this up
 }
 
 impl<'w, 's> EntityResolver<'w, 's> {
     pub fn resolve(&self, start: Entity, pointer: &EntityPointer) -> Result<Entity, ResolutionError> {
         match pointer {
             EntityPointer::SameSceneName(name) => {
+                // for p in self.parents.iter_ancestors(start) {
+                //     dbg!(p);
+                // }
+
                 let scene_root = match self.parents.iter_ancestors(start).find(|e|self.scene.contains(*e)) {
                     Some(e) => e,
-                    None => return Err(ResolutionError::NoSceneAncestor),
+                    None => return Err(ResolutionError::NoSceneAncestor(start)),
                 };
 
                 let name = Name::new(name.clone());
@@ -39,8 +43,8 @@ impl<'w, 's> EntityResolver<'w, 's> {
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ResolutionError{
-    #[error("entity has no scene ancestor")]
-    NoSceneAncestor,
+    #[error("{0} has no scene ancestor")]
+    NoSceneAncestor(Entity),
     #[error("'{name}' not found under {root:?}")]
     NameNotFound{
         root: Option<Entity>,

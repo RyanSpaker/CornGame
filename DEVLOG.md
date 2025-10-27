@@ -761,7 +761,7 @@ Going to use this as a case study for editor improvements.
 Now I can't replicate the bug :/
 
 # Thu Aug 28 06:01:14 PM EDT 2025
-editor note:
+editor notes:
 - darkening non-crate required in component list feels like the right solution.
 - multihead bundles may or may not be a good idea.
   - but only if I can show the relations
@@ -794,3 +794,109 @@ example of improvement:
 before: https://github.com/segfault-s-pull-requests/bevy_editor_pls/commit/0cf180e6e53c4985e6031b28154f323272a163c4
 
 after: https://github.com/segfault-s-pull-requests/bevy_editor_pls/commit/1b408b43e48d44c3bfa0b285f87d8ed8c79cf47c
+
+# Mon Sep  1 01:06:24 AM EDT 2025
+- [x] materials broken
+  - this was a bug introduced when I added entity to Context. broken pattern matching.
+- [ ] cannot despawn entities bc panic
+  `thread 'main' panicked at forks/editor/crates/bevy_editor_pls_default_windows/src/inspector.rs:1137:29:`
+
+# Tue Sep 30 12:51:24 PM EDT 2025
+bevy_lunex doesn't do what we need.
+1. need to render 3d mesh to flat plane
+2. need post-processing on that mesh
+
+EDIT: this part's done, and we could still use lunex for layout.
+
+# Thu Oct  2 12:42:52 PM EDT 2025
+we love inexplicable bullshit.
+
+The mousepad is getting flipped backface culling on the bevy side. 
+- because no material was attached in blender... and somehow default material is different. Bevy uses triangle handedness to determine front face, not normals. 
+Blender sets the gltf doublesided flag based on material settings, but I don't know how bevy imports that. StandardMaterial::double_sided is only for lighting,culling_mode is not reflect, so I can't be bothered to check it.
+- https://docs.blender.org/manual/en/2.80/addons/io_scene_gltf2.html#double-sided-backface-culling
+
+The light for the player models is effecting the rest of the menu ui despite not doing so in blender. 
+- Must set blender specular->IOR Level not primary IOR, since in blender they multiply and bevy only uses IOR for transmission (seems like). specular IOR is  `StandardMaterial::reflectance` in bevy.
+
+# Thu Oct  2 12:47:02 PM EDT 2025
+now to build the actual interface
+- [ ] picking on cursor
+- [x] lunex or handroll
+  - handroll
+- [x] scene or hardcode
+  - hardcode, use bevy ui
+- [x] interaction
+  - [x] camera transition
+  - [x] mouse lock
+  - happy enough with this for now.
+
+How do you mix 2d and 3d. There are many ways, all poor ergonomicly, and none I can even get to work.
+- Eventually I got something: need seperate 2d and 3d camera
+
+NOTE: there are issues if UI is child of something else.
+
+Alice says to use ViewportNode for 3d guys, but I'm not on 0.17 yet. She also says there is interest in makeing Sprite and Ui more cohesive.
+
+Equivilent for 0.16 would be to add a 3d->ImageNode. This is likely what I'll do. If I abstract the diagetic setup code this isn't too bad.
+- [x] It will require a resource to hand out RenderLayers.
+- [ ] TODO change ui display for render_layers to hex, at a minimum, or a more sophisticated display. Since the usize is the bitmask, not the layer
+
+# Thu Oct 16 06:25:27 PM EDT 2025
+Inspector Fix:
+- Arc<StrongHandle> 
+- SmolStr
+
+- [ ] make top bar not cover view
+- [ ] editor should only disable it's own cameras, currently causes problems with BlenderCamera
+
+Prototype ideas:
+- [ ] screen shake when clicking "singleplayer" in main menu
+- [ ] rope physics on lobby mouse cable
+- [ ] object shake, or halo or something to indicate what you should do
+  - ex. you press esc in lobby. screen shows you and arrow directing you to the computer, if computer is visible, it shakes, and if you are close you are directed to the power button. (which exits to the menu)
+
+Scene transitions: like main menu -> lobby
+- main menu can either be persistent (disabled when not open) or dynamic (despawned when not open). Somethings are definately despawned, but maybe we want to allow for persistent things too (pause menu).
+- options switching:
+  - an ActiveScene exclusive marker which has an OnRemoved observer to despawn or disable the scene.
+  - just do it all manually, how many transitions are there even?
+
+Need to think about loading / preloading.
+
+# Sat Oct 25 09:36:03 PM EDT 2025 
+
+Back to the perenial ecs design question.
+
+start_client
+ergonomically: wants to be a system run with run_system_cached
+but what if we want to set something up (the client) and do add an observer to it... 
+conceptually we want to return something (client entity) from the system, but actually we need to preallocate the entity because the system doesn't run until commands are flushed.
+
+alternatively: let's say we do write the main menu logic as
+- client = commands.start_client()
+- client.observer(Connected -> LoadLobby)
+
+Imagine then that we wanted to start_client in the console?
+May be better to have it be reactive, main menu has an observer which reacts to Connected (on any client), then our command just works.
+
+- [ ] menu preloads lobby
+- [ ] lobby only spawns after server + client are started
+- [ ] lobby only spawns after client connects
+- [ ] plumb log messages to main menu 
+
+NOTE: bevy_immediate not worth using until port to 0.17 bc no TextInput 
+
+---
+
+Trying to design the top level game state.
+- Is replicated to clients, so we can have server failover.
+- Single global entity. For simplicity.
+- Not sure how much to seperate the lower level network code from game lifecycle code 
+  - ex. loading scene
+
+NOTE: there should be a SceneEntity compoennt on things spawned from scenes to get the entity in the scene (also need SceneMemberOf or SceneAsset to get to the scene asset)
+
+---
+
+I spent 2hrs refactoring uid.rs. If rust-analyzer doesn't get 100x faster, then rust as a language should just be abandoned.

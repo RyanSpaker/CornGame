@@ -8,6 +8,7 @@ use bevy::ecs::world::DeferredWorld;
 use bevy::prelude::*;
 use lightyear::netcode::{Key, NetcodeClient, NetcodeServer};
 use lightyear::prelude::client::WebTransportClientIo;
+use lightyear::prelude::server::ClientOf;
 #[cfg(not(target_family = "wasm"))]
 use lightyear::prelude::server::{Start, Started, WebTransportServerIo};
 use lightyear::prelude::*;
@@ -16,7 +17,7 @@ use bevy::ecs::system::{Query, Res};
 use rand::TryRngCore;
 use serde::{Deserialize, Serialize};
 
-use crate::systems::character::CharacterNetworkPlugin;
+use crate::systems::character::{CharacterNetworkPlugin, Player};
 use crate::systems::interactions::NetworkInteractPlugin;
 use crate::systems::physics::CornPhysicsPluginNetworkPlugin;
 use std::fs::{create_dir_all, write};
@@ -70,14 +71,16 @@ impl Plugin for CornNetworkingPlugin {
         app.add_systems(Update, reconnect_system);
 
         app.add_plugins(uid::UidPlugin);
+
+        app.register_component::<NetworkState>();
     }
 }
 
 #[derive(Debug, Resource, Reflect)]
 #[reflect(Resource)]
-struct NetworkCrap {
-    address: SocketAddr,
-    conditioner: Option<LinkConditionerConfig>,
+pub struct NetworkCrap {
+    pub address: SocketAddr,
+    pub conditioner: Option<LinkConditionerConfig>,
 }
 
 #[cfg(target_family = "wasm")]
@@ -115,7 +118,7 @@ fn network_on_start_system(mut commands: Commands, res: Res<crate::Cli>) {
     }
 }
 
-fn start_client(
+pub fn start_client(
     server: Query<Entity, With<Server>>,
     mut commands: Commands,
     crap: Res<NetworkCrap>,
@@ -195,8 +198,12 @@ fn start_client(
     client.trigger(Connect);
 }
 
+
+
 #[cfg(not(target_family = "wasm"))]
-fn start_server(mut commands: Commands, crap: Res<NetworkCrap>) {
+pub fn start_server(mut commands: Commands, crap: Res<NetworkCrap>) {
+    commands.spawn((NetworkState::default(), Replicate::to_clients(NetworkTarget::All)));
+
     let server_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), crap.address.port());
 
     // TODO env var
@@ -265,8 +272,6 @@ fn start_server(mut commands: Commands, crap: Res<NetworkCrap>) {
 
         let cert = Identity::self_signed(idents).unwrap();
 
-        let digest = cert.certificate_chain().as_slice()[0].hash();
-
         // Write cert.pem
         write(
             &cert_pem_path,
@@ -299,6 +304,7 @@ fn start_server(mut commands: Commands, crap: Res<NetworkCrap>) {
         }),
     ));
     server.with_child((Name::from("on_connect"), Observer::new(handle_new_client)));
+    server.with_child((Name::from("on_disconnect"), Observer::new(handle_dropped_client)));
     server.trigger(Start);
 }
 
@@ -310,14 +316,17 @@ fn start_server(mut commands: Commands, crap: Res<NetworkCrap>) {
 /// or a `MessageSender`.
 fn handle_new_client(
     trigger: Trigger<OnAdd, Connected>,
-    crap: Res<NetworkCrap>,
+    crap: Res<NetworkCrap>,        
+    query: Query<&RemoteId, With<ClientOf>>,
+    mut state: Single<&mut NetworkState>,
     mut commands: Commands,
 ) {
-    info!(client = %trigger.target(), "new client connected");
+    let peerid = query.get(trigger.target()).unwrap();
+    info!(entity = %trigger.target(), id = %peerid.0, "new client connected");
     let conditioner = crap
         .conditioner
         .as_ref()
-        .map(|c| RecvLinkConditioner::new(c.clone())); // TODO how to attach
+        .map(|c| RecvLinkConditioner::new(c.clone())); // TODO how to attach 
 
     commands.entity(trigger.target()).insert((
         ReplicationSender::new(
@@ -327,6 +336,25 @@ fn handle_new_client(
         ),
         ReplicationReceiver::default(),
     ));
+
+    // TODO send message to client to spawn level
+
+    state.players.push(NetworkPlayer{
+        client_id: *peerid.clone(),    
+        server_entity: trigger.target()
+    });
+}
+
+/// TODO deal with reconnect
+fn handle_dropped_client(
+    trigger: Trigger<OnRemove, Connected>,
+    mut state: Single<&mut NetworkState>,
+) -> Result{
+    match state.players.iter().position(|p|p.server_entity == trigger.target()){
+        Some(i) => { state.players.remove(i);},
+        None => return Err("weird".into()),
+    };
+    Ok(())
 }
 
 #[derive(Debug, Component, Serialize, Deserialize, PartialEq)]
@@ -438,6 +466,7 @@ impl Plugin for NetworkWindow {
 #[reflect(Component)]
 struct ReconnectTimer(Timer);
 
+/// auto-reconnect to server
 fn reconnect_system(
     mut disconnect_query: Query<Entity, (With<Client>, Added<Disconnected>)>,
     mut timer_query: Query<(Entity, &mut ReconnectTimer), (With<Client>, With<Disconnected>)>,
@@ -457,4 +486,22 @@ fn reconnect_system(
             commands.entity(entity).trigger(Connect);
         }
     }
+}
+
+// scan
+
+
+// game state
+#[derive(Debug, Clone, Default, Reflect, Component, Serialize, Deserialize, PartialEq)]
+pub struct NetworkState {
+    pub players: Vec<NetworkPlayer>,
+}
+
+#[derive(Debug, Clone, Reflect, Serialize, Deserialize, PartialEq)]
+pub struct NetworkPlayer {
+    pub client_id: PeerId,
+    pub server_entity: Entity,
+    // pub name: String,
+    // pub is_leader: bool,
+    // pub connected: bool,
 }
