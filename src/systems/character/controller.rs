@@ -9,7 +9,9 @@ use bevy_tnua::builtins::TnuaBuiltinCrouch;
 use leafwing_input_manager::action_state::ActionState;
 use serde::{Deserialize, Serialize};
 use crate::ecs::cameras::MainCamera;
+use crate::ecs::corn::sensor::CornSensor;
 use crate::systems::camera_target::Targeting;
+use crate::util::math::lerp;
 
 use super::animation::MyAnimationState;
 use super::input::CornCharacterInput;
@@ -33,6 +35,8 @@ pub struct CornGameCharController {
 
     pub spring: f32,
     pub crouch_duration: f32,
+
+    pub in_corn_modifier: f32,
 }
 
 impl Default for CornGameCharController {
@@ -51,6 +55,8 @@ impl Default for CornGameCharController {
 
             spring: 400.0,
             crouch_duration: 0.08,
+
+            in_corn_modifier: 0.3,
         }
     }
 }
@@ -103,6 +109,7 @@ pub fn input_handler(
             &mut TnuaController,
             &CornGameCharController,
             &mut MyAnimationState,
+            Option<&CornSensor>
         ),
         Without<crate::ecs::cameras::MainCamera>,
     >,
@@ -125,7 +132,7 @@ pub fn input_handler(
     };
 
     assert!(query.iter().count() <= 1);
-    for (id, transform, input, mut controller, config, mut anim_state) in query.iter_mut() {
+    for (id, transform, input, mut controller, config, mut anim_state, corn_sensor) in query.iter_mut() {
         let collider = colliders.iter_mut().find(|c| c.0.body == id);
 
         if collider.is_none() {
@@ -189,10 +196,14 @@ pub fn input_handler(
         let (yaw, _, _) = camera.rotation.to_euler(EulerRot::YXZ);
         direction = Quat::from_euler(EulerRot::YXZ, yaw, 0.0, 0.0) * direction;
 
-        let speed = match input.pressed(&CornCharacterInput::Run) {
+        let mut speed = match input.pressed(&CornCharacterInput::Run) {
             true => config.dash_speed,
             false => config.speed,
         };
+
+        if let Some(corn_sensor) = corn_sensor{
+            speed *= lerp(1.0, config.in_corn_modifier, corn_sensor.value);
+        }
 
         // TODO add math helpers
         let forward = camera.forward().reject_from(Vec3::Y).normalize_or_zero();

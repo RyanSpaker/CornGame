@@ -25,12 +25,13 @@ use lightyear::prelude::{
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::cameras::{MainCamera, THIRD_PERSON_RENDER_LAYER};
+use crate::ecs::corn::sensor::CornSensor;
 use crate::scenes::LoadScene;
 use crate::systems::network::ReplicateAuto;
 
 use self::input::CornCharacterInput;
 
-mod animation;
+pub mod animation;
 mod controller;
 mod input;
 
@@ -85,8 +86,19 @@ impl Plugin for MyCharacterPlugin {
 
         app.register_type::<Character>();
         app.add_systems(FixedPostUpdate, Player::init_network_character);
+        app.add_systems(
+            Update,
+            |keys: Res<ButtonInput<KeyCode>>, mut commands: Commands| {
+            if keys.just_pressed(KeyCode::F4) {
+                commands.trigger(SpawnPlayerEvent::default());
+            }
+            },
+        );
 
         app.add_plugins(animation::plugin);
+
+        app.register_type::<SpawnPlayerItem>();
+        app.add_observer(spawn_player_item_obs);
     }
 }
 
@@ -112,6 +124,7 @@ impl Player {
             Player,
 
             Character,
+            CornSensor::default(),
             Name::new("Player"),
             RigidBody::Dynamic,
             bevy_tnua::controller::TnuaController::default(),
@@ -196,6 +209,27 @@ impl Player {
     }
 }
 
+//TODO for this to be usefull needs to support out of order with Player
+#[derive(Debug, Default, Reflect, Event)]
+pub struct SpawnPlayerItem(pub String);
+
+/// Observer to spawn a scene as a child of the Player entity when SpawnPlayerItem is triggered
+fn spawn_player_item_obs(
+    trigger: Trigger<SpawnPlayerItem>,
+    mut commands: Commands,
+    player_query: Query<Entity, With<Player>>,
+) -> Result {
+    let player_entity = player_query.single()?;
+    let scene_path = &trigger.0;
+    commands.entity(player_entity).with_children(|parent| {
+        parent.spawn((
+            LoadScene::new(scene_path.as_str()),
+            Transform::from_translation(Vec3::new(0.2, -0.2, -0.3)),
+        ));
+    });
+    Ok(())
+}
+
 #[derive(Debug, Default, Reflect, Component)]
 #[reflect(Default)]
 #[reflect(Component)]
@@ -228,6 +262,7 @@ fn move_player_to_spawn_obs(
     mut player: Query<(Entity, &mut Transform, &GlobalTransform), With<Player>>,
     spawn1: Query<SpawnQuery, (Without<MainCamera>, Without<Player>)>,
     mut commands: Commands,
+    spatial: SpatialQuery,
     // tree: Query<&ChildOf>,
 ) {
     // spawn a player or move existing player
@@ -237,14 +272,18 @@ fn move_player_to_spawn_obs(
     let mut spawn: Vec<_> = spawn1
         .iter()
         .filter(|s| {
-            trigger.target.as_ref().is_none_or(|target| {
-                s.name.is_some_and(|n2| target == n2.as_str())
-                    && (trigger.target.is_some() || s.info.is_some())
-            })
+            if let Some(name) = &trigger.target {
+                if let Some(n2) = s.name {
+                    return n2.as_str() == name;
+                }
+            }else{
+                return s.info.is_some();
+            }
+            false
         })
         .collect();
 
-    // prefer default spawn_location, followed by other spawn_locations, fallback to simple name match (XXX overengineered)
+    // prefer default spawn_location, followed by other spawn_locations, fallback to any name match (XXX overengineered)
     spawn.sort_by_key(|s| match s.info {
         Some(v) => match v.default {
             true => 2,
@@ -255,7 +294,18 @@ fn move_player_to_spawn_obs(
 
 
     let spawn = spawn.pop();
-    let transform = spawn.as_ref().map(|s| *s.gt).unwrap_or_default();
+    let transform = spawn.as_ref().map(|s| *s.gt).unwrap_or(Transform::from_xyz(0.0, 1.5, 0.0).into()); //default to above ground
+
+    // XXX what if level just hasn't loaded yet
+    if spatial.cast_ray(transform.translation(), Dir3::NEG_Y, 100.0, true, &SpatialQueryFilter::default()).is_none(){
+        // no collider underneath player.
+        info!("there is no collider underneath spawnpoint. assume this is dev mode, spawn one");
+        commands.spawn((
+            Name::new("Debug Floor"),
+            RigidBody::Static,
+            Collider::half_space(Vec3::Y)
+        ));
+    }
 
     if let Some(s) = &spawn {
         // dbg!(s.t, s.gt);
@@ -281,9 +331,10 @@ fn move_player_to_spawn_obs(
                 &entity, &transform.translation
             );
             *t = transform;
+            // NOTE lightyear disables Transform -> Position sync, must manually set position / rotation
             commands
                 .entity(id)
-                .insert((LinearVelocity::default(), AngularVelocity::default()));
+                .insert((LinearVelocity::default(), AngularVelocity::default(), Position(transform.translation), Rotation(transform.rotation)));
         }
         Err(QuerySingleError::NoEntities(_)) => {
             info!(

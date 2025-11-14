@@ -126,16 +126,12 @@ pub fn spawn_main_menu(
 
                 parent
                     .spawn((
+                        Name::from("input"),
                         bevy_ui_text_input::TextInputNode {
                             mode: bevy_ui_text_input::TextInputMode::SingleLine,
                             ..default()
                         },
                         input_buffer,
-                        Node {
-                            width: Val::Vw(40.0),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgba_u8(255, 255, 255, 100)),
                     ))
                     .observe(|val: Trigger<OnSubmitDumb>, mut commands: Commands| {
                         // TODO blink bg color

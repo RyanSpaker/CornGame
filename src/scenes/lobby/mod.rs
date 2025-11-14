@@ -36,14 +36,16 @@ impl LobbyScene {
 
         time.pause();
         commands.entity(parent.0).with_children(|parent| {
-            parent.spawn((
-                Name::from("Floor"),
-                Transform::from_scale(Vec3::new(1000.0, 0.0, 1000.0)),
-                Collider::cuboid(1.0, 0.1, 1.0),
-                // Mesh3d(shapes.plane.clone()),
-                // MeshMaterial3d(materials.white.clone()),
-                RigidBody::Static,
-            ));
+
+            // other things should do this now, plus we have a fallback check to spawn a default floor if player is spawned
+            // parent.spawn((
+            //     Name::from("Floor"),
+            //     Transform::from_scale(Vec3::new(1000.0, 0.0, 1000.0)),
+            //     Collider::cuboid(1.0, 0.1, 1.0),
+            //     // Mesh3d(shapes.plane.clone()),
+            //     // MeshMaterial3d(materials.white.clone()),
+            //     RigidBody::Static,
+            // ));
             // parent.spawn((
             //     Name::from("Box"),
             //     Mesh3d(shapes.cube.clone()),
@@ -73,6 +75,7 @@ impl LobbyScene {
             // parent.spawn((Transform::from_xyz(0.0, 500.0, 0.0).with_scale(Vec3::splat(10.0)), LoadScene::new("models/sky.glb#sky")));
 
 
+            // this should be part of camera settings.
             parent.spawn((
                 // TODO keep centered on player
                 Name::from("Fog Volume"),

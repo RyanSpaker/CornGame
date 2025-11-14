@@ -2,11 +2,7 @@ use std::sync::atomic::Ordering;
 use bevy::{
     asset::AsAssetId, core_pipeline::core_3d::graph::Core3d, ecs::system::lifetimeless::Read, pbr::graph::NodePbr, prelude::*, 
     render::{
-        mesh::allocator::MeshAllocator, view::ExtractedView, Render, RenderApp, RenderSet,
-        extract_component::{ExtractComponent, ExtractComponentPlugin}, 
-        render_graph::{Node, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel}, 
-        render_resource::{BindGroup, BindGroupLayout, Buffer, CachedComputePipelineId, ComputePipelineDescriptor, PipelineCache, ShaderType}, 
-        renderer::{RenderContext, RenderDevice, RenderQueue},
+        Render, RenderApp, RenderSet, diagnostic::RecordDiagnostics, extract_component::{ExtractComponent, ExtractComponentPlugin}, mesh::allocator::MeshAllocator, render_graph::{Node, NodeRunError, RenderGraph, RenderGraphContext, RenderLabel}, render_resource::{BindGroup, BindGroupLayout, Buffer, CachedComputePipelineId, ComputePipelineDescriptor, PipelineCache, ShaderType}, renderer::{RenderContext, RenderDevice, RenderQueue}, view::ExtractedView
     }
 };
 use bytemuck::{Pod, Zeroable};
@@ -281,6 +277,9 @@ impl Node for StoredScanNode{
             valid_entities.push((bindgroup, dispatch, vib));
         }
         // Start Compute Pass
+        let diagnostics = render_context.diagnostic_recorder();
+        let time_span = diagnostics.time_span(render_context.command_encoder(), "corn_compute_pass");
+
         let mut compute_pass = render_context.command_encoder().begin_compute_pass(&ComputePassDescriptor { 
             label: Some("Stored Scan Compute Pass"), timestamp_writes: None 
         });
@@ -308,6 +307,9 @@ impl Node for StoredScanNode{
             compute_pass.set_bind_group(0, *bindgroup, &[]);
             compute_pass.dispatch_workgroups(dispatch[3], 1, 1);
         }
+        drop(compute_pass);
+        time_span.end(render_context.command_encoder());
+
         // Set vib to valid
         for (_, _, vib) in valid_entities.into_iter(){
             vib.ready.store(true, Ordering::Relaxed);

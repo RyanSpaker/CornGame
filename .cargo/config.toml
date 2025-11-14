@@ -3,7 +3,7 @@ linker = "rust-lld.exe"
 
 [target.x86_64-unknown-linux-gnu]
 rustflags = [
-    "-C", "linker=clang", "-C", "link-arg=-fuse-ld=mold"
+    "-Clinker=clang", "-Clink-arg=-fuse-ld=mold"
 ]
 
 [target.wasm32-unknown-unknown]

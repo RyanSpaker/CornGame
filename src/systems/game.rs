@@ -44,7 +44,7 @@ pub struct Game {
 impl Game {
     // **temp** code to spawn lobby on server
     pub(crate) fn lobby() -> Self {
-        let path = "scenes/lobby.glb";
+        let path = "scenes/lobby.gltf";
         Self {
             loaded_levels: vec![
                 Level{

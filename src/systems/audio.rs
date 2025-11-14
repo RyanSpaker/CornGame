@@ -1,7 +1,8 @@
 use std::{marker::PhantomData, ops::AddAssign, time::Duration};
 use bevy::{audio::Volume, ecs::{component::HookContext, entity::EntityHashMap, world::DeferredWorld}, prelude::*};
+use clap::Parser;
 use crate::{
-    ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCamMoveEvent}, systems::{character::Player, soundtrack}, util::{math::lerp, observer_ext::{ObserveAsAppExt, ObserverParent}}
+    ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCamMoveEvent}, systems::{character::{Player, animation::MyAnimationState}, soundtrack}, util::{math::lerp, observer_ext::{ObserveAsAppExt, ObserverParent}}
 };
 
 pub struct CornAudioPlugin;
@@ -16,13 +17,22 @@ impl Plugin for CornAudioPlugin {
             .register_type::<FadeKeepOnEnd>()
             .register_type::<FadePauseOnEnd>()
             .register_type::<Ambient>()
-            .register_type::<AudioObservers>()
-            .configure_sets(Update, AudioSystems.run_if(AudioSystems::should_run))
+            .register_type::<AudioObservers>();
+
+        app
+            .configure_sets(Update, AudioSystems)
             .add_systems(Update, (
                 (WindNoise::adjust_wind, Footsteps::adjust_footsteps, Fade::update_fade),
                 AudioFactor::calculate_volume
             ).chain().in_set(AudioSystems))
             .add_observer_as(Fade::fade_despawn_observer, AudioObservers);
+
+        // TODO footsteps should be property of the ground + cornfield...
+        app.add_systems(Startup, Footsteps::spawn_footsteps_player);
+
+        if crate::Cli::parse().wind {
+            app.add_systems(Startup, (WindNoise::spawn_rustle_player, WindNoise::spawn_wind_player));
+        }
 
         app.add_plugins(soundtrack::SoundtrackPlugin);
     }
@@ -61,10 +71,6 @@ pub struct Ambient;
 /// SystemSet for all audio systems.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Reflect, SystemSet)]
 struct AudioSystems;
-impl AudioSystems{
-    /// this caused confusing bug
-    fn should_run(query: Query<&AudioSink>) -> bool{ ! query.is_empty() }
-}
 
 /// Component attached as a child of an audio sink. Every frame a system accumulates the factors to set the sink volume and speed
 #[derive(Debug, Clone, PartialEq, Reflect, Component)]
@@ -93,25 +99,25 @@ impl AddAssign for AudioFactor{
 impl AudioFactor{
     /// For a set of volume factors, calculates the audio sink volume
     fn calculate_volume(
-        mut sinks: Query<(Entity, &mut AudioSink, &PlaybackSettings, &AudioFactor)>,
-        // factors: Query<(&ChildOf, &Self)>
+        mut sinks: Query<(Entity, &mut AudioSink, &PlaybackSettings)>,
+        factors: Query<(&ChildOf, &Self)>
     ){
-        // let mut calculated_factors: EntityHashMap<Self> = EntityHashMap::default();
-        // for (parent, factor) in factors.iter(){
-        //     let entity = parent.parent();
-        //     if !calculated_factors.contains_key(&entity) {calculated_factors.insert(entity, Self::default());}
-        //     let Some(fact) = calculated_factors.get_mut(&entity) else {continue;};
-        //     *fact += factor.clone();
-        // }
-        for (entity, mut sink, settings, factor) in sinks.iter_mut(){
-            // let Some(Self{vm, va, sm, sa}) = calculated_factors.get(&entity) else {
-            //     sink.set_volume(settings.volume);
-            //     sink.set_speed(settings.speed); 
-            //     continue;
-            // };
-            // sink.set_volume(Volume::Linear((settings.volume.to_linear() * vm + va).max(0.0))); //TODO factors should be Volume
-            // sink.set_speed((settings.speed*sm+sa).max(0.0));
-            sink.set_volume(Volume::Linear(settings.volume.to_linear() * factor.vm));
+        let mut calculated_factors: EntityHashMap<Self> = EntityHashMap::default();
+        for (parent, factor) in factors.iter(){
+            let entity = parent.parent();
+            if !calculated_factors.contains_key(&entity) {calculated_factors.insert(entity, Self::default());}
+            let Some(fact) = calculated_factors.get_mut(&entity) else {continue;};
+            *fact += factor.clone();
+        }
+        for (entity, mut sink, settings) in sinks.iter_mut(){
+            let Some(Self{vm, va, sm, sa}) = calculated_factors.get(&entity) else {
+                sink.set_volume(settings.volume);
+                sink.set_speed(settings.speed); 
+                continue;
+            };
+            sink.set_volume(Volume::Linear((settings.volume.to_linear() * vm + va).max(0.0))); //TODO factors should be Volume
+            sink.set_speed((settings.speed*sm+sa).max(0.0));
+            // sink.set_volume(Volume::Linear(settings.volume.to_linear() * factor.vm));
         }
     }
 }
@@ -206,21 +212,26 @@ impl Default for Footsteps {
 impl Footsteps{
     fn adjust_footsteps(
         time: Res<Time>,
-        move_events: EventReader<FlyCamMoveEvent>,
-        camera: Query<(&Transform, &CornSensor), With<MainCamera>>,
+        player: Option<Single<(&Transform, &CornSensor, &MyAnimationState), With<Player>>>,
         mut factors: Query<(&mut AudioFactor, &mut Self)>
     ){
-        let moving = !move_events.is_empty();
-        let Ok((t, sensor)) = camera.single() else {
+        let Some(player) = player else {
+            for (mut factor, _) in factors.iter_mut(){
+                factor.vm = 0.0;
+            }
             return;
         };
-        let flying = t.translation.y > 2.0; //MOVEME
+        let (t, sensor, animation_state) = player.into_inner();
 
         for (mut factor, mut fs) in factors.iter_mut(){
-            let speed = lerp(fs.s[0], fs.s[1], sensor.is_in_corn);
+
+            let moving = matches!(animation_state, MyAnimationState::Walk(_));//MOVEME
+            let flying = t.translation.y > 2.0; //MOVEME
+
+            let speed = lerp(fs.s[0], fs.s[1], sensor.value);
             let volume = match !moving || flying {
                 true => 0.0,
-                false => lerp(fs.v[0], fs.v[1], sensor.is_in_corn),
+                false => lerp(fs.v[0], fs.v[1], sensor.value),
             };
 
             let diff = volume - fs.lerp;

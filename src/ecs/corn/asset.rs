@@ -33,7 +33,7 @@ use wgpu::{util::BufferInitDescriptor, BufferUsages};
 use crate::{ecs::corn::render::{ExtendWithCornMaterial, StdCornDrawRender, StdCornMaterial}, util::{event_set::{AppEventSet, EventSet}, extract_changed::ExtractChangedComponentPlugin, observer_ext::ObserveAsAppExt}};
 use super::{CornField, CornFieldObserver, CornFieldSystemSet};
 
-pub const DEFAULT_MODEL_PATH: &'static str = "models/Corn.glb";
+pub const DEFAULT_MODEL_PATH: &'static str = "models/corn3.glb";
 
 /// Error type for when loading a corn mesh from a gltf fails.
 #[derive(Default, Debug, Error)]
@@ -170,7 +170,7 @@ pub struct CornLoadSender(pub Sender<Vec<Vec<Mesh>>>);
 impl CornLoadSender{
     /// System which runs on GLTF asset event and sends loaded corn gltf data to async mesh load functions
     pub fn on_gltf_load(
-        loading: Query<(Entity, &Self, &CornGltf)>,
+        loading: Query<(Entity, &Self, &CornGltf, Has<MeshMaterial3d<StdCornMaterial>>)>,
         gltf_assets: Res<Assets<Gltf>>,
         scene_assets: ResMut<Assets<Scene>>,
         mesh_assets: Res<Assets<Mesh>>,
@@ -180,23 +180,36 @@ impl CornLoadSender{
     ){
         let scene_assets = scene_assets.into_inner();
         let mesh_assets = mesh_assets.into_inner();
-        for (entity, CornLoadSender(sender), CornGltf(gltf)) in loading.iter(){
+        for (entity, CornLoadSender(sender), CornGltf(gltf), has_material_already) in loading.iter(){
             let Some(asset) = gltf_assets.get(gltf) else {continue;};
             // Collect and sort meshes, and get lod info
             let Some((data, lod_info)) = get_mesh_data(asset, scene_assets, mesh_assets) else {continue;};
             // Send data to async load method
             let _ = sender.force_send(data); sender.close();
 
-            // get material 
-            // TODO better asset pipelining
-            let material = asset.materials.get(0).unwrap();
-            let material = material_assets.get(material).unwrap();
-            let material = material.clone().extend_with_corn();
-            let material = extended_material_assets.add(material); 
+            if ! has_material_already{
+                // get material from GLTF
+                // TODO better asset pipelining
+                let mut material = if let Some(handle) = asset.materials.get(0) {
+                    info!("using material from GLTF {}", asset.named_materials.iter().find(|a|a.1 == handle).map(|a|a.0).cloned().unwrap_or_default() );
+                    material_assets.get(handle).expect("material asset should be loaded").clone()
+                } else {
+                    warn!("Failed to get material from GLTF asset, using default material");
+                    StandardMaterial::from_color(Srgba::GREEN)
+                };
+
+                // eas: turns out these were set correctly by blender. something else is wrong.
+                // dbg!(material.double_sided, material.cull_mode);
+                material.double_sided = true; // just to make sure, XXX not working, still false ???
+                material.cull_mode = None; // does nothing because I hard code this in specialize for CornMaterial
+
+                let material = material.extend_with_corn();
+                let material = extended_material_assets.add(material); 
+                commands.entity(entity).insert(MeshMaterial3d(material));
+            }
             
             commands.entity(entity)
                 .insert(CornLodInfo(lod_info))// Add lod info as component
-                .insert_if_new(MeshMaterial3d(material))
                 .remove::<CornLoadSender>();// Remove the corn load sender since we are finished with it
         }
     }

@@ -1,6 +1,7 @@
 /// Code to help resolve entity relations in scenes to actual entitys
 
 use bevy::{ecs::system::SystemParam, prelude::*, scene::SceneInstance};
+use itertools::Itertools;
 
 #[derive(Debug, Clone, Component, Reflect)]
 pub enum EntityPointer{
@@ -38,6 +39,10 @@ impl<'w, 's> EntityResolver<'w, 's> {
                 }
             }
         }
+    }
+
+    pub fn iter_parents_to_scene_root<'a>(&'a self, start: Entity) -> impl Iterator<Item=Entity> + 'a {
+        self.parents.iter_ancestors(start).take_while_inclusive(|e|!self.scene.contains(*e))
     }
 }
 

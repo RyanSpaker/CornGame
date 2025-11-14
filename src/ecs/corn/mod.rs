@@ -40,12 +40,12 @@ impl ObserverParent for CornFieldObserver{
 pub struct BlenderCornField;
 
 fn init_gltf_cornfield(
-    corn: Query<(Entity, &BlenderCornField, Option<&Children>,  &GlobalTransform), Without<CornField>>,
+    mut corn: Query<(Entity, &BlenderCornField, Option<&Children>, &mut Transform, &GlobalTransform), Without<CornField>>,
     mut children: Query<(&MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
     a_materials: Res<Assets<StandardMaterial>>,
     mut commands: Commands
 ){
-    for (id, _corn, child, transform) in corn.iter() {
+    for (id, _corn, child, mut transform, gt) in corn.iter_mut() {
         if ! child.is_some_and(|c| c.len() == 1) {
             error_once!(entity = %id, "BlenderCornField must have exactly 1 child, the mesh with the image.");
             dbg!(child);
@@ -71,11 +71,16 @@ fn init_gltf_cornfield(
         // TODO: actually use the mesh in corn render.
         // TODO: should use global transform
 
-        let transform = transform.compute_transform();
-        let center = transform.translation + Vec3::new(0.0, 0.0, 0.0); 
-
-        let half_extents = transform.scale.xz();
+        let gt = gt.compute_transform();
+        let half_extents = gt.scale.xz();
+        
+        //EAS I think ryan changed it to use GlobalTransform of entity.
+        //let center = transform.translation;  
+        let center = Vec3::new(0.0, 0.0, 0.0);
         dbg!(half_extents, center);
+
+        // bc entity Transform is applied to corn buffer, and we use scale for half_extents, clear scale.
+        transform.scale = Vec3::ONE;
 
         commands.entity(id).insert((
             CornField,
@@ -123,19 +128,25 @@ pub fn test_field(
     mut commands: Commands,
     resource: Res<SimpleMaterials>,
     std_mats: Res<Assets<StandardMaterial>>,
-    mut corn_mats: ResMut<Assets<StdCornMaterial>>
+    mut corn_mats: ResMut<Assets<StdCornMaterial>>,
+    asset_server: Res<AssetServer>,
 ){
     let Some(green) = std_mats.get(resource.green.id()) else {return};
-    let corn_mat = corn_mats.add(green.clone().extend_with_corn());
+    let mut green = green.clone();
+    green.double_sided = true;
+    green.cull_mode = None;
+
+    let corn_mat = corn_mats.add(green.extend_with_corn());
     commands.spawn((
         Name::from("Test Corn Field"),
         CornField,
-        SimpleHexagonalSettings{
+        ImageCarvedHexagonalShader{
             center: Vec3::new(0.0, 0.0, 0.0),
             half_extents: Vec2::new(5.0, 5.0),
             dist_between: 1.0,
             height_range: Vec2::new(0.9, 1.1),
-            rand_offset_factor: 0.1
+            rand_offset_factor: 0.1,
+            image: asset_server.load("textures/maze.jpg"),
         },
         MeshMaterial3d(corn_mat),
     ));

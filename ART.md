@@ -16,3 +16,22 @@ if you dig through the piles of crap there is lore/flavortext
 # Wed Aug 20 04:09:22 AM EDT 2025
 26m episode 8 fargo, soundtrack
 and 27:00 has really great sound effects for radar gun
+
+# Tue Oct 28 01:46:10 AM EDT 2025
+https://discord.com/channels/691052431525675048/692648638823923732/1431596590157791302
+neat looking music visualizer
+
+https://discord.com/channels/691052431525675048/692648638823923732/1429082860110741506
+in game computer terminal
+
+https://discord.com/channels/691052431525675048/692648638823923732/threads/1428462975739494502
+this is neat, spacial audio 
+
+https://discord.com/channels/691052431525675048/692648638823923732/threads/1428073001567387679
+this guy has some nice terrain + god rays + grass
+I like the ambience
+
+#
+make corn game logo 3d, sort of looking down on the corn, in the main menu
+
+create spawn and despawn effects like post by post on the fence, cornstalk by cornstack, etc. to make it visually interesting.

@@ -12,7 +12,7 @@ var<uniform> settings: CornSettings;
 @group(0) @binding(3) var path_texture_sampler: sampler;
 
 // A hexagonal corn field created by interpreting the indices as spots on a checker pattern with one axis squished.
-@compute @workgroup_size(16, 16, 1)
+@compute @workgroup_size(256, 1, 1)
 fn image_init(@builtin(global_invocation_id) gid: vec3<u32>) {
   // only run when index is in scope
   if gid.x < arrayLength(&instance_data){

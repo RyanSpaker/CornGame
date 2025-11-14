@@ -10,6 +10,7 @@ pub mod util;
 pub mod animation_context;
 pub mod camera_target;
 pub mod game;
+pub mod renderdoc;
 
 use bevy::{pbr::FogVolume, prelude::*};
 

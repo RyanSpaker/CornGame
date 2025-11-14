@@ -68,6 +68,14 @@
 
             sccache
             mold-wrapped
+
+            renderdoc
+						
+						tracy-glfw
+						libGL
+
+						rgp #radeon graphics profiler
+						dbus.lib
           ];
 
           # needed for rust-analyzer
@@ -78,6 +86,9 @@
 					LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
       			pkgs.libxkbcommon
 						pkgs.vulkan-loader
+            pkgs.renderdoc
+						pkgs.dbus.lib
+						pkgs.libGL
     			];
 
           # https://github.com/rust-lang/rustc_codegen_cranelift

@@ -15,6 +15,9 @@ use serde::{Deserialize, Serialize};
 pub struct DampedPhysics;
 
 use bevy::ecs::reflect::ReflectBundle;
+use wgpu::BlendComponent;
+
+use crate::scenes::resolver::EntityResolver;
 #[derive(Debug, Default, Clone, Bundle, Reflect)]
 #[reflect(Bundle, Default)]
 struct BlenderRigidBody(
@@ -46,35 +49,87 @@ impl Default for AutoCollider {
     }
 }
 
-// helper which was used for mesh colliders in blender scenes but isn't actually needed or used.
-// #[derive(Debug, Reflect, Serialize, Deserialize)]
-// #[reflect(Component)]
-// pub enum ColliderFor{
-//     Parent
-// }
-// impl Component for ColliderFor{
-//     type Mutability = Mutable;
-//     const STORAGE_TYPE: StorageType = StorageType::Table;
-//     fn register_component_hooks(hooks: &mut bevy::ecs::component::ComponentHooks) {
-//         hooks.on_add(|mut world, hook_context| {
-//             let Some(comp) = world.get::<Self>(hook_context.entity) else {return;};
-//             info!(entity = %hook_context.entity, component = ?hook_context.component_id, value = ?comp);
-//             match comp{
-//                 Self::Parent => {
-//                     warn!("seriously broken don't use me");
-//                     let parent = match world.get::<ChildOf>(hook_context.entity) {Some(p) => p.parent(), None => {return;}};
-//                     let Some(mesh) = world.get::<Mesh3d>(hook_context.entity) else {return;};
-//                     let Some(meshes) = world.get_resource::<Assets<Mesh>>() else {return;};
-//                     let Some(mesh_data) = meshes.get(&mesh.0) else {return;};
-//                     let Some(collider) = Collider::trimesh_from_mesh(mesh_data) else {return;};
-//                     if let Ok(mut parent) = world.commands().get_entity(parent){
-//                         parent.insert((Visibility::Hidden, collider));
-//                     }
-//                 }
-//             }
-//         });
-//     }
-// }
+/// Marker struct for colliders defined in blender. 
+/// empty => 1m cube
+/// mesh/object => trimesh
+/// assumes parent is rigidbody (inserts static if missing)
+#[derive(Debug, Default, Reflect, Component, Serialize, Deserialize)]
+#[reflect(Component, Default)]
+#[component(storage = "SparseSet")] // I think all temporary effects should be sparse set
+pub struct BlenderCollider{
+    constructor: Option<ColliderConstructor>
+}
+
+impl BlenderCollider {
+    fn on_add(
+        trigger: Trigger<OnAdd, Self>,
+        resolver: EntityResolver,
+        meshes: Query<&Mesh3d>,
+        rigidbody: Query<&RigidBody>,
+        this: Query<&BlenderCollider>,
+        mut commands: Commands, 
+    ){
+        let entity = trigger.target();
+        let this = this.get(entity).unwrap();
+        
+        let rigidbody = resolver.iter_parents_to_scene_root(entity).find(|e|rigidbody.contains(*e));
+
+        // check if entity is mesh, or has child mesh (is object);
+        let mut mesh = meshes.contains(entity).then(|| entity);
+        if mesh.is_none() {
+            mesh = resolver.children.get(entity).ok().and_then(|children| children.iter().find(|c|meshes.contains(*c)));
+            if mesh.is_some(){
+                warn!("BlenderCollider should be attached to the object {}, not the mesh {}. (handled gracefully)", entity, mesh.unwrap());
+            }
+        } 
+        
+        // insert RigidBody::Static on parent if missing
+        if rigidbody.is_none(){
+            // no parent rigidbody in scene
+            let mut parent = match resolver.parents.get(entity) {
+                Ok(p) => p.0,
+                Err(_) => {
+                    warn!(%entity, "no parent in scene for BlenderCollider");
+                    entity
+                }
+            };
+
+            if meshes.contains(entity){
+                // actually need to go two up.
+                parent = match resolver.parents.get(parent){
+                    Ok(p) => p.0,
+                    Err(_) => {
+                        warn!(%entity, "no parent in scene for BlenderCollider");
+                        entity
+                    }
+                };
+            }
+
+            if resolver.scene.contains(parent){
+                warn!(entity=%entity, "Scene {} should not be a RigidBody", parent);
+            }
+
+            commands.entity(parent).insert_if_new(RigidBody::Static);
+        }
+
+        // attach collider constructor
+        if mesh.is_some(){
+            let constructor = this.constructor.clone().unwrap_or(ColliderConstructor::TrimeshFromMesh);
+            // add margin for trimesh (recommended) // EDIT actually adding it for everything.
+            // match constructor {
+            //     ColliderConstructor::TrimeshFromMesh | ColliderConstructor::TrimeshFromMeshWithConfig(trimesh_flags) => {
+            //         commands.entity(entity).insert(CollisionMargin(0.01))
+            //     }
+            //     _ => {},
+            // }
+            commands.entity(mesh.unwrap()).insert(constructor);
+        } else {
+            // is 2.0 because in blender cube defaults to 1.0 half width
+            let constructor = this.constructor.clone().unwrap_or(ColliderConstructor::Cuboid { x_length: 2.0, y_length: 2.0, z_length: 2.0 });
+            commands.entity(entity).insert(constructor);
+        }
+    }
+}
 
 #[derive(Debug, Default, Resource, Reflect, Serialize, Deserialize)]
 #[reflect(Resource)]
@@ -90,6 +145,9 @@ impl Plugin for CornPhysicsPlugin {
             .register_type::<DebugRender>()
             .register_type::<DampedPhysics>()
             .init_resource::<DebugRender>();
+
+        app.add_observer(BlenderCollider::on_add);
+        app.register_type::<BlenderCollider>();
     }
 }
 

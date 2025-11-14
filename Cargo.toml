@@ -86,17 +86,23 @@ bevy = { version = "0.16.1", default-features = false, features = [
   "web",
   "webgpu",
   "configurable_error_handler",
-  "track_location"
+  "track_location",
+
+  "trace_tracy"
 ]}
 wgpu-types = "24"
 wgpu = "24"
+
+# tracy v0.11.1 was complaining about version mismatch
+tracy-client = "=0.18.0"
+tracy-client-sys = "=0.24.3"
 
 # BEVY ECOSYSTEM
 bevy_skein = "0.2.1"
 bevy-tnua = "0.24.0"
 bevy-tnua-avian3d = "0.5.0"
 avian3d = { version = "*", features = ["serialize"]}
-lightyear = { version = "0.22.5", features = [
+lightyear = { version = "*", features = [
   "avian3d", 
   # "metrics", 
   "websocket",
@@ -120,7 +126,7 @@ bevy_mod_skinned_aabb = "0.2.0"
 # GENERIC
 thiserror = "2.0.12"
 serde = "*"
-clap = {version = "4.5.38", features = ["derive"]}
+clap = {version = "4.5.38", features = ["derive", "env"]}
 rand = "0.9.0"
 bytemuck = "1.14.1"
 async-channel = "2.3.1"
@@ -145,6 +151,12 @@ bevy_flair = "0.4.1"
 bevy_simple_text_input = "0.11.0"
 bevy_ui_text_input = "0.5"
 cosmic-text = "0.14.2"
+serde_json = "1.0.145"
+renderdoc = "0.12.1"
+itertools = "0.14.0"
+bevy_asset_loader = "0.23.0"
+extension-trait = "1.0.2"
+# bevy_rich_text3d = "0.5.1"
 
 [patch.crates-io]
 petgraph = {branch = "master", git = "https://github.com/petgraph/petgraph.git"}

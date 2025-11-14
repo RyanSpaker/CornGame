@@ -5,16 +5,13 @@ pub mod main_menu;
 pub mod resolver;
 
 use bevy::{
-    core_pipeline::{bloom::Bloom, tonemapping::Tonemapping},
-    ecs::{component::HookContext, world::DeferredWorld},
-    pbr::{ScreenSpaceReflections, VolumetricFog},
-    prelude::*, scene::scene_spawner,
+    core_pipeline::{bloom::Bloom, prepass::DepthPrepass, tonemapping::Tonemapping}, ecs::{component::HookContext, system::SystemMeta, world::DeferredWorld}, pbr::{Atmosphere, ScreenSpaceReflections, VolumetricFog, wireframe::{Wireframe, WireframeColor}}, prelude::*, render::view::RenderLayers, scene::scene_spawner
 };
+use bevy_editor_pls::default_windows::cameras::EDITOR_RENDER_LAYER;
+use clap::Parser;
 use lobby::LobbyScene;
 use crate::{
-    ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCam, framerate::spawn_fps_text, menu_main::spawn_main_menu},
-    systems::scenes::{CornScene, SceneTransitionApp},
-    Cli,
+    Cli, ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCam, framerate::spawn_fps_text, menu_main::spawn_main_menu}, systems::{character::{SpawnPlayerEvent, SpawnPlayerItem}, scenes::{CornScene, SceneTransitionApp}}, util::register_system_named::SystemMap
 };
 
 #[derive(Debug, Clone, Component, Reflect)]
@@ -104,14 +101,26 @@ impl Plugin for CornScenesPlugin {
                 LoadScene::load_handler.before(scene_spawner),
             )
             .add_plugins((main_menu::MainMenuPlugin, lobby::LobbyPlugin, bevy_dog::plugin::DoGPlugin));
+
+        if Cli::parse().spatialaudio {
+            // waiting untill 0.17
+            //https://github.com/janhohenheim/bevy_steam_audio
+            app.add_plugins((
+                // SeedlingPlugin::default(),
+                // // Add the SteamAudioPlugin to the app to enable Steam Audio functionality
+                // SteamAudioPlugin::default(),
+                // // Steam Audio still needs some scene backend to know how to build its 3D scene.
+                // // Mesh3dSteamAudioScenePlugin does this by using all entities that hold both
+                // // `Mesh3d` and `MeshMaterial3d`.
+                // Mesh3dSteamAudioScenePlugin::default(),
+            ));
+        }
     }
 }
 
-fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
+fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>, server: Res<AssetServer>) {
     let cam = MainCamera::spawn_main_camera(&mut commands);
     commands.entity(cam).insert((
-        Tonemapping::TonyMcMapface,
-        Bloom::NATURAL,
         Transform::from_xyz(0.0, 2.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         Projection::Perspective(PerspectiveProjection {
             near: 0.1,
@@ -122,15 +131,52 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
         // bevy_edge_detection::EdgeDetection::default(), //post-process shader
         // bevy_dog::settings::DoGSettings::OUTLINE_DITHER,
         // bevy_dog::settings::PassesSettings::default(),
-        VolumetricFog {
-            ambient_intensity: 0.0,
-            ..default()
-        },
         // ScreenSpaceReflections::default(), // problems on wasm
         CornSensor::default(),
         FlyCam,
         IsDefaultUiCamera,
     ));
+
+    if !cli.simplecam {
+        commands.entity(cam).insert((
+            VolumetricFog {
+                ambient_intensity: 0.0,
+                ..default()
+            },
+            Tonemapping::TonyMcMapface,
+            Bloom::NATURAL,
+            // Atmosphere::EARTH, nice scattering but don't like sky appearance
+            // AtmosphereEnvironmentMapLight::default(), //0.17
+            DepthPrepass,
+        ));
+    }
+
+    if cli.spatialaudio {
+        let listener = SpatialListener::new(0.25);
+        commands.entity(cam).insert((
+            listener.clone(),
+            children![
+                // left ear indicator
+                (
+                    Name::new("left ear gizmo"),
+                    Mesh3d(server.add(Mesh::from(Cuboid::new(0.1, 0.1, 0.1)))),
+                    Wireframe,
+                    WireframeColor{color: Color::Srgba(Srgba::BLUE)},
+                    Transform::from_translation(listener.left_ear_offset),
+                    RenderLayers::layer(EDITOR_RENDER_LAYER)
+                ),
+                // right ear indicator
+                (
+                    Name::new("right ear gizmo"),
+                    Mesh3d(server.add(Mesh::from(Cuboid::new(0.1, 0.1, 0.1)))),
+                    Wireframe,
+                    WireframeColor{color: Color::Srgba(Srgba::RED)},
+                    Transform::from_translation(listener.right_ear_offset),
+                    RenderLayers::layer(EDITOR_RENDER_LAYER)
+                )
+            ],
+        ));
+    }
 
     if cli.menu {
         // commands.spawn(main_menu::MainMenuScene.get_bundle());
@@ -138,6 +184,65 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>) {
     } else if !cli.scenes.is_empty() || cli.lobby {
         commands.spawn(LobbyScene.get_bundle());
     }
+
+    for item in cli.item.iter() {
+        commands.trigger(SpawnPlayerEvent::default());
+        commands.trigger(SpawnPlayerItem(item.strip_prefix("assets/").unwrap_or(item.as_str()).to_string()));
+    }
+
+    if cli.list_systems {
+        commands.queue(move |world: &mut World| {
+            world.schedule_scope(crate::Cmds, |world, schedule| {
+                if schedule.systems().is_err() {
+                    schedule.initialize(world).unwrap();
+                }
+
+                schedule.systems().unwrap().for_each(|s|println!("{}", s.1.name()));
+            });
+        });
+    }
+
+    for system in cli.system.iter() {
+        let system = system.to_string();
+        commands.queue(move |world: &mut World| -> Result{
+            match world.resource::<SystemMap>().get_system(&system) {
+                Some(s) => {
+                    info!("running system {}", s.name);
+                    let _ = world.run_system(s.id)?;
+                },
+                None => {
+                    error!("no system named {}", system);
+                },
+            }            
+            Ok(())
+
+            // can't seem to access the actual system as mut
+            // world.schedule_scope(crate::Cmds, |world, schedule| -> Result{
+            //     if schedule.systems().is_err() {
+            //         schedule.initialize(world).unwrap();
+            //     }
+
+            //     fn match_path(value: &str, full_path: &str)->bool{
+            //         full_path == value || full_path.ends_with(value)
+            //     }   
+
+            //     //note. idk if we need schedule_scope
+            //     let node = match schedule.systems().unwrap().find(|s| match_path(system.as_str(), &s.1.name())){
+            //         Some(s) => s.0,
+            //         None => {
+            //             error!("no system named {} in Cmd schedule", system);
+            //             return Ok(());
+            //         },
+            //     };
+            //     let system = schedule.graph_mut().systems.get_mut(node.index()).unwrap().get_mut().unwrap();
+            //     system.run((), world)
+            // })
+        });
+    }
+
+    if cli.testcorn {
+        commands.run_system_cached(crate::ecs::corn::test_field);
+    }   
     
     commands.insert_resource(UiScale(1.0));
 }

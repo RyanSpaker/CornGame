@@ -2,8 +2,8 @@ use std::sync::atomic::Ordering;
 use crate::util::{specialized_material::{SpecializedDrawMaterial, SpecializedDrawPrepass, SpecializedMaterialPlugin}};
 use super::{buffer::{CornData, IndirectBuffer, VertexInstanceBuffer}};
 use bevy::{
-    asset::Asset, ecs::{query::ROQueryItem, system::{lifetimeless::{Read, SRes}, SystemParamItem}}, pbr::{ExtendedMaterial, MaterialExtension, RenderMeshInstances, StandardMaterial}, prelude::*, reflect::Reflect, render::{
-        mesh::{allocator::MeshAllocator, RenderMesh, RenderMeshBufferInfo}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, render_resource::{AsBindGroup, ShaderDefVal, VertexBufferLayout}
+    asset::Asset, ecs::{query::ROQueryItem, system::{SystemParamItem, lifetimeless::{Read, SRes}}}, pbr::{ExtendedMaterial, MaterialExtension, RenderMeshInstances, StandardMaterial}, prelude::*, reflect::Reflect, render::{
+        mesh::{RenderMesh, RenderMeshBufferInfo, allocator::MeshAllocator}, render_asset::RenderAssets, render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass}, render_resource::{AsBindGroup, AsBindGroupShaderType, ShaderDefVal, VertexBufferLayout}
     }
 };
 use wgpu::vertex_attr_array;
@@ -29,14 +29,20 @@ pub type StdCornDrawPrepass = SpecializedDrawPrepass<StdCornMaterial, DrawCorn>;
 pub trait ExtendWithCornMaterial: Material{fn extend_with_corn(self) -> ExtendedMaterial<Self, CornMaterialExtension>;}
 impl<M: Material> ExtendWithCornMaterial for M {
     fn extend_with_corn(self) -> ExtendedMaterial<Self, CornMaterialExtension> {
-        ExtendedMaterial { base: self, extension: CornMaterialExtension{} }
+        ExtendedMaterial { base: self, extension: CornMaterialExtension{ time: 1.0, fade_in: 1.0 } }
     }
 }
 
 /// A material extension for the corn. Adds our instance buffer as a vertex buffer,
 /// adds a shaderdef enabling our instanced code
 #[derive(Default, Clone, AsBindGroup, Asset, Reflect)]
-pub struct CornMaterialExtension{}
+pub struct CornMaterialExtension{
+    #[uniform(100)]
+    time: f32,
+   
+    #[uniform(100)]
+    fade_in: f32,
+}
 impl MaterialExtension for CornMaterialExtension {
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
         shaders::INSTANCED_VERTEX.into()
@@ -54,6 +60,7 @@ impl MaterialExtension for CornMaterialExtension {
         _layout: &bevy::render::mesh::MeshVertexBufferLayoutRef,
         _key: bevy::pbr::MaterialExtensionKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
+        descriptor.primitive.cull_mode = None; // TODO how to get this value from StandardMaterial
         descriptor
             .vertex
             .shader_defs
@@ -124,5 +131,16 @@ impl Plugin for CornRenderPlugin {
             StdCornDrawRender,
             StdCornDrawPrepass,
         >::default());
+
+        // app.register_type::<CornMaterialExtension>();
+        // app.register_type::<StdCornMaterial>();
+        // app.register_type::<MeshMaterial3d<StdCornMaterial>>();
+        // app.register_type::<Handle<StdCornMaterial>>();
+        app.register_asset_reflect::<StdCornMaterial>(); // actually this is what you need.
+        app.add_systems(Update, |time: Res<Time>, mut materials: ResMut<Assets<StdCornMaterial>>| {
+            for material in materials.iter_mut() {
+                material.1.extension.time = time.elapsed_secs();
+            }
+        });
     }
 }

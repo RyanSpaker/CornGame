@@ -899,4 +899,180 @@ NOTE: there should be a SceneEntity compoennt on things spawned from scenes to g
 
 ---
 
-I spent 2hrs refactoring uid.rs. If rust-analyzer doesn't get 100x faster, then rust as a language should just be abandoned.
+I spent 2hrs refactoring uid.rs. Cargo-check painfully slow (10+ seconds). 
+EDIT: this was a rust-analyzer memory leak. Update brings cargo-check time back down to a tolerable ~2s.
+
+# Tue Oct 28 04:35:37 PM EDT 2025
+Editor UI 
+- needs to distinguish relation and relation target better. I can't ever remember the arrow direction meaning
+- [ ] component view needs to have wrapping on complex nested types (ie. extended material)
+- [ ] should use innermost type for crate sorting 
+    - https://docs.rs/bevy_reflect/latest/bevy_reflect/enum.TypeInfo.html#method.generics
+
+# Wed Nov  5 09:01:53 PM EST 2025 
+scene issues:
+- [x] gate and server rack export broken (wrong rotation/position)
+  - IDK what fixed this
+- [ ] missing fred eye light colors in cornmenu_min
+- [ ] recreate correct ambient and day/night 
+
+corn issues:
+- [x] register extended material for inspector 
+  - ie. `MeshMaterial3d<CornMaterial>`
+  - I believe the issue is that ExtendedMaterial doesn't reflect(Asset)
+  - actually neither does StandardMaterial. I have no idea how ReflectHandle or ReflectAsset get registered
+  - A: https://docs.rs/bevy/latest/bevy/prelude/trait.AssetApp.html#tymethod.register_asset_reflect
+- [x] fix color
+    old_corn_game used CornLeaves material (presumably from corn.gltf)
+    ```
+      let corn_meshes = corn_asset.get(&corn.asset).unwrap();
+      if let Some(mat) = std_materials.get(
+          corn_meshes
+              .materials
+              .get(&"CornLeaves".to_string())
+              .unwrap(),
+      ) {
+    ```
+    while new code uses StandardMaterial::from(Color::GREEN), so nothing surprising here.
+- [x] corn is only rendering one-sided
+  - confirmed old_corn_game doesn't have this issue
+  - `RenderPipelineDescriptor.primative.cull_mode` is `Some(Back)` in render.rs specialize
+    - there is no code in old_corn_game which sets this either so idk what changed.
+    - hard coded to None (idk how to access StandardMaterial's fields there)
+  - now it is double sided, but underside is lighter? why. there is only ambiant light. A: bc it is treating upsidedown as the same as an extream angle of incidence. NOTE: wish I could get ambient without 
+    - but somehow the double_sided flag of StandardMaterial is not being respected, I have checked this works when rending the corn model normally.
+    - WTF: I fixed the reflection issue above, and it turns out double_sided works it was just turned off, despite me hard coding it on.
+      - DefaultCornModel has the right material, problem was test_field specified it's own
+    - NOTE: DefaultCornModel feels like an antipattern, should be a scene or asset
+- [x] image for main_menu is not carving corn!
+  - but cornmenu_min is working. This seems to have been an export issue.
+- [ ] no shadows
+- [ ] fix inter-corn distance \
+  - looking at old corn game, I am having a hard time telling visually
+    the new corn feels tighter packed, but it might be the lighting and lack of wind
+- [ ] double check height
+  - I've had these issues before. I'll have to create a measuring grid asset and write down the actual height and spacing in the old_corn_game
+- [ ] performance issue
+  - first make sure that we aren't actually rendering more corn (via dist-between as above)
+
+art direction workflow and reproducibility issues:
+- [ ] skein is too fragile. 
+  - alternative: use a compliant name based system. with ron files which live next to the gltf
+- [ ] blender forgets export settings, and export settings are not kept consistent between files.
+  - solution might be seperate folder per file and default export path, then hardlink for the asset folder
+  - 
+- [ ] assets are duplicated instead of linked
+- [ ] camera / atmosphere / lighting are frequently lost
+  - these need to be seperate from basic level scenes, but we can compose them
+- [ ] we need at some hard coded (non-gltf) scenes for testing that appearance has not changed.
+- [ ] structured screenshots directory (tagged with git refs?)
+- [ ] more structured art folder (with archive)
+- [ ] more structured assets folder (with images in dedicated location)
+- [ ] merge mesh and object? 
+- [ ] texture resolutions?
+  - for main menu, reducing the 4096 textures to 1024 and exporting to jpg seems okay, and much faster to load. (also, export is faster) However, loading delay is still noticable.
+  - Might want to go back to regular size though 
+- [ ] use bevy_asset_loader to move ALL asset paths OUT of source code
+
+corn art issues:
+- [ ] corn style (material, texture, which LODS) should also be swappable.
+- [ ] we need debug rendering. (enable / disable frustum culling based on editor camera, lod visualization, swap out model for a stick)
+
+polish issues:
+- [ ] level/scene transistions
+  - disable physics, preload assets, implement loading logs in mm, and experiment with iyes_progress
+
+# Sun Nov  9 11:00:28 PM EST 2025 
+Trying to get renderdoc working.
+
+run `cargo run -vv` to get the needed env vars, then run renderdoc with those, then you can launch the executable at `target/debug/corn_game`
+
+I tried to use https://github.com/ebkalderon/renderdoc-rs but I have no idea how it's supposed to work. I get DLOpenUnknown.
+Maybe it wants to to be run under renderdoc
+
+NOTE: while debugging I noticed that 
+`env LD_DEBUG=bindings cargo run 2>&1 | rg -n "error:"` gives
+`50380:   2120961:       /nix/store/v0d8wydalblh1cj73djhf68wf9v3rp3n-mesa-25.2.1/lib/libVkLayer_MESA_device_select.so: error: symbol lookup error: undefined symbol: vkGetDeviceProcAddr (fatal)`
+but this apparently was already the case, without renderdoc.rs
+
+---
+
+rgp (Radeon GPU Profiler) sucks
+see: https://github.com/GPUOpen-Tools/radeon_developer_panel/issues/57
+`MESA_VK_TRACE=rgp MESA_VK_TRACE_FRAME=100 vkcube` outputs a .rgp file, but RadeonGPUProfiler says it "contains no events"
+
+"radv: SPM isn't supported for this GPU (AMD RADV VEGA10)!" ie. my graphics card lacks Streaming Performance Metrics in the new RADV driver which amd replaced AMDVLK with
+
+trying this: 
+https://docs.rs/bevy/0.16.1/bevy/render/diagnostic/struct.RenderDiagnosticsPlugin.html
+
+# Tue Nov 11 04:09:58 PM EST 2025
+FogVolume doesn't do anything unless there is a light with shadows enabled. And directional lights don't seem to work, oddly. 
+Adding shadows to the spotlight kills performance. Adding shadows to the directional light does nothing.
+Shadows don't actually work on the corn in either case.
+
+---
+
+Going to look into spatial audio:
+https://github.com/janhohenheim/bevy_steam_audio requires 0.17
+
+In the mean time we can do basic spatial audio. Going to make my cricket experiment. 
+For the experiment: 
+- [ ] 1. position crickets on a hex grid, randomize start time, verify is sounds right-ish walking around
+- [ ] 2. think about max distance. (avoid 1000s of audio sources)
+
+also testing out bevy_asset_loader
+- should have lazy loading variant
+- pretty much useless as the resource which stores the handles does not exist until they are loaded. Which precludes StartUp systems which are when we want to use them.
+- in general, there is an issue with one-shot-systems which need to potentially wait for something before running.
+
+--- 
+
+- [ ] bug: child collider of RigidBody::Static moves back and forth per tick
+  - edit loop on propagate_collider_transforms_recursive
+  update_child_collider_position
+  and lightyear_avian/src/sync.rs 
+  - going to assume this is solved by updating lightyear to new (0.17 blocked) version
+
+# Thu Nov 13 10:03:41 PM EST 2025
+working on perf metrics. 
+Way I see it we have a number of things. We want to identify bottlenecks AND unneeded resource use.
+Things can be cpu bound, typically this happens at sync points, but even for multithreaded, there are only so many cores.
+Things can be gpu bound, gpu also has something like sync points.
+
+We want to understand three things for each system/draw_call
+1. how much work is it doing. 
+2. how long did it take to do it
+3. how much did this effect overall frame time. (bottleneck)
+
+GPU:
+- wgpu feature TIMINGS_QUERY
+- wgpu feature PIPELINE_STATISTICS_QUERY
+- cpu side timing
+  - ? how usefull is this, I don't have a good model of the asyncronicity.
+
+the bevy RenderDiagnosticsPlugin also dumps to tracing, so we can try using tracy
+I have updated the flake.nix to get it to actually build. Needs libGL, and the nixos tracy pkg appears to be an alias for tracy-wayland. X11 needs tracy-glfw
+
+I feel like I remember tracy support breaking something else. but I don't remember what.
+
+Tracy works well enough. wish it had a way to pin a trace while updating per frame with it jumping all around it's hard to read.
+
+Also, where is the shadow pass?
+
+---
+
+- [ ] BEVY BUG: hot reloading assets doesn't work for assets with special paths (out side assets folder). also does not work with symlinks
+  ```
+  
+  ```
+
+- [ ] NOTE: need to show what fields are default in inspector, with toggle to hide 
+
+---
+
+pie chart perf
+
+interestingly the chart shows less than 100% usage when framerate drops (due to enabling shadows). implying that the bottleneck is somewhere else... or there are draw calls not included in any of the elapsed_gpu diagnostics. maybe the volumentric light pass?
+
+while playing around with fog/shadow toggles, got weird borked state where corn near camera turned white. turning fog on/off doesn't always have effect. overall weird behavior. and difficult to get fog to render at all.

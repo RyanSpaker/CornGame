@@ -1,6 +1,24 @@
 use std::{path::PathBuf, time::Duration};
 
-use bevy::{app::ScheduleRunnerPlugin, asset::io::AssetSourceBuilder, prelude::*, render::{view::RenderLayers, RenderPlugin}};
+use bevy::{
+    app::ScheduleRunnerPlugin,
+    asset::io::AssetSourceBuilder,
+    ecs::schedule::ScheduleLabel,
+    platform::collections::HashMap,
+    prelude::*,
+    remote::{
+        builtin_methods::export_registry_types,
+        schemas::json_schema::{JsonSchemaBevyType, export_type},
+    },
+    render::{
+        RenderApp,
+        RenderPlugin,
+        diagnostic::RenderDiagnosticsPlugin,
+        settings::WgpuSettings,
+        view::RenderLayers,
+    },
+    scene::ron,
+};
 use bevy_editor_pls::bevy_inspector_egui::bevy_inspector::hierarchy::Hierarchy;
 use clap::Parser;
 
@@ -12,8 +30,13 @@ pub mod util;
 use serde::{Deserialize, Serialize};
 use util::debug_app::DebugApp;
 use we_clap::WeParser;
+use wgpu::Features;
 
-use crate::{ecs::test_cube::TestCube, systems::{network::CornNetworkingPlugin, physics::CornPhysicsPluginNetworkPlugin}, util::propogate::HierarchyPropagatePlugin};
+use crate::{
+    ecs::test_cube::TestCube,
+    systems::{network::CornNetworkingPlugin, physics::CornPhysicsPluginNetworkPlugin},
+    util::propogate::HierarchyPropagatePlugin,
+};
 
 impl we_clap::WeParser for Cli {}
 #[derive(Debug, Clone, clap::Parser, Default, Reflect, Serialize, Deserialize, Resource)]
@@ -42,10 +65,45 @@ struct Cli {
     /// spawn a test cube
     #[arg(long)]
     testcube: bool,
+
+    /// spawn a test cornfield
+    #[arg(long)]
+    testcorn: bool,
+
+    /// disable fancy camera features like bloom
+    #[arg(long)]
+    simplecam: bool,
+
+    #[arg(long)]
+    spatialaudio: bool,
+
+    /// export type registry and exit
+    #[arg(long)]
+    export_registry: bool,
+
+    /// item to attach to player (also spawns player)
+    #[arg(long)]
+    item: Vec<String>,
+
+    /// run system, see: util/register_system_named.rs
+    #[arg(long)]
+    system: Vec<String>,
+
+    /// broken
+    #[arg(long)]
+    list_systems: bool,
+
+    // whether to spawn wind sounds
+    #[arg(long)]
+    wind: bool,
 }
 
 #[derive(Debug, Resource)]
 pub struct Headless;
+
+/// schedule to store systems which are runnable from the cli
+#[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub struct Cmds;
 
 pub struct CornGame;
 impl Plugin for CornGame {
@@ -57,6 +115,8 @@ impl Plugin for CornGame {
         //     app.insert_resource(logger.clone());
         //     Some(logger.boxed())
         // }
+
+        app.init_schedule(Cmds);
 
         app.register_asset_source(
             "shaders", // The unique name for your source
@@ -76,6 +136,17 @@ impl Plugin for CornGame {
                 mode: AssetMode::Unprocessed,
                 meta_check: bevy::asset::AssetMetaCheck::Never,
                 ..default()
+            })
+            .set(RenderPlugin {
+                // enable performance metrics 
+                // pretty sure I don't actually have to specify this and they get turned on by default
+                render_creation: bevy::render::settings::RenderCreation::Automatic(WgpuSettings {
+                    features: Features::TIMESTAMP_QUERY
+                        | Features::PIPELINE_STATISTICS_QUERY
+                        | WgpuSettings::default().features,
+                    ..Default::default()
+                }),
+                ..Default::default()
             });
 
         if cli.headless {
@@ -98,11 +169,8 @@ impl Plugin for CornGame {
                 // Run 60 times per second.
                 Duration::from_secs_f64(1.0 / 60.0),
             ));
-            app.add_plugins((
-                CornNetworkingPlugin, 
-            ));
-
-        }else {
+            app.add_plugins((CornNetworkingPlugin,));
+        } else {
             // .set(LogPlugin {
             //     level: bevy::log::Level::TRACE,
             //     filter: "info,wgpu_hal=error,wgpu_core=error,corn_game=debug".to_string(),
@@ -122,7 +190,11 @@ impl Plugin for CornGame {
                 ecs::CornECSPlugin,
                 bevy_skein::SkeinPlugin::default(),
                 bevy_mod_skinned_aabb::SkinnedAabbPlugin::default(), // fixes issue with frustum cull of animated objects by recomputing aabb every frame, minor perf hit supposedly
+                                                                     // systems::renderdoc::RenderDocPlugin::new_with_trigger_key(KeyCode::F10),
             ));
+
+            // gpu profiling features, edit: already added by something.
+            // app.add_plugins(RenderDiagnosticsPlugin);
 
             app.add_debug_plugins((
                 crate::util::desync_ids::DebugWarnRenderId,
@@ -133,8 +205,24 @@ impl Plugin for CornGame {
 
         // TODO: needed for menu, but where to put this?
         // we have the annoying fact that this is needed in multiple places and will fail silently if this plugin isn't added
-        app.add_plugins(
-            HierarchyPropagatePlugin::<RenderLayers>::default()
-        );
+        app.add_plugins(HierarchyPropagatePlugin::<RenderLayers>::default());
+    }
+
+    fn finish(&self, app: &mut App) {
+        let cli = app.world().resource::<Cli>();
+        if cli.export_registry || std::env::var("CORN_EXPORT_REGISTRY").is_ok() {
+            /// uses same function as BRP
+            let registry = app.world().resource::<AppTypeRegistry>();
+            let type_registry: HashMap<String, JsonSchemaBevyType> =
+                registry.read().iter().map(export_type).collect();
+            let serialized = serde_json::to_string_pretty(&type_registry)
+                .expect("Failed to serialize type registry");
+            std::fs::write("type_registry.json", serialized)
+                .expect("Failed to write type registry");
+            if cli.export_registry {
+                // if using cli flag, just write json and exit
+                std::process::exit(0);
+            }
+        }
     }
 }

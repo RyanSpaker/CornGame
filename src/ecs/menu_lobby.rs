@@ -16,6 +16,7 @@ use bevy_lunex::prelude::*;
 use uuid::Uuid;
 
 use crate::ecs::menu_crt_effect::PostProcessSettings;
+use crate::ecs::test_cube::TestCube;
 use crate::scenes::resolver::{EntityPointer, EntityResolver};
 use crate::scenes::LoadScene;
 use crate::systems::animation_context::{AnimationContext, AutoPlayAnimation};
@@ -432,7 +433,7 @@ pub fn spawn_diagetic_interface(
                     ..default()
                 },
                 Pickable::IGNORE, //NOTE: cursor must not itself be pickable
-                ZIndex(10),
+                ZIndex(10)
             ));
         });
 }

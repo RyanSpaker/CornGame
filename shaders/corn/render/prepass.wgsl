@@ -8,8 +8,9 @@
     mesh_view_bindings::view,
     view_transformations::position_world_to_clip,
 }
+#import corn_game::wind::wind;
 
-struct InstancedVertex{
+struct InstancedVertex {
     @location(8) corn_col1: vec4<f32>,
     @location(9) corn_col2: vec4<f32>,
     @location(10) corn_col3: vec4<f32>,
@@ -17,6 +18,12 @@ struct InstancedVertex{
 }
 // index of our mesh. used instead of instance index
 var<push_constant> mesh_index: u32;
+
+
+struct MyExtendedMaterial {
+    time: f32,
+}
+@group(2) @binding(100) var<uniform> time: MyExtendedMaterial;
 
 #ifdef DEFERRED_PREPASS
 #import bevy_pbr::rgb9e5
@@ -35,12 +42,12 @@ fn morph_vertex(vertex_in: Vertex) -> Vertex {
         if weight == 0.0 {
             continue;
         }
-        vertex.position += weight * morph::morph(vertex_index, morph::position_offset, i);
+        vertex.position += weight * morph::morph(vertex_index, morph,:: position_offset, i);
 #ifdef VERTEX_NORMALS
-        vertex.normal += weight * morph::morph(vertex_index, morph::normal_offset, i);
+        vertex.normal += weight * morph::morph(vertex_index, morph,:: normal_offset, i);
 #endif
 #ifdef VERTEX_TANGENTS
-        vertex.tangent += vec4(weight * morph::morph(vertex_index, morph::tangent_offset, i), 0.0);
+        vertex.tangent += vec4(weight * morph,:: morph(vertex_index, morph,:: tangent_offset, i), 0.0);
 #endif
     }
     return vertex;
@@ -58,7 +65,7 @@ fn morph_prev_vertex(vertex_in: Vertex) -> Vertex {
         if weight == 0.0 {
             continue;
         }
-        vertex.position += weight * morph::morph(vertex.index, morph::position_offset, i);
+        vertex.position += weight * morph::morph(vertex.index, morph,:: position_offset, i);
         // Don't bother morphing normals and tangents; we don't need them for
         // motion vector calculation.
     }
@@ -78,10 +85,10 @@ fn vertex(vertex_no_morph: Vertex, instance_data: InstancedVertex) -> VertexOutp
 
 #ifdef CORN_INSTANCED
     var world_from_local = mat4x4<f32>(
-        instance_data.corn_col1, 
-        instance_data.corn_col2, 
-        instance_data.corn_col3, 
-        instance_data.corn_col4
+        instance_data.corn_col1,
+        instance_data.corn_col2,
+        instance_data.corn_col3,
+        instance_data.corn_col3
     );
 #else
 #ifdef SKINNED
@@ -92,7 +99,13 @@ fn vertex(vertex_no_morph: Vertex, instance_data: InstancedVertex) -> VertexOutp
 #endif // SKINNED
 #endif // CORN_INSTANCED
 
-    out.world_position = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
+    let instance_pos_offset = instance_data.corn_col4;
+
+    var world_from_local_rot_only = world_from_local;
+    world_from_local_rot_only[3] = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    out.world_position = vec4<f32>(pos + instance_pos_offset.xyz, 1.0);
+
+    // out.world_position = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
     out.position = position_world_to_clip(out.world_position.xyz);
 #ifdef DEPTH_CLAMP_ORTHO
     out.clip_position_unclamped = out.position;
@@ -109,7 +122,7 @@ fn vertex(vertex_no_morph: Vertex, instance_data: InstancedVertex) -> VertexOutp
 
 #ifdef NORMAL_PREPASS_OR_DEFERRED_PREPASS
 #ifdef CORN_INSTANCED
-    out.world_normal = (world_from_local*vec4<f32>(vertex.normal, 0.0)).xyz;
+    out.world_normal = (world_from_local * vec4<f32>(vertex.normal, 0.0)).xyz;
 #else
 #ifdef SKINNED
     out.world_normal = skinning::skin_normals(world_from_local, vertex.normal);
@@ -187,10 +200,13 @@ fn vertex(vertex_no_morph: Vertex, instance_data: InstancedVertex) -> VertexOutp
 
 #ifdef PREPASS_FRAGMENT
 @fragment
-fn fragment(in: VertexOutput) -> FragmentOutput {
+fn fragment(
+    in: VertexOutput, @builtin(front_facing) is_front: bool,
+) -> FragmentOutput {
     var out: FragmentOutput;
 
 #ifdef NORMAL_PREPASS
+    // https://github.com/bevyengine/bevy/blob/be4114bb9e054578de409d15955c8eb50a990bab/crates/bevy_pbr/src/render/pbr_prepass.wgsl#L64-L73
     out.normal = vec4(in.world_normal * 0.5 + vec3(0.5), 1.0);
 #endif
 
@@ -217,7 +233,7 @@ fn fragment(in: VertexOutput) -> FragmentOutput {
     // emissive magenta out to the deferred gbuffer to be rendered by the first deferred lighting pass layer.
     // This is here so if the default prepass fragment is used for deferred magenta will be rendered, and also
     // as an example to show that a user could write to the deferred gbuffer if they were to start from this shader.
-    out.deferred = vec4(0u, bevy_pbr::rgb9e5::vec3_to_rgb9e5_(vec3(1.0, 0.0, 1.0)), 0u, 0u);
+    out.deferred = vec4(0u, bevy_pbr,:: rgb9e5,:: vec3_to_rgb9e5_(vec3(1.0, 0.0, 1.0)), 0u, 0u);
     out.deferred_lighting_pass_id = 1u;
 #endif
 

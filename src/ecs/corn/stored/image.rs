@@ -152,17 +152,17 @@ pub type ImageCarvedSettings = ImageCarvedShader;
 #[reflect(Component)]
 pub struct ImageCarvedHexagonalShader{
     /// World Space center of the Corn Field
-    center: Vec3,
+    pub center: Vec3,
     /// How far left and right the corn field extends.
-    half_extents: Vec2,
+    pub half_extents: Vec2,
     /// The minimum distance between adjacent pieces of corn
-    dist_between: f32,
+    pub dist_between: f32,
     /// The minimum and maximum height scalar
-    height_range: Vec2,
+    pub height_range: Vec2,
     /// percentage of dist between of which corn can shift randomly
-    rand_offset_factor: f32,
+    pub rand_offset_factor: f32,
     /// Image used to carve the path
-    image: Handle<Image>
+    pub image: Handle<Image>
 }
 impl ImageCarvedHexagonalShader{
     /// Creates new Corn Field

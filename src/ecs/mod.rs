@@ -8,6 +8,7 @@ pub mod menu_lobby;
 pub mod menu_crt_effect;
 pub mod ambient_light;
 pub mod menu_main;
+pub mod sound_crickets;
 
 use bevy::prelude::*;
 use corn::CornFieldComponentPlugin;
@@ -31,6 +32,8 @@ impl Plugin for CornECSPlugin{
             menu_lobby::plugin,
             menu_crt_effect::PostProcessPlugin,
             ambient_light::plugin,
+
+            sound_crickets::CricketsPlugin,
         ));
     }
 }
