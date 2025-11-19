@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::atomic::AtomicUsize, time::Duration};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
@@ -19,6 +19,7 @@ use bevy::{
     },
     scene::ron,
 };
+use bevy_dog::plugin;
 use bevy_editor_pls::bevy_inspector_egui::bevy_inspector::hierarchy::Hierarchy;
 use clap::Parser;
 
@@ -96,6 +97,9 @@ struct Cli {
     // whether to spawn wind sounds
     #[arg(long)]
     wind: bool,
+
+    #[arg(env, long)]
+    no_vsync: bool,
 }
 
 #[derive(Debug, Resource)]
@@ -126,7 +130,10 @@ impl Plugin for CornGame {
         let mut pg = DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {
-                    present_mode: bevy::window::PresentMode::AutoVsync,
+                    present_mode: match cli.no_vsync {
+                        false => bevy::window::PresentMode::AutoVsync,
+                        true => bevy::window::PresentMode::Immediate, // ??? this doesn't seem to do anything
+                    },
                     ..default()
                 }),
                 ..default()
@@ -203,6 +210,8 @@ impl Plugin for CornGame {
             ));
         }
 
+        // app.add_plugins(StressTestPlugin);
+        
         // TODO: needed for menu, but where to put this?
         // we have the annoying fact that this is needed in multiple places and will fail silently if this plugin isn't added
         app.add_plugins(HierarchyPropagatePlugin::<RenderLayers>::default());
@@ -226,3 +235,56 @@ impl Plugin for CornGame {
         }
     }
 }
+
+
+/// Test to see effect of lots of do-nothing systems on performance
+/// prints number of times test_system ran to confirm system isn't getting deduped
+struct StressTestPlugin;
+impl Plugin for StressTestPlugin {
+    fn build(&self, app: &mut App) {
+        #[derive(bevy::ecs::schedule::ScheduleLabel, Debug, Hash, PartialEq, Eq, Clone)]
+        struct StressTest;
+        let mut schedule = Schedule::new(StressTest);
+        // schedule.set_executor_kind(bevy::ecs::schedule::ExecutorKind::SingleThreaded);
+        app.add_schedule(schedule);
+        let mut main_schedule_order = app.world_mut().resource_mut::<bevy::app::MainScheduleOrder>();
+        main_schedule_order.insert_after(Update, StressTest);
+
+        #[derive(Debug, Event)]
+        struct MyEvent;
+
+        #[derive(Debug, Reflect, Default, Resource)]
+        struct MyCount(AtomicUsize);
+
+        app.init_resource::<MyCount>();
+        app.add_event::<MyEvent>();
+
+        fn test_system(_: Query<&Name>, num: Res<MyCount>, mut events: EventReader<MyEvent>){
+            if events.is_empty(){
+                return;
+            }
+            num.0.fetch_add(events.read().count(), std::sync::atomic::Ordering::Relaxed);
+        }
+        for _ in 0..10000 {
+            app.add_systems(StressTest, test_system);
+            // app.add_systems(StressTest, test_system.run_if(|local: Local<bool>| *local));
+        }
+        
+        app.add_systems(Update, |
+            mut events: EventWriter<MyEvent>,
+            time: Res<Time>,
+            mut ran: Local<bool>,
+            mut printed: Local<bool>,
+            count: Res<MyCount>,
+        |{
+            if !*ran && time.elapsed().as_secs_f32() > 3.0 {
+                events.write(MyEvent);
+                *ran = true;
+            }
+            else if *ran && !*printed {
+                info!("test_system ran {} times", count.0.load(std::sync::atomic::Ordering::Relaxed));
+                *printed = true;
+            }
+        });
+    }
+} 

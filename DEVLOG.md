@@ -1076,3 +1076,14 @@ pie chart perf
 interestingly the chart shows less than 100% usage when framerate drops (due to enabling shadows). implying that the bottleneck is somewhere else... or there are draw calls not included in any of the elapsed_gpu diagnostics. maybe the volumentric light pass?
 
 while playing around with fog/shadow toggles, got weird borked state where corn near camera turned white. turning fog on/off doesn't always have effect. overall weird behavior. and difficult to get fog to render at all.
+
+# Wed Nov 19 01:44:45 PM EST 2025
+NOTE: need way to copy text from terminal without mouse
+
+--- 
+
+Q: what happens if you try to add a function to the same schedule more than once?
+A: system runs more than once. no error or dedup
+
+Q: does lots of small systems that normally do nothing effect perfomance.
+A: 500 small systems is relevant to performance (1.5ms) and 10k small systems takes up most of the frame.
