@@ -8,7 +8,11 @@
     mesh_view_bindings::view,
     view_transformations::position_world_to_clip,
 }
-#import corn_game::wind::wind;
+
+#ifdef DEFERRED_PREPASS
+// #import bevy_pbr::rgb9e5 // XXX causes silent error because waits on this import forever
+#endif
+
 
 struct InstancedVertex {
     @location(8) corn_col1: vec4<f32>,
@@ -16,24 +20,11 @@ struct InstancedVertex {
     @location(10) corn_col3: vec4<f32>,
     @location(11) corn_col4: vec4<f32>,
 }
-// index of our mesh. used instead of instance index
-var<push_constant> mesh_index: u32;
-
-
-struct MyExtendedMaterial {
-    time: f32,
-}
-@group(2) @binding(100) var<uniform> time: MyExtendedMaterial;
-
-#ifdef DEFERRED_PREPASS
-#import bevy_pbr::rgb9e5
-#endif
 
 #ifdef MORPH_TARGETS
 fn morph_vertex(vertex_in: Vertex) -> Vertex {
     var vertex = vertex_in;
-    // CORN: Change from instance_index to mesh_index since we dont have bevy instance our corn
-    let first_vertex = mesh[mesh_index].first_vertex_index;
+    let first_vertex = mesh[vertex.instance_index].first_vertex_index;
     let vertex_index = vertex.index - first_vertex;
 
     let weight_count = morph::layer_count();
@@ -42,12 +33,12 @@ fn morph_vertex(vertex_in: Vertex) -> Vertex {
         if weight == 0.0 {
             continue;
         }
-        vertex.position += weight * morph::morph(vertex_index, morph,:: position_offset, i);
+        vertex.position += weight * morph::morph(vertex_index, morph::position_offset, i);
 #ifdef VERTEX_NORMALS
-        vertex.normal += weight * morph::morph(vertex_index, morph,:: normal_offset, i);
+        vertex.normal += weight * morph::morph(vertex_index, morph::normal_offset, i);
 #endif
 #ifdef VERTEX_TANGENTS
-        vertex.tangent += vec4(weight * morph,:: morph(vertex_index, morph,:: tangent_offset, i), 0.0);
+        vertex.tangent += vec4(weight * morph::morph(vertex_index, morph::tangent_offset, i), 0.0);
 #endif
     }
     return vertex;
@@ -65,7 +56,7 @@ fn morph_prev_vertex(vertex_in: Vertex) -> Vertex {
         if weight == 0.0 {
             continue;
         }
-        vertex.position += weight * morph::morph(vertex.index, morph,:: position_offset, i);
+        vertex.position += weight * morph::morph(vertex.index, morph::position_offset, i);
         // Don't bother morphing normals and tangents; we don't need them for
         // motion vector calculation.
     }
@@ -82,35 +73,34 @@ fn vertex(vertex_no_morph: Vertex, instance_data: InstancedVertex) -> VertexOutp
 #else
     var vertex = vertex_no_morph;
 #endif
-
-#ifdef CORN_INSTANCED
+    
     var world_from_local = mat4x4<f32>(
         instance_data.corn_col1,
         instance_data.corn_col2,
         instance_data.corn_col3,
-        instance_data.corn_col3
+        instance_data.corn_col4,
     );
-#else
-#ifdef SKINNED
-    var world_from_local = skinning::skin_model(vertex.joint_indices, vertex.joint_weights);
-#else // SKINNED
-    // CORN: Replace instance index with mesh_index
-    var world_from_local = mesh_functions::get_world_from_local(mesh_index);
-#endif // SKINNED
-#endif // CORN_INSTANCED
 
-    let instance_pos_offset = instance_data.corn_col4;
+    // let mesh_world_from_local = mesh_functions::get_world_from_local(vertex_no_morph.instance_index);
 
-    var world_from_local_rot_only = world_from_local;
-    world_from_local_rot_only[3] = vec4<f32>(0.0, 0.0, 0.0, 1.0);
-    out.world_position = vec4<f32>(pos + instance_pos_offset.xyz, 1.0);
+// #ifdef SKINNED
+//     var world_from_local = skinning::skin_model(
+//         vertex.joint_indices,
+//         vertex.joint_weights,
+//         vertex_no_morph.instance_index
+//     );
+// #else // SKINNED
+//     // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
+//     // See https://github.com/gfx-rs/naga/issues/2416
+//     var world_from_local = mesh_world_from_local;
+// #endif // SKINNED
 
-    // out.world_position = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
+    out.world_position = mesh_functions::mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
     out.position = position_world_to_clip(out.world_position.xyz);
-#ifdef DEPTH_CLAMP_ORTHO
-    out.clip_position_unclamped = out.position;
-    out.position.z = min(out.position.z, 1.0);
-#endif // DEPTH_CLAMP_ORTHO
+#ifdef UNCLIPPED_DEPTH_ORTHO_EMULATION
+    out.unclipped_depth = out.position.z;
+    out.position.z = min(out.position.z, 1.0); // Clamp depth to avoid clipping
+#endif // UNCLIPPED_DEPTH_ORTHO_EMULATION
 
 #ifdef VERTEX_UVS_A
     out.uv = vertex.uv;
@@ -121,26 +111,26 @@ fn vertex(vertex_no_morph: Vertex, instance_data: InstancedVertex) -> VertexOutp
 #endif // VERTEX_UVS_B
 
 #ifdef NORMAL_PREPASS_OR_DEFERRED_PREPASS
-#ifdef CORN_INSTANCED
-    out.world_normal = (world_from_local * vec4<f32>(vertex.normal, 0.0)).xyz;
-#else
+#ifdef VERTEX_NORMALS
 #ifdef SKINNED
     out.world_normal = skinning::skin_normals(world_from_local, vertex.normal);
 #else // SKINNED
     out.world_normal = mesh_functions::mesh_normal_local_to_world(
         vertex.normal,
-        // Corn: use mesh_index instead of instance index
-        mesh_index
+        // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
+        // See https://github.com/gfx-rs/naga/issues/2416
+        vertex_no_morph.instance_index
     );
 #endif // SKINNED
-#endif // CORN_INSTANCED
+#endif // VERTEX_NORMALS
 
 #ifdef VERTEX_TANGENTS
     out.world_tangent = mesh_functions::mesh_tangent_local_to_world(
         world_from_local,
         vertex.tangent,
-        // Corn: Use mesh_index instead of instance index
-        mesh_index
+        // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
+        // See https://github.com/gfx-rs/naga/issues/2416
+        vertex_no_morph.instance_index
     );
 #endif // VERTEX_TANGENTS
 #endif // NORMAL_PREPASS_OR_DEFERRED_PREPASS
@@ -173,15 +163,14 @@ fn vertex(vertex_no_morph: Vertex, instance_data: InstancedVertex) -> VertexOutp
     let prev_model = skinning::skin_prev_model(
         prev_vertex.joint_indices,
         prev_vertex.joint_weights,
+        vertex_no_morph.instance_index
     );
 #else   // HAS_PREVIOUS_SKIN
-    // Corn: use mesh_index instead of instance index
-    let prev_model = mesh_functions::get_previous_world_from_local(mesh_index);
+    let prev_model = mesh_functions::get_previous_world_from_local(prev_vertex.instance_index);
 #endif  // HAS_PREVIOUS_SKIN
 
 #else   // SKINNED
-    // Corn: use mesh_index instead of instance index
-    let prev_model = mesh_functions::get_previous_world_from_local(mesh_index);
+    let prev_model = mesh_functions::get_previous_world_from_local(prev_vertex.instance_index);
 #endif  // SKINNED
 
     out.previous_world_position = mesh_functions::mesh_position_local_to_world(
@@ -191,28 +180,31 @@ fn vertex(vertex_no_morph: Vertex, instance_data: InstancedVertex) -> VertexOutp
 #endif // MOTION_VECTOR_PREPASS
 
 #ifdef VERTEX_OUTPUT_INSTANCE_INDEX
-    // Corn: use mesh_index instead of instance index.
-    out.instance_index = mesh_index;
+    // Use vertex_no_morph.instance_index instead of vertex.instance_index to work around a wgpu dx12 bug.
+    // See https://github.com/gfx-rs/naga/issues/2416
+    out.instance_index = vertex_no_morph.instance_index;
 #endif
+
+#ifdef VISIBILITY_RANGE_DITHER
+    out.visibility_range_dither = mesh_functions::get_visibility_range_dither_level(
+        vertex_no_morph.instance_index, mesh_world_from_local[3]);
+#endif  // VISIBILITY_RANGE_DITHER
 
     return out;
 }
 
 #ifdef PREPASS_FRAGMENT
 @fragment
-fn fragment(
-    in: VertexOutput, @builtin(front_facing) is_front: bool,
-) -> FragmentOutput {
+fn fragment(in: VertexOutput) -> FragmentOutput {
     var out: FragmentOutput;
 
 #ifdef NORMAL_PREPASS
-    // https://github.com/bevyengine/bevy/blob/be4114bb9e054578de409d15955c8eb50a990bab/crates/bevy_pbr/src/render/pbr_prepass.wgsl#L64-L73
     out.normal = vec4(in.world_normal * 0.5 + vec3(0.5), 1.0);
 #endif
 
-#ifdef DEPTH_CLAMP_ORTHO
-    out.frag_depth = in.clip_position_unclamped.z;
-#endif // DEPTH_CLAMP_ORTHO
+#ifdef UNCLIPPED_DEPTH_ORTHO_EMULATION
+    out.frag_depth = in.unclipped_depth;
+#endif // UNCLIPPED_DEPTH_ORTHO_EMULATION
 
 #ifdef MOTION_VECTOR_PREPASS
     let clip_position_t = view.unjittered_clip_from_world * in.world_position;
@@ -233,7 +225,7 @@ fn fragment(
     // emissive magenta out to the deferred gbuffer to be rendered by the first deferred lighting pass layer.
     // This is here so if the default prepass fragment is used for deferred magenta will be rendered, and also
     // as an example to show that a user could write to the deferred gbuffer if they were to start from this shader.
-    out.deferred = vec4(0u, bevy_pbr,:: rgb9e5,:: vec3_to_rgb9e5_(vec3(1.0, 0.0, 1.0)), 0u, 0u);
+    out.deferred = vec4(0u, bevy_pbr::rgb9e5::vec3_to_rgb9e5_(vec3(1.0, 0.0, 1.0)), 0u, 0u);
     out.deferred_lighting_pass_id = 1u;
 #endif
 

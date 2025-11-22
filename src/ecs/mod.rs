@@ -9,6 +9,7 @@ pub mod menu_crt_effect;
 pub mod ambient_light;
 pub mod menu_main;
 pub mod sound_crickets;
+pub mod npc;
 
 use bevy::prelude::*;
 use corn::CornFieldComponentPlugin;

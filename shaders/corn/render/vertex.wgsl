@@ -3,7 +3,10 @@
     forward_io::{Vertex, VertexOutput},
     view_transformations::position_world_to_clip,
 }
-#import corn_game::wind::wind;
+#import corn_game::wind::{
+    wind,
+    wind_normal,
+}
 
 struct InstancedVertex {
     @location(8) corn_col1: vec4<f32>,
@@ -45,28 +48,41 @@ fn vertex(vertex: Vertex, instance_data: InstancedVertex) -> VertexOutput {
         instance_data.corn_col3,
         instance_data.corn_col4,
     );
-    let instance_pos_offset = instance_data.corn_col4;
 
-    var world_from_local_rot_only = world_from_local;
-    world_from_local_rot_only[3] = vec4<f32>(0.0, 0.0, 0.0, 1.0);
 
 #ifdef VERTEX_NORMALS
     out.world_normal = (world_from_local * vec4<f32>(vertex.normal, 0.0)).xyz;
 #endif // VERTEX_NORMALS
 
 #ifdef VERTEX_POSITIONS
-    // let offset_scale = world_from_local * vec4<f32>(0.0, 0.0, 0.0, 1.0);
+#ifdef WIND
+    let instance_pos_offset = instance_data.corn_col4;
+    var world_from_local_rot_only = world_from_local;
+    world_from_local_rot_only[3] = vec4<f32>(0.0, 0.0, 0.0, 1.0);
     let rotated = world_from_local_rot_only * vec4(vertex.position, 1.0);
+
+    // TODO wind effect normals,
     let pos = wind(rotated.xyz, instance_pos_offset, settings.time);
     out.world_position = vec4<f32>(pos + instance_pos_offset.xyz, 1.0);
 
-    // out.world_position = mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
+#ifdef WIND_NORMAL
+    out.world_normal = wind_normal(pos, rotated.xyz, out.world_normal, instance_pos_offset, settings.time);
+#endif
+#else
+    out.world_position = mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
+
+#ifdef STRESS_VERTEX
+#endif // STRESS_VERTEX
+
+#endif
+
     out.position = position_world_to_clip(out.world_position.xyz);
 
     // TODO get random spawn_in working
     // let enabled: bool = (clamp(settings.fade_in, 0.0f, 1.0f) >= (f32(vertex.instance_index % 100u) / 100.0f));
     // out.position.z = select(10.0, out.position.z, enabled); // 10.0 is outside clip space
-#endif
+#endif //VERTEX_POSITIONS
+
 
 #ifdef VERTEX_UVS_A
     out.uv = vertex.uv;

@@ -1,4 +1,4 @@
-use std::{hash::Hash, marker::PhantomData};
+use std::{any::{TypeId, type_name}, hash::Hash, marker::PhantomData};
 use bevy::{
     asset::Asset, 
     core_pipeline::{
@@ -6,12 +6,12 @@ use bevy::{
         deferred::{AlphaMask3dDeferred, Opaque3dDeferred},
         prepass::{AlphaMask3dPrepass, Opaque3dPrepass},
     }, 
-    ecs::system::ReadOnlySystemParam, 
+    ecs::system::{ReadOnlySystemParam, SystemParamItem, lifetimeless::SRes}, 
     pbr::*, 
     prelude::*, 
     reflect::Reflect, 
     render::{
-        render_phase::{DrawFunctions, PhaseItem, RenderCommand, RenderCommandState, SetItemPipeline}, render_resource::AsBindGroup, RenderApp
+        RenderApp, render_phase::{CachedRenderPipelinePhaseItem, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult, RenderCommandState, SetItemPipeline, TrackedRenderPass}, render_resource::{AsBindGroup, CachedPipelineState, PipelineCache}
     }
 };
 
@@ -30,15 +30,7 @@ impl MaterialExtension for EmptyExtension{
     }
 }
 
-pub type DrawPrepass<M> = (
-    SetItemPipeline,
-    SetPrepassViewBindGroup<0>,
-    SetMeshBindGroup<1>,
-    SetMaterialBindGroup<M, 2>,
-    DrawMesh,
-);
-
-pub type DrawMaterial<M> = (
+type DrawMaterial<M> = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
     SetMeshBindGroup<1>,
@@ -46,16 +38,50 @@ pub type DrawMaterial<M> = (
     DrawMesh,
 );
 
+/// this was erroring so I copied to add dbg
+pub struct SetItemPipelineDbg;
+
+impl<P: CachedRenderPipelinePhaseItem> RenderCommand<P> for SetItemPipelineDbg {
+    type Param = SRes<PipelineCache>;
+    type ViewQuery = ();
+    type ItemQuery = ();
+    #[inline]
+    fn render<'w>(
+        item: &P,
+        _view: (),
+        _entity: Option<()>,
+        pipeline_cache: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        let state = pipeline_cache.get_render_pipeline_state(item.cached_pipeline());
+        if !matches!(state, CachedPipelineState::Ok(_)) {
+            // dbg!(type_name::<P>(), state);
+        }
+        
+
+        if let Some(pipeline) = pipeline_cache
+            .into_inner()
+            .get_render_pipeline(item.cached_pipeline())
+        {
+            pass.set_render_pipeline(pipeline);
+            RenderCommandResult::Success
+        } else {
+            RenderCommandResult::Skip
+        }
+    }
+}
+
 pub type SpecializedDrawPrepass<M, F> = (
-    SetItemPipeline,
+    SetItemPipelineDbg,
     SetPrepassViewBindGroup<0>,
+    //SetPrepassViewEmptyBindGroup<1>, 0.17 
     SetMeshBindGroup<1>,
     SetMaterialBindGroup<M, 2>,
     F,
 );
 
 pub type SpecializedDrawMaterial<M, F> = (
-    SetItemPipeline,
+    SetItemPipelineDbg,
     SetMeshViewBindGroup<0>,
     SetMeshBindGroup<1>,
     SetMaterialBindGroup<M, 2>,
@@ -87,7 +113,12 @@ impl SpoofRenderCommand for SubApp {
                     std::any::type_name::<P>(),
                 );
             });
+        // let id = draw_functions.read().id::<L>();
+        //draw_functions.write().indices.insert(TypeId::of::<L>(), id);
         draw_functions.write().add_with::<L, _>(draw_function);
+        //let mut draw = draw_functions.write().draw_functions[id] // fucking pub bs
+        
+        // dbg!(&draw_functions.read().indices);
         self
     }
 }
@@ -127,13 +158,13 @@ where
         app.add_plugins(MaterialPlugin::<M>::default());
         app.sub_app_mut(RenderApp)
             .spoof_render_command::<Shadow, P, DrawPrepass<M>>()
-            .spoof_render_command::<Transmissive3d, R, DrawMaterial<M>>()
-            .spoof_render_command::<Transparent3d, R, DrawMaterial<M>>()
-            .spoof_render_command::<Opaque3d, R, DrawMaterial<M>>()
-            .spoof_render_command::<AlphaMask3d, R, DrawMaterial<M>>()
-            .spoof_render_command::<Opaque3dPrepass, P, DrawPrepass<M>>()
-            .spoof_render_command::<AlphaMask3dPrepass, P, DrawPrepass<M>>()
-            .spoof_render_command::<Opaque3dDeferred, P, DrawPrepass<M>>()
-            .spoof_render_command::<AlphaMask3dDeferred, P, DrawPrepass<M>>();
+            // .spoof_render_command::<Transmissive3d, R, DrawMaterial<M>>()
+            // .spoof_render_command::<Transparent3d, R, DrawMaterial<M>>()
+            .spoof_render_command::<Opaque3d, R, DrawMaterial<M>>();
+            // .spoof_render_command::<AlphaMask3d, R, DrawMaterial<M>>()
+            // .spoof_render_command::<Opaque3dPrepass, P, DrawPrepass<M>>()
+            // .spoof_render_command::<AlphaMask3dPrepass, P, DrawPrepass<M>>()
+            // .spoof_render_command::<Opaque3dDeferred, P, DrawPrepass<M>>()
+            // .spoof_render_command::<AlphaMask3dDeferred, P, DrawPrepass<M>>();
     }
 }

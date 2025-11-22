@@ -243,13 +243,13 @@ impl FromWorld for StoredScanPipeline{
 
 /// Render Graph Label for Init Operations
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq, RenderLabel)]
-struct StoredScanStage;
+struct CornStoredScanStage;
 /// This is the render graph node which executes the Scan Prepass
 #[derive(Debug, Default, Clone)]
-pub struct StoredScanNode{
+pub struct CornStoredScanNode{
     ready_entities: Vec<Entity>
 }
-impl Node for StoredScanNode{
+impl Node for CornStoredScanNode{
     fn update(&mut self, world: &mut World) {
         let mut query: _ = world.query_filtered::<Entity, (With<StoredScanBindGroup>, With<IndirectBuffer>, With<CornModel>)>();
         self.ready_entities = query.iter(world).collect();
@@ -338,8 +338,8 @@ impl Plugin for CornStoredScanPlugin{
         let mut render_graph = app.sub_app_mut(RenderApp)
             .world_mut().resource_mut::<RenderGraph>();
         let graph = render_graph.sub_graph_mut(Core3d);
-        graph.add_node(StoredScanStage, StoredScanNode::default());
-        graph.add_node_edge(StoredScanStage, NodePbr::EarlyShadowPass);
+        graph.add_node(CornStoredScanStage, CornStoredScanNode::default());
+        graph.add_node_edge(CornStoredScanStage, NodePbr::EarlyShadowPass);
         // Readback
         #[cfg(debug_assertions)]
         app.add_plugins(readback::ReadbackPlugin);
@@ -359,7 +359,7 @@ pub mod readback{
     use wgpu::{BufferUsages, Maintain, MapMode};
     use wgpu_types::BufferDescriptor;
     use crate::ecs::corn::{asset::{CornLodInfo, CornModel, CornModelIndirectBuffer}, buffer::{CornData, IndirectBuffer, InstanceBuffer, VertexInstanceBuffer}, cutoffs::LodCutoffBuffer};
-    use super::{ConfigData, StoredScanBindGroup, StoredScanConfigBuffer, StoredScanGroupBuffers, StoredScanStage, StoredScanVoteBuffer, UseStoredScanPipeline};
+    use super::{ConfigData, StoredScanBindGroup, StoredScanConfigBuffer, StoredScanGroupBuffers, CornStoredScanStage, StoredScanVoteBuffer, UseStoredScanPipeline};
     
     pub fn readback_buffer<T: Pod>(buffer: &Buffer, render_device: &RenderDevice) -> Vec<T>{
         let slice = buffer.slice(..);
@@ -633,7 +633,7 @@ pub mod readback{
                 .world_mut().resource_mut::<RenderGraph>();
             let graph = render_graph.sub_graph_mut(Core3d);
             graph.add_node(ReadbackStoredScanStage, ReadbackStoredScanNode::default());
-            graph.add_node_edge(StoredScanStage, ReadbackStoredScanStage);
+            graph.add_node_edge(CornStoredScanStage, ReadbackStoredScanStage);
         }
     }
 }

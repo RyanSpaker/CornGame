@@ -1087,3 +1087,78 @@ A: system runs more than once. no error or dedup
 
 Q: does lots of small systems that normally do nothing effect perfomance.
 A: 500 small systems is relevant to performance (1.5ms) and 10k small systems takes up most of the frame.
+
+---
+
+I am fairly certain there is a performance regression as I can no longer run the stress test above 30fps, even with a small window (implies vertex bound?)
+
+Possible causes: 
+- switch to transform matrix 
+- something I did with wind.
+- prepass related 
+  - timings shows prepass as almost instant, weird
+  - corn is currently using forward not defered lighting
+
+# Fri Nov 21 12:42:09 AM EST 2025
+diagnosing no shadows
+
+using dbg and debugger I have finally determined that all the ducks are in a row untill `SetItemPipeline`, at which point the PipelineCache gives `ShaderImportNotYetAvailable`. 
+according to discord, "The current state really sucks" for shader imports "Unfortunately we don't know whether the import is in the process of loading, or failed to load, or never started loading"
+
+Q: what import is failing to load
+- hmm, looks like I could get it from ShaderCache but that field of pipelineCache is not pub
+- it was `#import bevy_pbr::rgb9e5`
+  - Q: why isn't that loading?
+
+Okay, now shadows render, but wrong.
+I think because I am using mesh_functions::mesh_local_to_world, which does something with the instance id. EDIT: nope, it just multiplies the matrix.
+- A: DEPTH_CLAMP_ORTHO renamed UNCLIPPED_DEPTH_ORTHO_EMULATION (and is needed for directional light.)
+
+# Fri Nov 21 01:28:31 PM EST 2025
+perf:
+- corn perf is definately worse than 0.15
+- does not appear to be caused by compute or vertex shaders, could be fragment, raster, or memory bandwidth related
+  - the per corn instance data is now a 4x4 matrix, more memory?
+  - did overdraw get worse?
+  - are we drawing more geometry?
+    - LOD cuttofs
+      - current: 5.0, 10.0, 25.0, 50.0, 150.0, 500.0 
+      - old_corn_game: 5.0, 10.0, 20.0, 30.0, 40.0, 50.0 
+      - 0.15 version 
+        - same as old_corn_game or:
+        - `cutoffs[i as usize] = 2_i32.pow(i) as f32 * 20.0` or `* 5.0`
+          - [5, 10, 20, 40, 80, 160] 
+            - could not have used during stress test, 160 is too small. same as old_corn_game values
+          - [20, 40, 80, 160, 320, 640]
+      - TEST: adjusting LOD cuttoffs between has big effect, especially 2nd to last value (ie. dist at which final LOD is used). 
+    - intercorn distance different?
+
+Can't rule out that it's just my GPU getting hot :/ 
+I am able to 60fps testcorn halfextents = 100.0
+
+Q: how big was the stress test map. 
+A: 300m half-extents
+- NOTE: I *can* render a testcorn that big at 60fps, just not for very long before GPU throttles
+
+---
+
+Try enabling prepass:
+- there are three camera components we might care about, DEPTH_PREPASS, NORMAL_PREPASS (what does this get us?), and DEFERED_PREPASS
+  - DEFERED_PREPASS requires DEPTH_PREPASS, and enables defered lighting
+  - I think we can ignore NORMAL_PREPASS
+
+general ideas:
+- render order should generally be held_items,corn,objects,floor,sky
+  - floor is a near object that is normally behind everything, like sky, and has an expensive texture
+  - we have to draw bagillion corn anyway, and most objects will be far away and occluded (plus might be higher poly and textured)
+- shadow enabled lights will have bad overdraw on the corn (does this matter?)
+  - XXX: currently shadows render each LOD for each cascade.
+
+---
+
+renderdoc to diagnose overdraw
+with renderdoc I can see each LOD's draw call, and what pixels passed/failed the depth test. but I can't see overdraw without disabling MSAA.
+we get 100-200x overdraw on the furthest corn lod
+
+being in corn does not reduce time spent on far LODs despite 100% depth test filtering. This is probably because fragment isn't reading any textures.
+This means bottleneck is before fragment shader. Likely raster/depth_test since I already ruled out vertex.

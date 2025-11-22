@@ -29,20 +29,45 @@ pub type StdCornDrawPrepass = SpecializedDrawPrepass<StdCornMaterial, DrawCorn>;
 pub trait ExtendWithCornMaterial: Material{fn extend_with_corn(self) -> ExtendedMaterial<Self, CornMaterialExtension>;}
 impl<M: Material> ExtendWithCornMaterial for M {
     fn extend_with_corn(self) -> ExtendedMaterial<Self, CornMaterialExtension> {
-        ExtendedMaterial { base: self, extension: CornMaterialExtension{ time: 1.0, fade_in: 1.0 } }
+        ExtendedMaterial { base: self, extension: CornMaterialExtension{ stress_vertex: false, wind: true, wind_normal: true, time: 1.0, fade_in: 1.0 } }
     }
 }
 
 /// A material extension for the corn. Adds our instance buffer as a vertex buffer,
 /// adds a shaderdef enabling our instanced code
 #[derive(Default, Clone, AsBindGroup, Asset, Reflect)]
+#[bind_group_data(CornMaterialKey)]
 pub struct CornMaterialExtension{
+    pub wind: bool,
+    pub wind_normal: bool,
+
+    pub stress_vertex: bool,
+
     #[uniform(100)]
-    time: f32,
+    pub time: f32,
    
     #[uniform(100)]
-    fade_in: f32,
+    pub fade_in: f32,
 }
+
+#[repr(C)]
+#[derive(Eq, PartialEq, Hash, Copy, Clone)]
+pub struct CornMaterialKey {
+    pub wind: bool,
+    pub stress_vertex: bool,
+    pub wind_normal: bool,
+}
+
+impl From<&CornMaterialExtension> for CornMaterialKey {
+    fn from(material: &CornMaterialExtension) -> Self {
+        Self {
+            wind: material.wind,
+            stress_vertex: material.stress_vertex,
+            wind_normal: material.wind_normal,
+        }
+    }
+}
+
 impl MaterialExtension for CornMaterialExtension {
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
         shaders::INSTANCED_VERTEX.into()
@@ -58,18 +83,35 @@ impl MaterialExtension for CornMaterialExtension {
         _pipeline: &bevy::pbr::MaterialExtensionPipeline,
         descriptor: &mut bevy::render::render_resource::RenderPipelineDescriptor,
         _layout: &bevy::render::mesh::MeshVertexBufferLayoutRef,
-        _key: bevy::pbr::MaterialExtensionKey<Self>,
+        key: bevy::pbr::MaterialExtensionKey<Self>,
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
+        dbg!(&descriptor.label);
+
         descriptor.primitive.cull_mode = None; // TODO how to get this value from StandardMaterial
         descriptor
             .vertex
             .shader_defs
             .push(ShaderDefVal::Bool("CORN_INSTANCED".to_string(), true));
+
+
+            
         descriptor.vertex.buffers.push(VertexBufferLayout {
             array_stride: CornData::VERTEX_DATA_SIZE,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: vertex_attr_array![8 => Float32x4, 9 => Float32x4, 10 => Float32x4, 11 => Float32x4].to_vec(),
         });
+
+        // dbg!(&descriptor.vertex.buffers);
+
+        if key.bind_group_data.wind {
+            descriptor.vertex.shader_defs.push("WIND".into());
+        }
+        if key.bind_group_data.wind_normal {
+            descriptor.vertex.shader_defs.push("WIND_NORMAL".into());
+        }
+        if key.bind_group_data.stress_vertex {
+            descriptor.vertex.shader_defs.push("STRESS_VERTEX".into());
+        }
         Ok(())
     }
 }
@@ -93,7 +135,7 @@ impl<P: PhaseItem> RenderCommand<P> for DrawCorn {
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         let Some((vib, indb)) = entity_query.as_ref() else {return RenderCommandResult::Skip;};
-
+        
         if !vib.ready.load(Ordering::Relaxed) {return RenderCommandResult::Skip;}
 
         let mesh_allocator = mesh_allocator.into_inner();

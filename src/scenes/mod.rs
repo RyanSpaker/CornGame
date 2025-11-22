@@ -5,13 +5,13 @@ pub mod main_menu;
 pub mod resolver;
 
 use bevy::{
-    core_pipeline::{bloom::Bloom, prepass::DepthPrepass, tonemapping::Tonemapping}, ecs::{component::HookContext, system::SystemMeta, world::DeferredWorld}, pbr::{Atmosphere, ScreenSpaceReflections, VolumetricFog, wireframe::{Wireframe, WireframeColor}}, prelude::*, render::view::RenderLayers, scene::scene_spawner
+    core_pipeline::{bloom::Bloom, prepass::{DeferredPrepass, DepthPrepass}, tonemapping::Tonemapping}, ecs::{component::HookContext, system::SystemMeta, world::DeferredWorld}, pbr::{Atmosphere, ScreenSpaceReflections, VolumetricFog, wireframe::{Wireframe, WireframeColor}}, prelude::*, render::view::RenderLayers, scene::scene_spawner
 };
 use bevy_editor_pls::default_windows::cameras::EDITOR_RENDER_LAYER;
 use clap::Parser;
 use lobby::LobbyScene;
 use crate::{
-    Cli, ecs::{cameras::MainCamera, corn::sensor::CornSensor, flycam::FlyCam, framerate::spawn_fps_text, menu_main::spawn_main_menu}, systems::{character::{SpawnPlayerEvent, SpawnPlayerItem}, scenes::{CornScene, SceneTransitionApp}}, util::register_system_named::SystemMap
+    Cli, ecs::{cameras::MainCamera, corn::{SpawnTestField, sensor::CornSensor}, flycam::FlyCam, framerate::spawn_fps_text, menu_main::spawn_main_menu}, systems::{character::{SpawnPlayerEvent, SpawnPlayerItem}, scenes::{CornScene, SceneTransitionApp}}, util::register_system_named::SystemMap
 };
 
 #[derive(Debug, Clone, Component, Reflect)]
@@ -102,6 +102,7 @@ impl Plugin for CornScenesPlugin {
             )
             .add_plugins((main_menu::MainMenuPlugin, lobby::LobbyPlugin, bevy_dog::plugin::DoGPlugin));
 
+
         if Cli::parse().spatialaudio {
             // waiting untill 0.17
             //https://github.com/janhohenheim/bevy_steam_audio
@@ -119,7 +120,7 @@ impl Plugin for CornScenesPlugin {
 }
 
 fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>, server: Res<AssetServer>) {
-    let cam = MainCamera::spawn_main_camera(&mut commands);
+    let cam = MainCamera::spawn_main_camera(&mut commands, cli.simplecam);
     commands.entity(cam).insert((
         Transform::from_xyz(0.0, 2.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         Projection::Perspective(PerspectiveProjection {
@@ -137,7 +138,12 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>, server: Res<Asse
         IsDefaultUiCamera,
     ));
 
-    if !cli.simplecam {
+    if cli.simplecam {
+        commands.entity(cam).insert((
+            Msaa::Off,
+            // bevy::render::view::NoIndirectDrawing
+        ));
+    } else {
         commands.entity(cam).insert((
             VolumetricFog {
                 ambient_intensity: 0.0,
@@ -147,9 +153,10 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>, server: Res<Asse
             Bloom::NATURAL,
             // Atmosphere::EARTH, nice scattering but don't like sky appearance
             // AtmosphereEnvironmentMapLight::default(), //0.17
-            DepthPrepass,
+            // DepthPrepass,
+            // DeferredPrepass,
         ));
-    }
+    } 
 
     if cli.spatialaudio {
         let listener = SpatialListener::new(0.25);
@@ -240,9 +247,9 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>, server: Res<Asse
         });
     }
 
-    if cli.testcorn {
-        commands.run_system_cached(crate::ecs::corn::test_field);
-    }   
+    if let Some(size) = cli.testcorn {
+        commands.queue(SpawnTestField{ ground: true, light: true, shadows: false, size });
+    }
     
     commands.insert_resource(UiScale(1.0));
 }

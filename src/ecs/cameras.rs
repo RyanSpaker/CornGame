@@ -34,11 +34,12 @@ fn apply_render_layers_to_children(
 #[reflect(Component)]
 pub struct MainCamera;
 impl MainCamera{
-    pub fn spawn_main_camera(commands: &mut Commands) -> Entity{
+    // TODO consolidate with caller
+    pub fn spawn_main_camera(commands: &mut Commands, simple: bool) -> Entity{
         commands.spawn((
             Self, 
             Camera3d::default(), 
-            Camera{order: 0, hdr: true, ..Default::default()},
+            Camera{order: 0, hdr: !simple, ..Default::default()},
             Name::from("Main Camera"),
             RenderLayers::layer(0),
         )).id()

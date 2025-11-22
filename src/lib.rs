@@ -1,3 +1,5 @@
+#![feature(arbitrary_self_types)]
+
 use std::{path::PathBuf, sync::atomic::AtomicUsize, time::Duration};
 
 use bevy::{
@@ -69,7 +71,7 @@ struct Cli {
 
     /// spawn a test cornfield
     #[arg(long)]
-    testcorn: bool,
+    testcorn: Option<f32>,
 
     /// disable fancy camera features like bloom
     #[arg(long)]

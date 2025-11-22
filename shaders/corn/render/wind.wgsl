@@ -4,8 +4,6 @@
 /*
 TODO: 
 1. option for wind texture, benchmark against calculation
-
-
 */
 
 fn wind(position: vec3<f32>, offset: vec4<f32>, time: f32) -> vec3<f32> {
@@ -14,6 +12,7 @@ fn wind(position: vec3<f32>, offset: vec4<f32>, time: f32) -> vec3<f32> {
     idHash = randValue(u32(idHash * 100000));
 
     // XXX should do the uniform part of calc on cpu, and pass as uniform variable. No need to do this per vert
+    // actually, vertex shading isn't a bottleneck
     var strength: f32 = cos(time / 3.0) * cos(time / 5.2) / 2 + 0.5; //these two frequencies work well https://www.desmos.com/calculator/023vwitwiq
     strength = pow(strength, 2.0);
     //strength = 0.1;
@@ -43,4 +42,10 @@ fn wind(position: vec3<f32>, offset: vec4<f32>, time: f32) -> vec3<f32> {
     new_p.y += flutter;
 
     return new_p;
+}
+
+fn wind_normal(position: vec3<f32>, original_pos: vec3<f32>, normal: vec3<f32>, offset: vec4<f32>, time: f32) -> vec3<f32> {
+    let v1 = original_pos + normal * 0.0001;
+    let v2 = wind(v1, offset, time);
+    return normalize(v2 - position);
 }

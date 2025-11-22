@@ -123,31 +123,76 @@ impl Plugin for CornFieldComponentPlugin{
     }
 }
 
-// TODO make test scenes commands and hook into cli and editor command prompt
-pub fn test_field(
-    mut commands: Commands,
-    resource: Res<SimpleMaterials>,
-    std_mats: Res<Assets<StandardMaterial>>,
-    mut corn_mats: ResMut<Assets<StdCornMaterial>>,
-    asset_server: Res<AssetServer>,
-){
-    let Some(green) = std_mats.get(resource.green.id()) else {return};
-    let mut green = green.clone();
-    green.double_sided = true;
-    green.cull_mode = None;
+#[derive(Debug, Clone)]
+pub struct SpawnTestField {
+    pub ground: bool,
+    pub light: bool,
+    pub shadows: bool,
+    pub size: f32,
+}
 
-    let corn_mat = corn_mats.add(green.extend_with_corn());
-    commands.spawn((
-        Name::from("Test Corn Field"),
-        CornField,
-        ImageCarvedHexagonalShader{
-            center: Vec3::new(0.0, 0.0, 0.0),
-            half_extents: Vec2::new(5.0, 5.0),
-            dist_between: 1.0,
-            height_range: Vec2::new(0.9, 1.1),
-            rand_offset_factor: 0.1,
-            image: asset_server.load("textures/maze.jpg"),
-        },
-        MeshMaterial3d(corn_mat),
-    ));
+impl Command for SpawnTestField {
+    fn apply(self, world: &mut World) -> () {
+        world.run_system_cached_with(Self::test_field, self);
+    }
+}
+
+// TODO make test scenes commands and hook into cli and editor command prompt
+impl SpawnTestField {
+    pub fn test_field(
+        self: In<Self>,
+        mut commands: Commands,
+        resource: Res<SimpleMaterials>,
+        std_mats: Res<Assets<StandardMaterial>>,
+        mut corn_mats: ResMut<Assets<StdCornMaterial>>,
+        asset_server: Res<AssetServer>,
+    ){
+        let Some(green) = std_mats.get(resource.green.id()) else {return};
+        let mut green = green.clone();
+        green.double_sided = true;
+        green.cull_mode = None;
+
+        let corn_mat = corn_mats.add(green.extend_with_corn());
+        let parent = commands.spawn((
+            Name::from("Test Corn Field"),
+            CornField,
+            ImageCarvedHexagonalShader{
+                center: Vec3::new(0.0, 0.0, 0.0),
+                half_extents: Vec2::new(self.size, self.size),
+                dist_between: 1.0,
+                height_range: Vec2::new(0.9, 1.1),
+                rand_offset_factor: 0.1,
+                image: asset_server.load("textures/maze.jpg"),
+            },
+            MeshMaterial3d(corn_mat),
+        )).id();
+
+        if self.ground {
+            commands.spawn((
+                ChildOf(parent),
+                Name::from("ground"),
+                Mesh3d(asset_server.add(Plane3d::new(Vec3::Y, Vec2::splat(self.size)).into())),
+                MeshMaterial3d(asset_server.add(StandardMaterial::from_color(Srgba::gray(0.5)))),
+            ));
+        }
+        // commands.spawn((
+        //     Name::from("cube"),
+        //     Mesh3d(asset_server.add(Cuboid::new(1.0,1.0,1.0).into())),
+        //     MeshMaterial3d(asset_server.add(StandardMaterial::from_color(Srgba::gray(0.2)))),
+        //     Transform::from_xyz(0.0, 1.0, 0.0)
+        // ));
+        
+        if self.light {
+            commands.spawn((
+                Name::from("light"),
+                ChildOf(parent),
+                DirectionalLight {
+                    illuminance: 2000.0,
+                    shadows_enabled: self.shadows,
+                    ..default()
+                },
+                Transform::from_xyz(1.0, 1.0, 1.0).looking_at(Vec3::ZERO, Vec3::Y)
+            ));
+        }
+    }
 }

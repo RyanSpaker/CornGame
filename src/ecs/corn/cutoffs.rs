@@ -10,7 +10,7 @@ use super::{asset::CornLodInfo, CornField};
 #[derive(Debug, Clone, PartialEq, Reflect, Resource)]
 #[reflect(Resource)]
 pub struct GlobalLodCutoffs(pub Vec<f32>);
-impl Default for GlobalLodCutoffs{fn default() -> Self {Self(vec![5.0, 10.0, 25.0, 50.0, 150.0, 500.0])}}
+impl Default for GlobalLodCutoffs{fn default() -> Self {Self(vec![5.0, 10.0, 20.0, 40.0, 80.0, 500.0])}}
 impl GlobalLodCutoffs{
     /// Places LodCutoffs on render corn fields that have no local cutoffs
     fn extract_to_local(
