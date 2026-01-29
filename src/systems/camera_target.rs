@@ -187,3 +187,15 @@ fn update_camera_pos(
         transform.rotation = rot;
     }
 }
+
+/// relation ship between camera and it's current controller
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+#[relationship(relationship_target = Controls)]
+pub struct ControlledBy(pub Entity);
+
+/// relation ship between camera and it's current controller
+#[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
+#[relationship_target(relationship = ControlledBy)]
+pub struct Controls(Vec<Entity>);

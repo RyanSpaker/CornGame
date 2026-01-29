@@ -28,6 +28,8 @@ getrandom = { version = "0.3", default-features = false, features = ["wasm_js"]}
 getrandom2 = { package="getrandom", version = "0.2", default-features = false, features = ["js"]}
 
 [dependencies]
+# spakernet = { path = "crates/spakernet" }
+
 # NOTE: https://github.com/joseph-gio/bevy-trait-query/issues/77 breaks with bevy_ecs/track_change_detection
 bevy = { version = "0.16.1", default-features = false, features = [
   # "android-game-activity", # Android GameActivity support. Default, choose between this and android-native-activity.
@@ -78,7 +80,7 @@ bevy = { version = "0.16.1", default-features = false, features = [
  
   # "asset_processor", 
   "file_watcher", # https://github.com/rust-lang/cargo/issues/1197
-  "embedded_watcher", 
+  # "embedded_watcher", # slow startup https://github.com/bevyengine/bevy/issues/14903
  
   "default_font", 
   "jpeg", 
@@ -156,6 +158,7 @@ renderdoc = "0.12.1"
 itertools = "0.14.0"
 bevy_asset_loader = "0.23.0"
 extension-trait = "1.0.2"
+bevy_enhanced_input = "0.18"
 # bevy_rich_text3d = "0.5.1"
 
 [patch.crates-io]
@@ -174,3 +177,4 @@ lightyear = { path = "forks/lightyear/lightyear" }
 lightyear_aeronet = { path = "forks/lightyear/lightyear_aeronet" }
 # bevy_skein = { path = "forks/skein" }
 avian3d = { path = "forks/avian/crates/avian3d" }
+# bevy_asset = { path = "forks/bevy/crates/bevy_asset" }

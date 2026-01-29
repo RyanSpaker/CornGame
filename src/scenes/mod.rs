@@ -72,6 +72,9 @@ impl LoadScene {
             }
         }
     }
+    fn with_animation(self, animation_name: impl Into<String>) -> Self {
+        todo!();
+    }
 }
 
 #[derive(Debug, Clone, Component, Reflect)]
@@ -124,7 +127,7 @@ fn spawn_global_entities(mut commands: Commands, cli: Res<Cli>, server: Res<Asse
     commands.entity(cam).insert((
         Transform::from_xyz(0.0, 2.5, -10.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
         Projection::Perspective(PerspectiveProjection {
-            near: 0.1,
+            near: 0.25,
             far: 200.0,
             ..default()
         }),

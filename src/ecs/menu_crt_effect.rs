@@ -34,7 +34,7 @@ use bevy::{
 };
 
 /// This example uses a shader source file from the assets subdirectory
-const SHADER_ASSET_PATH: &str = "shaders://crt.wgsl";
+const SHADER_ASSET_PATH: &str = "shaders/crt.wgsl";
 
 /// It is generally encouraged to set up post processing effects as a plugin
 pub struct PostProcessPlugin;

@@ -30,6 +30,8 @@ impl Plugin for CornSystemsPlugin {
             camera_target::plugin,
             game::GamePlugin,
         ));
+
+        app.add_systems(Update, ui::toggle_cursor_grab_system );
         // TODO reimplement edge detection
         // .add_plugins((BlenvyPlugin::default(), EdgeDetectionPlugin::default()));
     }

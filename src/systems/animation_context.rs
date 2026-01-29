@@ -4,8 +4,10 @@ use bevy::animation::{ActiveAnimation, AnimationTarget, AnimationTargetId};
 use bevy::ecs::query::QueryData;
 use bevy::prelude::*;
 use bevy::platform::collections::{HashMap, HashSet};
+use bevy::state::commands;
 use bevy_editor_pls::bevy_inspector_egui::inspector_egui_impls::InspectorPrimitive;
 use bevy_editor_pls::egui::Checkbox;
+use wgpu::hal::auxil::db;
 
 use crate::scenes::SceneGltf;
 
@@ -81,9 +83,14 @@ impl AnimationContext {
         mut commands: Commands,
     ) -> Result {
         for (entity, mut animation_context) in animation_context.iter_mut() {
-            let Some(scene) = std::iter::once(entity).chain(tree
+            dbg!(entity);
+
+            // works for reload?            
+            animation_context.named_animations.clear();
+
+            let Some((scene_entity, scene)) = std::iter::once(entity).chain(tree
                 .iter_ancestors(entity))
-                .filter_map(|e| scenes.get(e).ok())
+                .filter_map(|e| scenes.get(e).ok().map(|v|(e,v)))
                 .next()
             else {
                 continue;
@@ -99,6 +106,7 @@ impl AnimationContext {
                 .filter(|e| animation_targets.get(*e).is_ok())
                 .collect();
 
+
             let mut removed: HashSet<Entity> = default();
             let mut target_ids: HashSet<AnimationTargetId> = default();
             for e in targets.iter() {
@@ -112,16 +120,23 @@ impl AnimationContext {
                     t.player = entity;
                 }
             }
-
+            
             // create animation graph with the animation clips
             // store name->index
             // TODO this should be done per blueprint not per instance.
             let mut graph = AnimationGraph::new();
             for (name, handle) in gltf.named_animations.iter() {
+                dbg!(name);
                 let clip = clip_assets.get(handle).unwrap();
-                if clip.curves().iter().any(|c| target_ids.contains(c.0)) {
+                let clip_targets : HashSet<_> = clip.curves().iter().map(|c|*c.0).collect();
+
+                dbg!(&clip_targets.len(), target_ids.len());
+
+                if !clip_targets.is_disjoint(&target_ids) {
                     // This animation clip targets a child of the AnimationContext
                     let index = graph.add_clip(handle.clone(), 1.0, graph.root);
+
+                    dbg!(name);
                     animation_context
                         .named_animations
                         .insert(name.to_string(), index);
@@ -142,31 +157,44 @@ impl AnimationContext {
         Ok(())
     }
 
-    // TODO I want to be able to add it in code, and work when scene loads
-    fn update_system(
-
+    // HACK to be able to add AnimationContext in code, and reprocess when scene loads
+    // TODO do this properly
+    fn trigger(
+        trigger: Trigger<bevy::scene::SceneInstanceReady>,
+        query: Query<&mut AnimationContext>,
+        mut commands: Commands,
     ){
-
+        if query.contains(trigger.target()) {
+            // context.init();
+            dbg!(trigger.target());
+            commands.entity(trigger.target()).insert(AnimationContext::default());
+        }
     }
 }
 
 #[derive(Debug, Component, Reflect)]
 #[reflect(Component)]
-pub struct AutoPlayAnimation;
+#[require(AnimationContext)]
+pub struct AutoPlayAnimation{
+    pub repeat: bool,   
+}
 
 // #[derive(Debug, Component, Reflect)]
 // #[reflect(Component)]
 // pub struct AutoPlaySync;
 
 fn do_autoplay(
-    mut query: Query<(Entity, AnimationParams), With<AutoPlayAnimation>>,
+    mut query: Query<(Entity, AnimationParams, &AutoPlayAnimation)>,
     mut commands: Commands
 ) -> Result{
-    for (entity, mut anim) in query.iter_mut(){
+    for (entity, mut anim, autoplay) in query.iter_mut(){
         if anim.player.playing_animations().next().is_none() {
             let Some((name,_)) = anim.context.named_animations.iter().next() else { continue };
 
-            anim.play(name, Duration::ZERO)?.repeat();
+            let v = anim.play(name, Duration::ZERO)?;
+            if autoplay.repeat {
+                v.repeat();
+            }
             commands.entity(entity).remove::<AutoPlayAnimation>();
         }
     }
@@ -176,6 +204,7 @@ fn do_autoplay(
 pub fn plugin(app: &mut App) {
     app.add_systems(Update, AnimationContext::init_system);
     app.add_systems(Update, do_autoplay);
+    app.add_observer(AnimationContext::trigger);
     app.register_type::<AnimationContext>();
     app.register_type::<AutoPlayAnimation>();
     app.register_type_data::<AnimationContext, bevy_editor_pls::InspectorEguiImpl>();

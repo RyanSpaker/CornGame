@@ -96,6 +96,9 @@ pub fn look_handler(
     camera.rotation = yaw_rot * Quat::from_rotation_x(pitch);
 }
 
+#[derive(Debug, Clone, Reflect, Component)]
+pub struct WalkDisabled;
+
 // controls the main camera and the Player entity (these are intractibly linked)
 // camera should not be a child of player, you need flexibility to decouple these
 // the player *can* have a mesh, but it might not (on other clients for example), but lets assume for now character controller only runs for player and server
@@ -109,9 +112,12 @@ pub fn input_handler(
             &mut TnuaController,
             &CornGameCharController,
             &mut MyAnimationState,
-            Option<&CornSensor>
+            Option<&CornSensor>,
+            Has<WalkDisabled>
         ),
-        Without<crate::ecs::cameras::MainCamera>,
+        (
+            Without<crate::ecs::cameras::MainCamera>,
+        )
     >,
     mut colliders: Query<
         (&ColliderOf, &mut Collider, &mut Transform),
@@ -132,7 +138,7 @@ pub fn input_handler(
     };
 
     assert!(query.iter().count() <= 1);
-    for (id, transform, input, mut controller, config, mut anim_state, corn_sensor) in query.iter_mut() {
+    for (id, transform, input, mut controller, config, mut anim_state, corn_sensor, disabled) in query.iter_mut() {
         let collider = colliders.iter_mut().find(|c| c.0.body == id);
 
         if collider.is_none() {
@@ -156,22 +162,6 @@ pub fn input_handler(
         // TODO, we should do this on the input side instead of here.
         // TODO need a generic framework for claiming inputs
         if let Ok(mut window) = window.single_mut() {
-            if input.just_pressed(&CornCharacterInput::Toggle) {
-                // unpause physics on first mouse grab
-                if ! *local {
-                    *local = true;
-                    time.unpause();
-                }
-
-                window.cursor_options.grab_mode = match window.cursor_options.grab_mode {
-                    CursorGrabMode::None => CursorGrabMode::Locked,
-                    CursorGrabMode::Confined => CursorGrabMode::Locked,
-                    CursorGrabMode::Locked => CursorGrabMode::None,
-                };
-
-                debug!(?window.cursor_options.grab_mode);
-            }
-
             if window.cursor_options.grab_mode != CursorGrabMode::Locked {
                 direction = default();
             } else {
@@ -218,6 +208,9 @@ pub fn input_handler(
             ..default()
         };
         controller.basis(basis);
+        if disabled {
+            controller.neutralize_basis();
+        }
 
         let height = config.height - config.float;
         *collider = Collider::capsule(config.radius, height - 2.0 * config.radius);

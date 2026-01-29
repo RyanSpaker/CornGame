@@ -1162,3 +1162,78 @@ we get 100-200x overdraw on the furthest corn lod
 
 being in corn does not reduce time spent on far LODs despite 100% depth test filtering. This is probably because fragment isn't reading any textures.
 This means bottleneck is before fragment shader. Likely raster/depth_test since I already ruled out vertex.
+
+# Sun Nov 23 04:11:50 PM EST 2025
+diagnosing slow startup: it's appears to be inotify fswatching every file (recursively) in the root folder
+
+https://github.com/bevyengine/bevy/issues/14903
+unresolved issue^
+
+seeing weird logs: 
+```
+2025-11-23T21:07:52.587364Z DEBUG bevy_app::app: added plugin: bevy_asset::AssetPlugin
+2025-11-23T21:07:52.587391Z DEBUG bevy_asset::io::file: Asset Server using /home/user/files/projects/dev/games/CornGame/shaders as its base path.
+2025-11-23T21:07:52.587644Z TRACE mio::poll: registering event source with poller: token=Token(0), interests=READABLE
+2025-11-23T21:07:52.588012Z TRACE notify::inotify: adding inotify watch: /home/user/files/projects/dev/games/CornGame/shaders
+2025-11-23T21:07:52.588107Z TRACE notify::inotify: adding inotify watch: /home/user/files/projects/dev/games/CornGame/shaders/corn
+2025-11-23T21:07:52.588155Z TRACE notify::inotify: adding inotify watch: /home/user/files/projects/dev/games/CornGame/shaders/corn/render
+2025-11-23T21:07:52.588219Z TRACE notify::inotify: adding inotify watch: /home/user/files/projects/dev/games/CornGame/shaders/corn/init
+```
+
+let's move shaders back into assets, since it's causing problems. (also breaks hot reload)
+RESULT: still scannin whole dir.
+
+using rustrover breakpoints, I determined it is the embedded_asset_watcher. 
+we don't use that, so I disabled the feature in Cargo.toml
+
+# Sat Jan 10 05:39:46 PM EST 2026
+bevy_dog broken
+
+```
+Caused by:
+  In RenderPass::end
+    In a set_pipeline command
+      Render pipeline targets are incompatible with render pass
+        Incompatible color attachments at indices [0]: the RenderPass uses textures with formats [Some(Rgba16Float)] but the RenderPipeline with 'blending_pipeline' label uses attachments with formats [Some(Rgba8UnormSrgb)]
+```
+
+Fixed by --simplecam
+
+# Tue Jan 27 05:06:40 PM EST 2026
+having alot of trouble with the death character controller.
+I am going to just not bother with physics at all and do it manually. 
+Mixing transform manipulations and velocity seems to break everything.
+With static velocity gets zeroed, and with kinematic setting transform doesnt behave right.
+
+# Wed Jan 28 12:17:42 PM EST 2026
+death character controller feels pretty good.
+rewrote it to sample a ring around player to build a gradient of the corn edge, which gets treated like a wall.
+I removed all physics, movement is now manual.
+
+# Wed Jan 28 02:33:59 PM EST 2026
+increasing the near field. 
+
+TODO dither transition the near plane clipping
+
+---
+
+Trying to improve AnimationContext so that it can be added on the code side.
+I got it to run at the right time, but clips aren't matching targets. why?..
+IMPORTANT: seems to be because there are two NLA tracks called "die" one in each scene.
+
+DONE: AnimationContext now can be added in code, to the same entity as LoadScene. As well as AutoPlayAnimation, which now has a `repeat` flag.
+
+TODO: allow specifying name of animation
+TODO: make bidirectional (system will keep PlayingAnimation in sync with what is playing).
+
+---
+
+FIXED: Bevy dog not working... Needed to add PassesSettings as well.
+
+Got some nice settings for post-death via dog, distance_fog, and ambient light.
+
+TODO: figure out how to make corn dimmer, and body/etc. stand out more (brighter?)
+- seperate passes to draw bg (corn, ground, large objects) and items?
+
+TODO: seperate pass for sky (removed by fog)
+- how is this supposed to be done with distance fog?

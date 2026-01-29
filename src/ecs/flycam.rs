@@ -101,7 +101,7 @@ fn toggle_focused(
             } else {
                 CursorGrabMode::None
             };
-            window.cursor_options.visible = !any_focused;
+            // window.cursor_options.visible = !any_focused;
             if any_focused {
                 let center = Some(window.size() / 2.0);
                 window.set_cursor_position(center);

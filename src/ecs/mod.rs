@@ -10,6 +10,7 @@ pub mod ambient_light;
 pub mod menu_main;
 pub mod sound_crickets;
 pub mod npc;
+pub mod death;
 
 use bevy::prelude::*;
 use corn::CornFieldComponentPlugin;
@@ -35,6 +36,8 @@ impl Plugin for CornECSPlugin{
             ambient_light::plugin,
 
             sound_crickets::CricketsPlugin,
+            npc::NpcPlugin,
+            death::plugin,
         ));
     }
 }

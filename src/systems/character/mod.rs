@@ -26,13 +26,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::ecs::cameras::{MainCamera, THIRD_PERSON_RENDER_LAYER};
 use crate::ecs::corn::sensor::CornSensor;
+use crate::ecs::death::Alive;
+use crate::ecs::npc::TrackerTarget;
 use crate::scenes::LoadScene;
 use crate::systems::network::ReplicateAuto;
 
 use self::input::CornCharacterInput;
 
 pub mod animation;
-mod controller;
+pub mod controller;
 mod input;
 
 pub struct MyCharacterPlugin;
@@ -115,7 +117,7 @@ impl Plugin for CharacterNetworkPlugin {
 #[reflect(Component)]
 pub struct Character;
 
-/// Anything that moves via tnua character controller -- might be NPC, might be other players
+// The client's player entity
 #[derive(Debug, Component)]
 pub struct Player;
 impl Player {
@@ -124,6 +126,12 @@ impl Player {
             Player,
 
             Character,
+
+            TrackerTarget, // TODO deleteme, ai controlls targeting
+            // CollidingEntities::default(), // doesn't work if collider is child
+
+            Alive::Normal,
+
             CornSensor::default(),
             Name::new("Player"),
             RigidBody::Dynamic,

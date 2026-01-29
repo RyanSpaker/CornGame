@@ -1,11 +1,11 @@
 #![feature(arbitrary_self_types)]
 
-use std::{path::PathBuf, sync::atomic::AtomicUsize, time::Duration};
+use std::{any::type_name, path::PathBuf, sync::atomic::AtomicUsize, time::Duration};
 
 use bevy::{
     app::ScheduleRunnerPlugin,
     asset::io::AssetSourceBuilder,
-    ecs::schedule::ScheduleLabel,
+    ecs::{schedule::{Chain, Schedulable, ScheduleConfigs, ScheduleLabel, graph::GraphInfo}, system::ScheduleSystem},
     platform::collections::HashMap,
     prelude::*,
     remote::{
@@ -29,6 +29,7 @@ pub mod ecs;
 pub mod scenes;
 pub mod systems;
 pub mod util;
+pub use util::dehydrated::Observers;
 
 use serde::{Deserialize, Serialize};
 use util::debug_app::DebugApp;
@@ -47,15 +48,15 @@ impl we_clap::WeParser for Cli {}
 struct Cli {
     /// implies --lobby
     scenes: Vec<PathBuf>,
-    #[arg(short, long)]
+    #[arg(long)]
     client: bool,
-    #[arg(short, long)]
+    #[arg(long)]
     server: bool,
 
-    #[arg(short, long)]
+    #[arg(long)]
     menu: bool,
 
-    #[arg(short, long)]
+    #[arg(long)]
     lobby: bool,
 
     #[arg(long)]
@@ -102,6 +103,30 @@ struct Cli {
 
     #[arg(env, long)]
     no_vsync: bool,
+
+    #[arg(short, long)]
+    run: Vec<String>
+}
+
+type Dumb = std::boxed::Box<(dyn bevy::prelude::System<In = (), Out = std::result::Result<(), bevy::prelude::BevyError>> + 'static)>;
+impl Cli {
+    fn runnable<S, M>(spawn_monster: S) -> ScheduleConfigs<Dumb>
+    where
+        S: IntoSystem<(), (), M>,
+    {
+        let cli = Cli::parse();
+        let name = type_name::<S>().to_string();
+        let short_name = name.as_str().split("::").last().unwrap().to_string();
+        dbg!(&short_name);
+
+        let run = cli.run.contains(&name) || cli.run.contains(&short_name);
+        spawn_monster.run_if(move || {
+            if run {
+                info!("running {}", name);
+            }   
+            run
+        })
+    }
 }
 
 #[derive(Debug, Resource)]
@@ -124,10 +149,10 @@ impl Plugin for CornGame {
 
         app.init_schedule(Cmds);
 
-        app.register_asset_source(
-            "shaders", // The unique name for your source
-            AssetSourceBuilder::platform_default("shaders", None),
-        );
+        // app.register_asset_source(
+        //     "shaders", // The unique name for your source
+        //     AssetSourceBuilder::platform_default("shaders", None),
+        // );
 
         let mut pg = DefaultPlugins
             .set(WindowPlugin {
@@ -192,6 +217,7 @@ impl Plugin for CornGame {
             //app.add_plugins(bevy_editor_pls::default_windows::utils::log_plugin::LogPlugin::default());
 
             app.add_plugins((
+                bevy_enhanced_input::EnhancedInputPlugin,
                 bevy_ui_text_input::TextInputPlugin,
                 bevy_flair::FlairPlugin,
                 systems::CornSystemsPlugin,
