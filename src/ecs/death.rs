@@ -1,11 +1,6 @@
 use avian3d::prelude::{LinearVelocity, LockedAxes, Position, RigidBody, Sensor};
 use bevy::{
-    ecs::observer,
-    input::mouse,
-    math::FloatPow,
-    prelude::*,
-    state::commands,
-    window::CursorOptions,
+    ecs::observer, input::mouse, math::FloatPow, prelude::*, render::view::RenderLayers, state::commands, window::CursorOptions
 };
 use bevy_dog::settings::DoGSettings;
 use bevy_easings::CustomComponentEase;
@@ -28,6 +23,9 @@ use crate::{
     },
     util::{math::{ExpEaseTo, lerp}, specialized_material::SetItemPipelineDbg},
 };
+
+// render layer specific to death camera
+pub const DEAD_RENDER_LAYER :usize = 177;
 
 pub fn plugin(app: &mut App) {
     app.add_plugins(DeathCharController::plugin);
@@ -140,7 +138,8 @@ pub fn plugin(app: &mut App) {
                                     ..default()
                                 },
                             ))
-                            .insert(ControlledBy(entity));
+                            .insert(ControlledBy(entity))
+                            .insert(RenderLayers::default().with(DEAD_RENDER_LAYER));
                     }
 
                     // TODO can there be issues with one frame flicker when death seq ends? Perhaps this should be an observer?

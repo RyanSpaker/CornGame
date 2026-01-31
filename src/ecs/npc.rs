@@ -8,29 +8,22 @@ use std::{
 };
 
 use avian3d::prelude::*;
-use bevy::{audio::Volume, prelude::*};
+use bevy::{audio::Volume, prelude::*, render::{Render, view::RenderLayers}};
 use itertools::Itertools;
 use rand::random;
 
 use crate::{
-    Cli,
-    ecs::{corn::{CornField, sensor::CornSensor, stored::image::ImageCarvedHexagonalShader}, death::{Alive, Die}},
-    systems::character::{
+    Cli, ecs::{corn::{CornField, sensor::CornSensor, stored::image::ImageCarvedHexagonalShader}, death::{Alive, Die}}, scenes::LoadScene, systems::character::{
         Player,
         controller::{WalkDisabled, input_handler},
-    },
-    util::math::lerp,
+    }, util::math::lerp
 };
 
 fn spawn_monster(asset_server: Res<AssetServer>, mut commands: Commands) {
+    let mesh = asset_server.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0)));
+
+    // TODO add corn rustle, as it passes through
     commands.spawn((
-        Mesh3d(asset_server.add(Mesh::from(Cuboid::new(1.0, 1.0, 1.0)))),
-        MeshMaterial3d(asset_server.add(StandardMaterial {
-            base_color: Srgba::BLACK.with_alpha(0.1).into(),
-            ior: 2.0,
-            alpha_mode: AlphaMode::Blend,
-            ..Default::default()
-        })),
         RigidBody::Kinematic,
         Collider::cuboid(1.0, 1.0, 1.0),
         CollidingEntities::default(),
@@ -42,8 +35,28 @@ fn spawn_monster(asset_server: Res<AssetServer>, mut commands: Commands) {
             volume: Volume::Linear(0.5),
             ..Default::default()
         },
-        // TODO add corn rustle
         Transform::from_xyz(10.0, 0.0, 10.0),
+
+        // TODO come up with ideomatic way to swap models on death
+        children![
+        (   
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(asset_server.add(StandardMaterial {
+                base_color: Srgba::BLACK.with_alpha(0.3).into(),
+                ior: 2.0,
+                alpha_mode: AlphaMode::Blend,
+                ..Default::default()
+            })),
+            
+            // TODO disable when dead
+        ),
+        (
+            // TODO procedural wireframe mesh
+            Name::from("dead wireframe"),
+            LoadScene::new("models/wireframe_cube.glb#Scene"),
+            // This seems to propogate on it's own
+            RenderLayers::from_layers(&[crate::ecs::death::DEAD_RENDER_LAYER])
+        )],
     ));
 
     // MOVEME

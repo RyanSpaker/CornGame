@@ -11,6 +11,7 @@ pub mod menu_main;
 pub mod sound_crickets;
 pub mod npc;
 pub mod death;
+pub mod scarecrow;
 
 use bevy::prelude::*;
 use corn::CornFieldComponentPlugin;
@@ -38,6 +39,7 @@ impl Plugin for CornECSPlugin{
             sound_crickets::CricketsPlugin,
             npc::NpcPlugin,
             death::plugin,
+            scarecrow::plugin,
         ));
     }
 }
