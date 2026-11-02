@@ -1,0 +1,25 @@
+# CLAUDE (claude-opus-5-5): scripting (js) for corn_game. see src/lib.rs
+[package]
+name = "corn_scripting"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { version = "=0.20.0", default-features = false, features = ["bevy_asset", "bevy_log"] }
+serde = "1"
+serde_json = "1"
+corn_assets = { path = "../corn_assets" }
+
+# native: V8
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+v8 = "152"
+
+# web: js scripts run in the browser's engine
+[target.'cfg(target_family = "wasm")'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+# the crate's tests run on web too: cargo test --target wasm32-unknown-unknown (under node)
+[target.'cfg(target_family = "wasm")'.dev-dependencies]
+wasm-bindgen-test = "0.3"

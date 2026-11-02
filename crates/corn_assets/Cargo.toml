@@ -1,0 +1,12 @@
+# CLAUDE (claude-opus-5-5): handle fields as asset paths or inline data, shared by corn_scripting and corn_scene. see src/lib.rs
+[package]
+name = "corn_assets"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { version = "=0.20.0", default-features = false, features = ["bevy_asset"] }
+
+[features]
+# MeshRecipe: meshes from shapes, for scripts and scene files
+mesh = ["bevy/bevy_mesh"]

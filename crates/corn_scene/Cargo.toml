@@ -1,0 +1,23 @@
+# CLAUDE (claude-opus-5-5): scene/style format (css-like) for corn_game. see src/lib.rs
+[package]
+name = "corn_scene"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["scripting", "mesh"]
+# `script { }`, `${ }` and `on Event:` (JS, through corn_scripting)
+scripting = ["dep:corn_scripting"]
+# `Mesh3d: Cuboid(1, 2, 1)` (corn_assets' mesh recipes)
+mesh = ["corn_assets/mesh"]
+
+[dependencies]
+bevy = { version = "=0.20.0", default-features = false, features = ["bevy_asset", "bevy_world_serialization", "bevy_color", "bevy_log", "serialize"] }
+corn_assets = { path = "../corn_assets" }
+corn_scripting = { path = "../corn_scripting", optional = true }
+async-channel = "2"
+serde_json = "1"
+
+[dev-dependencies]
+# type names in errors, and the visibility types WorldAssetRoot requires
+bevy = { version = "=0.20.0", default-features = false, features = ["debug", "bevy_camera"] }
