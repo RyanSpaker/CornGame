@@ -1,0 +1,10 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: `on Ready`, children before parents */
+script {
+  let order = 0;
+}
+spawn parent {
+  on Ready: ${ insert(e, "Health", { max: ++order }); }
+  spawn child {
+    on Ready: ${ insert(e, "Health", { max: ++order }); }
+  }
+}

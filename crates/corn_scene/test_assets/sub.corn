@@ -1,0 +1,2 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: a scene spawned as a child, with its own rules */
+spawn sealed { Label: "mine"; }

@@ -11,11 +11,11 @@ use std::{
 };
 
 use super::{
-    host_despawn, host_find, host_get, host_get_resource, host_insert, host_insert_math, host_remove, host_spawn,
+    host_despawn, host_find, host_select, host_get, host_get_resource, host_insert, host_insert_math, host_remove, host_spawn,
     host_trigger,
     live::{self, Field, LiveRef, Read},
     math::{self, Arg, Kind, Math, Out, Slot},
-    Engine, Got, GLUE,
+    Engine, Got, Wait, GLUE,
 };
 
 type Scope<'s, 'i> = v8::PinScope<'s, 'i>;
@@ -166,10 +166,15 @@ impl Js {
         }
         host_fns! {
             "insert" => insert, "get" => get, "getResource" => get_resource, "remove" => remove, "spawn" => spawn,
-            "despawn" => despawn, "find" => find, "component" => component, "resource" => resource, "asset" => asset,
+            "despawn" => despawn, "find" => find, "select" => select, "component" => component, "resource" => resource, "asset" => asset,
             "trigger" => trigger, "result" => result, "useApp" => use_app,
             "isMath" => is_math, "mathStatics" => math_statics, "mathStatic" => math_static,
         }
+        host_fns! { "log" => log, "runScript" => run_script }
+        #[cfg(feature = "remote_console")]
+        host_fns! { "screenshot" => screenshot, "record" => record, "shotDone" => shot_done, "exit" => exit }
+        #[cfg(feature = "mesh")]
+        host_fns! { "mesh" => mesh }
         let init = string(tc, "init");
         let init = glue.get(tc, init.into()).unwrap().cast::<v8::Function>();
         init.call(tc, glue.into(), &[host.into()]).ok_or_else(|| error(tc))?;
@@ -204,12 +209,24 @@ impl Js {
             return run(scope, &self.glue, name, args);
         }
         let mut isolate = self.isolate.borrow_mut();
-        v8::scope!(let scope, &mut *isolate);
-        let context = v8::Local::new(scope, &self.context);
-        let mut context_scope = v8::ContextScope::new(scope, context);
-        v8::scope!(let scope, &mut context_scope);
-        let _active = Active::set(scope);
-        run(scope, &self.glue, name, args)
+        let result = {
+            v8::scope!(let scope, &mut *isolate);
+            let context = v8::Local::new(scope, &self.context);
+            let mut context_scope = v8::ContextScope::new(scope, context);
+            v8::scope!(let scope, &mut context_scope);
+            let _active = Active::set(scope);
+            run(scope, &self.glue, name, args)
+        };
+        // V8 posts work to the platform for the embedder to run: FinalizationRegistry callbacks (which free
+        // script meshes, see glue.js) and incremental GC steps. nothing else runs them
+        while v8::Platform::pump_message_loop(&platform(), &isolate, false) {}
+        result
+    }
+
+    /// a full garbage collection, for tests
+    #[cfg(test)]
+    pub(crate) fn collect_garbage(&self) {
+        self.isolate.borrow_mut().low_memory_notification();
     }
 }
 
@@ -232,9 +249,9 @@ impl Engine for Js {
         .map(|r| r != 0.0)
     }
 
-    fn step(&self, thread: u32, slept: f64) -> Result<Option<f64>, String> {
-        let sleep = self.invoke("step", |s| vec![v8::Number::new(s, thread as f64).into(), v8::Number::new(s, slept).into()])?;
-        Ok((sleep >= 0.0).then_some(sleep))
+    fn step(&self, thread: u32, slept: f64) -> Result<Option<Wait>, String> {
+        let wait = self.invoke("step", |s| vec![v8::Number::new(s, thread as f64).into(), v8::Number::new(s, slept).into()])?;
+        Ok(Wait::from_step(wait))
     }
 
     fn stop(&self, thread: u32) {
@@ -246,6 +263,67 @@ impl Engine for Js {
             vec![string(s, module).into(), string(s, function).into(), string(s, target).into(), string(s, root).into()]
         })?;
         Ok(super::RESULT.take().unwrap_or_default())
+    }
+
+    fn repl(&self, source: &str, thread: u32) -> Result<bool, String> {
+        self.invoke("repl", |s| vec![string(s, source).into(), v8::Number::new(s, thread as f64).into()]).map(|r| r != 0.0)
+    }
+}
+
+// CLAUDE
+/// `log(level, text)`: console.log and co.
+fn log(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, _: v8::ReturnValue) {
+    let (level, text) = (arg_string(scope, &args, 0), arg_string(scope, &args, 1));
+    super::host_log(&level, text);
+}
+
+// CLAUDE
+/// `runScript(source)`: run a top-level script in this context, for its completion value. a script's
+/// declarations stay in the context, unlike `eval`'s. exceptions propagate
+fn run_script(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, mut rv: v8::ReturnValue) {
+    let Some(source) = args.get(0).to_string(scope) else { return };
+    if let Some(value) = v8::Script::compile(scope, source, None).and_then(|s| s.run(scope)) {
+        rv.set(value);
+    }
+}
+
+// CLAUDE: remote_console.rs's screenshots. `screenshot(path)` gives `[id, absolute path]` as JSON
+#[cfg(feature = "remote_console")]
+fn screenshot(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, mut rv: v8::ReturnValue) {
+    let _active = Active::set(scope);
+    let path = arg_string(scope, &args, 0);
+    match super::remote_console::host_screenshot(&path) {
+        Ok(json) => rv.set(string(scope, &json).into()),
+        Err(e) => throw(scope, e),
+    }
+}
+
+#[cfg(feature = "remote_console")]
+fn record(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, mut rv: v8::ReturnValue) {
+    let _active = Active::set(scope);
+    let prefix = arg_string(scope, &args, 0);
+    let frames = args.get(1).number_value(scope).unwrap_or(0.0).max(0.0) as u32;
+    match super::remote_console::host_record(&prefix, frames) {
+        Ok(id) => rv.set(v8::Number::new(scope, id as f64).into()),
+        Err(e) => throw(scope, e),
+    }
+}
+
+#[cfg(feature = "remote_console")]
+fn shot_done(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, mut rv: v8::ReturnValue) {
+    let _active = Active::set(scope);
+    let id = args.get(0).number_value(scope).unwrap_or(0.0) as u32;
+    match super::remote_console::host_shot_done(id) {
+        Ok(done) => rv.set(v8::Boolean::new(scope, done).into()),
+        Err(e) => throw(scope, e),
+    }
+}
+
+#[cfg(feature = "remote_console")]
+fn exit(scope: &mut Scope<'_, '_>, _: v8::FunctionCallbackArguments, _: v8::ReturnValue) {
+    let _active = Active::set(scope);
+    if let Err(e) = super::remote_console::host_exit() {
+        throw(scope, e);
     }
 }
 
@@ -314,6 +392,28 @@ fn spawn(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, mut rv:
     }
 }
 
+// CLAUDE
+/// `mesh(op, id, name, numbers)`, see mesh.rs. numbers: an array or a typed array
+#[cfg(feature = "mesh")]
+fn mesh(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, mut rv: v8::ReturnValue) {
+    let op = arg_string(scope, &args, 0);
+    let id = args.get(1).number_value(scope).unwrap_or(0.0) as u32;
+    let name = arg_string(scope, &args, 2);
+    let mut numbers = vec![];
+    if let Ok(list) = v8::Local::<v8::Object>::try_from(args.get(3)) {
+        let key = string(scope, "length");
+        let len = list.get(scope, key.into()).and_then(|l| l.number_value(scope)).unwrap_or(0.0) as u32;
+        numbers.reserve(len as usize);
+        for i in 0..len {
+            numbers.push(list.get_index(scope, i).and_then(|v| v.number_value(scope)).unwrap_or(f64::NAN) as f32);
+        }
+    }
+    match super::mesh::host_mesh(&op, id, &name, &numbers) {
+        Ok(n) => rv.set(v8::Number::new(scope, n).into()),
+        Err(e) => throw(scope, e),
+    }
+}
+
 fn despawn(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, _: v8::ReturnValue) {
     let _active = Active::set(scope);
     let entity = arg_string(scope, &args, 0);
@@ -343,6 +443,15 @@ fn find(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, mut rv: 
     }
 }
 
+fn select(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, mut rv: v8::ReturnValue) {
+    let _active = Active::set(scope);
+    let (entity, selector) = (arg_string(scope, &args, 0), arg_string(scope, &args, 1));
+    match host_select(&entity, &selector) {
+        Ok(json) => rv.set(string(scope, &json).into()),
+        Err(e) => throw(scope, e),
+    }
+}
+
 fn trigger(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, _: v8::ReturnValue) {
     let _active = Active::set(scope);
     let target = (!args.get(0).is_null_or_undefined()).then(|| arg_string(scope, &args, 0));
@@ -353,6 +462,7 @@ fn trigger(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, _: v8
 }
 
 fn component(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, rv: v8::ReturnValue) {
+    let _t = crate::profile::time("live ref");
     let _active = Active::set(scope);
     let (entity, type_name) = (arg_string(scope, &args, 0), arg_string(scope, &args, 1));
     let r = live::component(&entity, &type_name).map(Some);
@@ -360,6 +470,7 @@ fn component(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, rv:
 }
 
 fn resource(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, rv: v8::ReturnValue) {
+    let _t = crate::profile::time("live ref");
     let _active = Active::set(scope);
     let type_name = arg_string(scope, &args, 0);
     let r = live::resource(&type_name);
@@ -367,6 +478,7 @@ fn resource(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, rv: 
 }
 
 fn asset(scope: &mut Scope<'_, '_>, args: v8::FunctionCallbackArguments, rv: v8::ReturnValue) {
+    let _t = crate::profile::time("live ref");
     let _active = Active::set(scope);
     let (key, type_name) = (arg_string(scope, &args, 0), arg_string(scope, &args, 1));
     let r = live::asset(&key, &type_name);
@@ -555,6 +667,7 @@ fn component_index_get(scope: &mut Scope<'_, '_>, index: u32, args: v8::Property
 }
 
 fn component_read(scope: &mut Scope<'_, '_>, key: &str, args: v8::PropertyCallbackArguments, mut rv: v8::ReturnValue) -> v8::Intercepted {
+    let _t = crate::profile::time("live ref");
     let _active = Active::set(scope);
     let this = match this_handle(scope, &args) {
         Ok(HandleCopy::Live(r)) => r,
@@ -588,6 +701,7 @@ fn component_index_set(scope: &mut Scope<'_, '_>, index: u32, value: v8::Local<v
 }
 
 fn component_write(scope: &mut Scope<'_, '_>, key: &str, value: v8::Local<v8::Value>, args: v8::PropertyCallbackArguments, mut rv: v8::ReturnValue<v8::Boolean>) -> v8::Intercepted {
+    let _t = crate::profile::time("live ref");
     let _active = Active::set(scope);
     let result = (|| {
         let this = match this_handle(scope, &args)? {

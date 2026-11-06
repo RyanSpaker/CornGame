@@ -1,0 +1,6 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs */
+spawn kept {
+  include "thing.fake" as child { Health.max: 3; }
+  include "player.corn" as child { Health.regen: 4; }
+  include "two.fake" as child;
+}

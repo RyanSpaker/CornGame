@@ -9,8 +9,9 @@ use bevy::prelude::*;
 // diagetic ui
 
 use bevy::prelude::*;
-use bevy::render::camera::{NormalizedRenderTarget, RenderTarget};
+use bevy::render::camera::{NormalizedRenderTarget, RenderTarget, Viewport};
 use bevy::render::view::RenderLayers;
+use bevy::scene::SceneInstanceReady;
 use bevy::text::FontSmoothing;
 use bevy_lunex::prelude::*;
 use uuid::Uuid;
@@ -155,38 +156,8 @@ pub fn spawn_diagetic_interface(
         )
         .id();
 
-    // STEP 3: create a orthographic camera for the ui only
+    // STEP 3: render the flat UI first, then composite the Blender player models over it.
     let render_layers = layers.get();
-
-    // commands.spawn((
-    //     Camera3d::default(),
-    //     // camera renders to image texture
-    //     Camera {
-    //         target: RenderTarget::Image(canvas.clone().into()),
-    //         clear_color: ClearColorConfig::Custom(Color::srgba(0.0, 0.0, 0.0, 0.0)),
-    //         order: -1, //?
-    //         ..default()
-    //     },
-    //     // camera will go from -1 to 1 in x and y
-    //     // TODO 0 to 1
-    //     Projection::from(OrthographicProjection {
-    //         scaling_mode: bevy::render::camera::ScalingMode::Fixed {
-    //             width: 2.0,
-    //             height: 2.0,
-    //         },
-    //         scale: 1.0,
-    //         ..OrthographicProjection::default_3d()
-    //     }),
-
-    //     // crt postprocessing effect
-    //     PostProcessSettings{
-    //         ..Default::default()
-    //     },
-
-    //     Transform::from_xyz(1.0, 0.0, 0.0).looking_at(Vec3::ZERO, Dir3::Y),
-    //     render_layers.clone(),
-    //     // ChildOf(root_entity),
-    // ));
 
     let camera_ui = commands
         .spawn((
@@ -205,6 +176,8 @@ pub fn spawn_diagetic_interface(
             // ChildOf(root_entity),
         ))
         .id();
+
+    spawn_menu_player_renderer(&mut commands, canvas.clone(), render_layers.clone());
 
     // STEP 4: spawn the ui. it must be spawned at root so as not to have transform propogation.
     // but we can give it a relation so despawn still works
@@ -407,7 +380,10 @@ pub fn spawn_diagetic_interface(
                                     scenes: HashMap::from(
                                         [(
                                             "scene1".to_string(),
-                                            "scenes/cornmenu_min.glb".to_string(),
+                                            // `cornmenu_min` also has test scenes. Select the
+                                            // authored gameplay scene instead of relying on the
+                                            // asset default (currently the `stress` scene).
+                                            "scenes/cornmenu_min.gltf#Scene".to_string(),
                                         )], // testing out reflection strings, we want to do a cli thing
                                     ),
                                 },
@@ -604,6 +580,116 @@ impl Cursor {
 #[derive(Debug, Reflect, Component)]
 struct Guys;
 
+/// Root of the isolated Blender collection rendered into the monitor's player box.
+#[derive(Debug, Component)]
+struct MenuPlayerModels;
+
+/// Preserves the Blender pose while code supplies a dependable looping spin fallback.
+#[derive(Debug, Component)]
+struct MenuPlayerModel {
+    slot: usize,
+    base_rotation: Quat,
+}
+
+// These are deliberately grouped visual tuning values. They describe the player box in the
+// 512×512 monitor texture, so they can be adjusted against the Blender composition quickly.
+const MENU_TEXTURE_SIZE: u32 = 512;
+const PLAYER_BOX_ORIGIN: UVec2 = UVec2::new(79, 348);
+const PLAYER_BOX_SIZE: UVec2 = UVec2::new(155, 82);
+const PLAYER_ORTHO_HEIGHT: f32 = 1.05;
+const PLAYER_CAMERA_DISTANCE: f32 = 1.0;
+const PLAYER_SPIN_RADIANS_PER_SECOND: f32 = std::f32::consts::TAU / 4.0;
+
+/// Loads the replaceable Blender collection and configures its complete 3D-to-monitor path.
+/// Swap the GLTF scene name or the tuning constants above when the menu asset is replaced.
+fn spawn_menu_player_renderer(
+    commands: &mut Commands,
+    canvas: Handle<Image>,
+    render_layers: RenderLayers,
+) {
+    commands.spawn((
+        Name::new("Menu player models"),
+        MenuPlayerModels,
+        LoadScene::new("scenes/menu.gltf#Scene.001"),
+        render_layers.clone(),
+    ));
+
+    commands.spawn((
+        Name::new("Menu player viewport camera"),
+        Camera3d::default(),
+        Camera {
+            target: RenderTarget::Image(canvas.into()),
+            // Preserve the 2D menu that was rendered by the lower-order camera.
+            clear_color: ClearColorConfig::None,
+            order: -1,
+            viewport: Some(Viewport {
+                physical_position: PLAYER_BOX_ORIGIN,
+                physical_size: PLAYER_BOX_SIZE,
+                ..default()
+            }),
+            ..default()
+        },
+        Projection::from(OrthographicProjection {
+            scaling_mode: bevy::render::camera::ScalingMode::Fixed {
+                width: PLAYER_BOX_SIZE.x as f32 / MENU_TEXTURE_SIZE as f32 * 2.0,
+                height: PLAYER_ORTHO_HEIGHT,
+            },
+            ..OrthographicProjection::default_3d()
+        }),
+        // The Blender collection is arranged in the YZ plane, so look along X.
+        Transform::from_xyz(PLAYER_CAMERA_DISTANCE, 0.0, 0.0)
+            .looking_at(Vec3::ZERO, Dir3::Y),
+        render_layers.clone(),
+    ));
+
+    // The source collection has no punctual lights. This layer-local fill preserves readable
+    // colors without affecting the dark lobby or its main camera.
+    commands.spawn((
+        Name::new("Menu player fill light"),
+        DirectionalLight {
+            illuminance: 1_000.0,
+            shadows_enabled: false,
+            ..default()
+        },
+        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, 0.5, -0.8, 0.0)),
+        render_layers,
+    ));
+}
+
+fn identify_menu_player_models(
+    trigger: Trigger<SceneInstanceReady>,
+    roots: Query<(), With<MenuPlayerModels>>,
+    children: Query<&Children>,
+    names: Query<&Name>,
+    transforms: Query<&Transform>,
+    mut commands: Commands,
+) {
+    if !roots.contains(trigger.target()) {
+        return;
+    }
+
+    for entity in children.iter_descendants(trigger.target()) {
+        let Ok(name) = names.get(entity) else {
+            continue;
+        };
+        let Some(slot) = name
+            .as_str()
+            .strip_prefix("guy")
+            .and_then(|number| number.parse::<usize>().ok())
+            .and_then(|number| number.checked_sub(1))
+        else {
+            continue;
+        };
+        let Ok(transform) = transforms.get(entity) else {
+            continue;
+        };
+        commands.entity(entity).insert(MenuPlayerModel {
+            slot,
+            base_rotation: transform.rotation,
+        });
+    }
+}
+
 struct GuysPlugin;
 impl Plugin for GuysPlugin {
     fn build(&self, app: &mut App) {
@@ -615,7 +701,33 @@ impl Plugin for GuysPlugin {
                 text.0 = state.players.len().to_string();
             }
         }
+        fn update_models(
+            state: Single<&crate::systems::network::NetworkState>,
+            mut models: Query<(&MenuPlayerModel, &mut Visibility)>,
+        ) {
+            let visible_players = state.players.len();
+            for (model, mut visibility) in &mut models {
+                *visibility = if model.slot < visible_players {
+                    Visibility::Visible
+                } else {
+                    Visibility::Hidden
+                };
+            }
+        }
+        fn spin_models(time: Res<Time>, mut models: Query<(&MenuPlayerModel, &mut Transform)>) {
+            for (model, mut transform) in &mut models {
+                // The animation clips exist in the Blender asset; this fallback keeps the
+                // intended looping motion while each player is independently network-visible.
+                let phase = model.slot as f32 * std::f32::consts::FRAC_PI_2;
+                transform.rotation = model.base_rotation
+                    * Quat::from_rotation_x(
+                        time.elapsed_secs() * PLAYER_SPIN_RADIANS_PER_SECOND + phase,
+                    );
+            }
+        }
         app.add_systems(Update, update);
+        app.add_systems(Update, (update_models, spin_models).after(update));
+        app.add_observer(identify_menu_player_models);
         app.register_type::<Guys>();
     }
 }

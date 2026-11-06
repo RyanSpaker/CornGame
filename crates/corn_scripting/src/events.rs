@@ -57,14 +57,15 @@ impl ScriptEventsExt for App {
 fn register<E: Event + GetTypeRegistration>(app: &mut App, trigger: TriggerFn) {
     app.register_type::<E>();
     let mut registry = app.world_mut().get_resource_or_init::<ScriptEventRegistry>();
-    registry.types.insert(TypeId::of::<E>(), EventType { trigger: Some(trigger), observe: None });
+    registry.types.insert(TypeId::of::<E>(), EventType { trigger: Some(trigger), observe: None, catch_up: false });
 }
 
-/// let scripts listen to a component lifecycle event
-pub(super) fn register_lifecycle<E: EntityEvent + Reflect + GetTypeRegistration + Typed>(app: &mut App, alias: &'static str) {
+/// let scripts listen to a component lifecycle event. `catch_up`: a listener on an entity that already
+/// has the component is called once when it attaches, as if the component had just come
+pub(super) fn register_lifecycle<E: EntityEvent + Reflect + GetTypeRegistration + Typed>(app: &mut App, alias: &'static str, catch_up: bool) {
     app.register_type::<E>();
     let mut registry = app.world_mut().get_resource_or_init::<ScriptEventRegistry>();
-    registry.types.insert(TypeId::of::<E>(), EventType { trigger: None, observe: Some(observe_component::<E>) });
+    registry.types.insert(TypeId::of::<E>(), EventType { trigger: None, observe: Some(observe_component::<E>), catch_up });
     registry.aliases.insert(alias, TypeId::of::<E>());
 }
 
@@ -84,6 +85,8 @@ struct EventType {
     trigger: Option<TriggerFn>,
     /// lifecycle events: spawn a bridge for the component
     observe: Option<fn(&mut World, ComponentId)>,
+    /// see [`register_lifecycle`]
+    catch_up: bool,
 }
 
 /// a listener's event, resolved from its names
@@ -98,11 +101,7 @@ fn resolve(registry: &TypeRegistry, events: &ScriptEventRegistry, name: &str) ->
     if let Some(&id) = events.aliases.get(name) {
         return Ok(id);
     }
-    let registration = registry
-        .get_with_type_path(name)
-        .or_else(|| registry.get_with_short_type_path(name))
-        .ok_or_else(|| format!("unknown type `{name}` (not registered, or an ambiguous short name)"))?;
-    let id = registration.type_id();
+    let id = super::registration(registry, name)?.type_id();
     events
         .types
         .contains_key(&id)
@@ -130,6 +129,28 @@ pub(super) fn resolve_listener(world: &mut World, listener: &ScriptListener) -> 
         }
     };
     Ok(ListenerEvent { event, component })
+}
+
+// CLAUDE
+/// a lifecycle listener that attaches to an entity already holding its component (scene listeners attach
+/// after the entity spawned): queue the call it missed, see [`register_lifecycle`]
+pub(super) fn catch_up(world: &mut World, listener: Entity, script: &ScriptListener, event: &ListenerEvent) {
+    let Some(component) = event.component else { return };
+    if !world.resource::<ScriptEventRegistry>().types[&event.event].catch_up {
+        return;
+    }
+    let Some(target) = world.get::<ListenerOf>(listener).map(|l| l.0) else { return };
+    if !world.get_entity(target).is_ok_and(|e| e.contains_id(component)) {
+        return;
+    }
+    world.resource_mut::<ScriptQueue>().0.push(Call {
+        module: script.module.clone(),
+        function: script.function.clone(),
+        owner: Some(listener),
+        target: Some(target),
+        args: script.args.clone(),
+        event: serde_json::json!({ "entity": entity_key(target) }).to_string(),
+    });
 }
 
 fn observe_component<E: EntityEvent + Reflect + TypePath>(world: &mut World, component: ComponentId) {

@@ -3,6 +3,8 @@
 
 use bevy::{ecs::{component::HookContext, world::DeferredWorld}, math::VectorSpace, prelude::*};
 
+use crate::systems::scripting::ScriptListener;
+
 pub struct SunPlugin;
 impl Plugin for SunPlugin {
     fn build(&self, app: &mut App) {
@@ -14,6 +16,11 @@ impl Plugin for SunPlugin {
         app.register_type::<Revolve>();
         app.register_type::<BlenderMoon>();
         app.register_type::<BlenderShadows>();
+        // CLAUDE
+        app.add_systems(Startup, |mut commands: Commands| {
+            let listener = ScriptListener::new("OnAdd", "scripts/setup.js", "moon").with_component("BlenderMoon");
+            commands.spawn(listener);
+        });
     }
 }
 
@@ -94,44 +101,11 @@ pub fn update_transform_no_rotation(
     }
 }
 
-/// position sun using a blender empty, but scale and put at correct distance
+/// position sun using a blender empty, but scale and put at correct distance: scripts/setup.js#moon (CLAUDE)
 #[derive(Debug, Clone, Component, Reflect)]
 #[require(Moon)]
-#[component(on_add = BlenderMoon::on_add)]
 #[reflect(Component)]
 pub struct BlenderMoon;
-
-impl BlenderMoon {
-    // scale transform to be 1000m from origin, and update scale so it looks the same size
-    fn on_add(
-        mut world: DeferredWorld,
-        HookContext { entity, .. }: HookContext,
-    ) {
-        // Get the original transform if it exists
-        if let Some(mut original_transform) = world.get_mut::<Transform>(entity) {
-            // Calculate the direction from the origin to the current position
-            let direction = original_transform.translation.normalize_or_zero();
-            // Place at 1000 units along that direction (default to Y if zero)
-            let translation = direction * 1000.0;
-
-            if translation == Vec3::ZERO {
-                warn!("no zero");
-                return;
-            }
-
-            // Compute apparent size scaling factor
-            let scale = original_transform.scale * (translation.length() / original_transform.translation.length());
-            // Preserve rotation and scale, update translation and scale for apparent size
-            *original_transform = Transform {
-                translation,
-                rotation: original_transform.rotation,
-                scale,
-            };
-        } else {
-            warn!("no transform");
-        }
-    }
-}
 
 #[derive(Debug, Clone, Component, Reflect)]
 #[component(on_add = BlenderShadows::on_add)]

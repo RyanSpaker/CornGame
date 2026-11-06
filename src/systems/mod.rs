@@ -11,6 +11,7 @@ pub mod animation_context;
 pub mod camera_target;
 pub mod game;
 pub mod renderdoc;
+pub mod scripting;
 
 use bevy::{pbr::FogVolume, prelude::*};
 
@@ -29,6 +30,7 @@ impl Plugin for CornSystemsPlugin {
             animation_context::plugin,
             camera_target::plugin,
             game::GamePlugin,
+            scripting::plugin,
         ));
 
         app.add_systems(Update, ui::toggle_cursor_grab_system );

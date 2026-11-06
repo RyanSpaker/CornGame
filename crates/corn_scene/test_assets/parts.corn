@@ -1,0 +1,5 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs, included by main.corn */
+spawn crate {
+  Kind: Box { size: 2 };
+  spawn lid { Label: "lid"; }
+}

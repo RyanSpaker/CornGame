@@ -28,6 +28,11 @@ impl MeshRecipe {
     }
 }
 
+/// EAS: instuction for claude: this is a bad system. we don't want each operation in js to be made into a recipe and then executed
+///      each of these should be a function registered such that it can be called from js on a Mesh
+///      the primitives as well, should simply be the bevy types, (get as far as you can just exposing bevy types and functions)
+///      each mesh operation should call into rust and execute the change.
+/// 
 /// one step of a recipe. each adds to, or changes, the mesh built so far
 #[derive(Reflect, Clone, Debug, PartialEq)]
 pub enum MeshOp {
@@ -42,6 +47,22 @@ pub enum MeshOp {
     Noise { seed: u32, frequency: f32, amplitude: f32, octaves: u32 },
     SmoothNormals,
     FlatNormals,
+    /// a mesh already built (by a script), by its [`bake`] key, merged in. (a `Mesh` itself doesn't keep
+    /// its vertices through reflection)
+    Baked(u64),
+}
+
+// CLAUDE
+/// meshes made outside recipes that recipes refer to, by key
+static BAKED: std::sync::LazyLock<std::sync::Mutex<(u64, std::collections::HashMap<u64, Mesh>)>> = std::sync::LazyLock::new(Default::default);
+
+/// keeps `mesh` for [`MeshOp::Baked`], giving its key
+pub fn bake(mesh: Mesh) -> u64 {
+    let mut baked = BAKED.lock().unwrap();
+    baked.0 += 1;
+    let key = baked.0;
+    baked.1.insert(key, mesh);
+    key
 }
 
 /// builds a mesh from operations
@@ -70,6 +91,10 @@ pub fn build(ops: &[MeshOp]) -> Result<Mesh, String> {
                 merge(&mut mesh, build(ops)?.transformed_by(transform))?
             }
             MeshOp::Heightfield { size, cells, heights } => merge(&mut mesh, heightfield(*size, *cells, heights)?)?,
+            MeshOp::Baked(key) => {
+                let baked = BAKED.lock().unwrap().1.get(key).cloned().ok_or_else(|| format!("no baked mesh {key}"))?;
+                merge(&mut mesh, baked)?
+            }
             MeshOp::Noise { seed, frequency, amplitude, octaves } => {
                 let mut m = current(&mut mesh, "Noise")?;
                 displace(&mut m, *seed, *frequency, *amplitude, *octaves)?;
@@ -91,9 +116,28 @@ pub fn build(ops: &[MeshOp]) -> Result<Mesh, String> {
     mesh.ok_or_else(|| "an empty mesh recipe".into())
 }
 
+/// the constructors [`shape`] knows
+pub const SHAPES: &[&str] =
+    &["Cuboid", "Sphere", "Cylinder", "Capsule3d", "Cone", "Torus", "Plane3d", "Circle", "Rectangle", "Annulus", "ConicalFrustum"];
+
 /// a primitive by constructor: `Cuboid(x, y, z)`, `Sphere(radius)`, `Cylinder(radius, height)`,
-/// `Capsule3d(radius, length)`, `Cone(radius, height)`, `Torus(inner, outer)`, `Plane3d(width, depth)`
+/// `Capsule3d(radius, length)`, `Cone(radius, height)`, `Torus(inner, outer)`, `Plane3d(width, depth)`.
+/// Flat ones lie in XY facing +Z: `Circle(radius)`, `Rectangle(width, height)`, `Annulus(inner, outer)`.
+/// `ConicalFrustum(radius_top, radius_bottom, height)`. Round ones may take a resolution last
+/// (`Cylinder(0.1, 2, 8)`)
 pub fn shape(name: &str, args: &[f32]) -> Result<Mesh, String> {
+    // CLAUDE: the round shapes with a resolution
+    match (name, args) {
+        ("Cylinder", &[r, h, n]) => return Ok(Cylinder::new(r, h).mesh().resolution(n as u32).build()),
+        ("Cone", &[r, h, n]) => return Ok(Cone::new(r, h).mesh().resolution(n as u32).build()),
+        ("Circle", &[r, n]) => return Ok(Circle::new(r).mesh().resolution(n as u32).build()),
+        ("Annulus", &[inner, outer, n]) => return Ok(Annulus::new(inner, outer).mesh().resolution(n as u32).build()),
+        ("ConicalFrustum", &[top, bottom, h, n]) => {
+            let frustum = ConicalFrustum { radius_top: top, radius_bottom: bottom, height: h };
+            return Ok(frustum.mesh().resolution(n as u32).build());
+        }
+        _ => {}
+    }
     let wrong = |expected: &str| format!("`{name}` takes ({expected}), got {} values", args.len());
     Ok(match (name, args) {
         ("Cuboid", &[x, y, z]) => Cuboid::new(x, y, z).mesh().build(),
@@ -110,7 +154,15 @@ pub fn shape(name: &str, args: &[f32]) -> Result<Mesh, String> {
         ("Torus", _) => return Err(wrong("inner, outer")),
         ("Plane3d", &[w, d]) => Plane3d::default().mesh().size(w, d).build(),
         ("Plane3d", _) => return Err(wrong("width, depth")),
-        _ => return Err(format!("no shape `{name}` (Cuboid, Sphere, Cylinder, Capsule3d, Cone, Torus, Plane3d)")),
+        ("Circle", &[r]) => Circle::new(r).mesh().build(),
+        ("Circle", _) => return Err(wrong("radius")),
+        ("Rectangle", &[w, h]) => Rectangle::new(w, h).mesh().build(),
+        ("Rectangle", _) => return Err(wrong("width, height")),
+        ("Annulus", &[inner, outer]) => Annulus::new(inner, outer).mesh().build(),
+        ("Annulus", _) => return Err(wrong("inner, outer")),
+        ("ConicalFrustum", &[top, bottom, h]) => ConicalFrustum { radius_top: top, radius_bottom: bottom, height: h }.mesh().build(),
+        ("ConicalFrustum", _) => return Err(wrong("radius_top, radius_bottom, height")),
+        _ => return Err(format!("no shape `{name}` ({})", SHAPES.join(", "))),
     })
 }
 

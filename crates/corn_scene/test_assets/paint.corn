@@ -1,0 +1,11 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: assets, named, inline and from another file */
+asset red: Paint { shine: 2; }
+asset red_copy: Paint { shine: 3; base: red; }
+
+spawn a { Painted: red; }
+spawn b { Painted: red; }
+spawn c { Painted: { shine: 5; } }
+spawn d { Painted: "palette.corn#blue"; }
+spawn e { Painted: red_copy; }
+
+[Painted="palette.corn#blue"] { Label: "blue"; }

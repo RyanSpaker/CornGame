@@ -23,7 +23,7 @@ use bevy::{
     asset::{ReflectAsset, UntypedAssetId},
     platform::collections::{HashMap, HashSet},
     prelude::*,
-    reflect::{serde::TypedReflectSerializer, ReflectMut, ReflectRef, TypeRegistry},
+    reflect::{enums::VariantType, serde::TypedReflectSerializer, ReflectMut, ReflectRef, TypeRegistry},
 };
 
 use super::{
@@ -279,6 +279,13 @@ fn read_plain(r: &LiveRef, value: &dyn PartialReflect) -> Option<Read> {
 
 // CLAUDE
 pub fn write(r: &LiveRef, value: Field) -> Result<(), String> {
+    // CLAUDE (claude-sonnet-5-5): a NaN or infinity written to any float field (`Player.yaw`...) reaches bevy's
+    // math later and panics there; math values must also be finite, with rotations normalized
+    let value = match value {
+        Field::Float(f) if !f.is_finite() => return Err(format!("a number must be finite, not {f}")),
+        Field::Math(math) => Field::Math(math.sanitized()?),
+        value => value,
+    };
     if let Some(ptr) = r.cached() {
         // SAFETY: see `resolve`
         if r.changed() && set_leaf(unsafe { &mut *ptr }, &value)? {
@@ -415,7 +422,7 @@ pub fn walk<'a>(value: &'a mut dyn PartialReflect, path: &str) -> Option<&'a mut
     path.split('.').filter(|key| !key.is_empty()).try_fold(value, step)
 }
 
-/// one field down: a name, or an index into tuples, lists and enum variants
+/// one field down: a name, an index into tuples, lists and enum variants, or a string-keyed map's key
 fn step<'a>(value: &'a mut dyn PartialReflect, key: &str) -> Option<&'a mut dyn PartialReflect> {
     let index = key.parse::<usize>().ok();
     match value.reflect_mut() {
@@ -428,6 +435,7 @@ fn step<'a>(value: &'a mut dyn PartialReflect, key: &str) -> Option<&'a mut dyn 
         },
         ReflectMut::List(l) => l.get_mut(index?),
         ReflectMut::Array(a) => a.get_mut(index?),
+        ReflectMut::Map(m) => m.get_mut(&key.to_string()),
         _ => None,
     }
 }
@@ -445,6 +453,7 @@ fn step_ref<'a>(value: &'a dyn PartialReflect, key: &str) -> Option<&'a dyn Part
         },
         ReflectRef::List(l) => l.get(index?),
         ReflectRef::Array(a) => a.get(index?),
+        ReflectRef::Map(m) => m.get(&key.to_string()),
         _ => None,
     }
 }
@@ -484,7 +493,7 @@ macro_rules! numbers {
     (@int $value:ident $i:ident $($t:ty)*) => { $(if let Some($i) = $value.try_downcast_ref::<$t>() { return Some(Field::Int(*$i as i64)); })* };
 }
 
-/// numbers, bools, strings and entities
+/// numbers, bools, strings, entities and enums in a variant without fields
 fn plain_leaf(value: &dyn PartialReflect) -> Option<Field> {
     numbers!(value, float, int);
     if let Some(b) = value.try_downcast_ref::<bool>() {
@@ -495,6 +504,16 @@ fn plain_leaf(value: &dyn PartialReflect) -> Option<Field> {
     }
     if let Some(e) = value.try_downcast_ref::<Entity>() {
         return Some(Field::Str(entity_key(*e)));
+    }
+    // its variant's name, as `get` gives it (None is null there too). a variant with fields is read into
+    if let ReflectRef::Enum(e) = value.reflect_ref() {
+        if e.variant_type() == VariantType::Unit {
+            let option = e.get_represented_type_info().is_some_and(|info| {
+                let path = info.type_path_table();
+                path.module_path() == Some("core::option") && path.ident() == Some("Option")
+            });
+            return Some(if option { Field::Null } else { Field::Str(e.variant_name().into()) });
+        }
     }
     None
 }
@@ -687,5 +706,101 @@ mod tests {
         })
         .unwrap();
         assert_eq!(cached(), 0, "nothing survives the call");
+    }
+
+    // CLAUDE (claude-sonnet-5-5)
+    /// a script can't write NaN, infinity or a non-unit rotation into a component
+    #[cfg_attr(not(target_family = "wasm"), test)]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
+    fn non_finite_and_non_unit_values_are_refused() {
+        let mut world = World::new();
+        world.init_resource::<AppTypeRegistry>();
+        world.resource::<AppTypeRegistry>().write().register::<Fog>();
+        world.resource::<AppTypeRegistry>().write().register::<Transform>();
+        let fog = entity_key(world.spawn(Fog::default()).id());
+        let moved = entity_key(world.spawn(Transform::IDENTITY).id());
+
+        with_world_scope(&mut world, || {
+            let start = component(&fog, "Fog").unwrap().child("falloff").child("start");
+            for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+                assert!(write(&start, Field::Float(bad)).is_err());
+            }
+            assert!(matches!(read(&start), Ok(Read::Value(Field::Float(0.0)))), "a refused write changes nothing");
+
+            let rotation = component(&moved, "Transform").unwrap().child("rotation");
+            assert!(write(&rotation, Field::Math(Math::Quat(Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0)))).is_err());
+            write(&rotation, Field::Math(Math::Quat(Quat::from_xyzw(0.0, 0.0, 0.0, 2.0)))).unwrap();
+            let q = with_value(&rotation, |v| v.try_downcast_ref::<Quat>().copied()).unwrap().expect("a Quat");
+            assert!((q.length() - 1.0).abs() < 1e-6, "rotations are normalized on the way in");
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[derive(Component, Reflect, Default)]
+    #[reflect(Component, Default)]
+    struct Door {
+        state: DoorState,
+        target: Option<f32>,
+    }
+
+    #[derive(Reflect, Default, PartialEq, Debug)]
+    enum DoorState {
+        #[default]
+        Closed,
+        Opening,
+    }
+
+    // CLAUDE
+    /// an enum in a variant without fields reads as the variant's name, Option's None as null
+    #[cfg_attr(not(target_family = "wasm"), test)]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
+    fn unit_variants_read_as_names() {
+        let mut world = World::new();
+        world.init_resource::<AppTypeRegistry>();
+        world.resource::<AppTypeRegistry>().write().register::<Door>();
+        world.resource::<AppTypeRegistry>().write().register::<Fog>();
+        let entity = world.spawn((Door::default(), Fog::default())).id();
+        let door = entity_key(entity);
+
+        with_world_scope(&mut world, || {
+            let d = component(&door, "Door").unwrap();
+            let name = |r: &LiveRef| match read(r) {
+                Ok(Read::Value(field)) => field,
+                _ => panic!("not a value"),
+            };
+            assert_eq!(name(&d.child("state")), Field::Str("Closed".into()));
+            assert_eq!(name(&d.child("target")), Field::Null);
+            write(&d.child("state"), Field::Str("Opening".into())).unwrap();
+            assert_eq!(name(&d.child("state")), Field::Str("Opening".into()), "the cache was cleared by the variant change");
+            assert!(matches!(read(&component(&door, "Fog").unwrap().child("falloff")), Ok(Read::Ref(_))), "a variant with fields is a ref");
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(world.get::<Door>(entity).unwrap().state, DoorState::Opening);
+    }
+
+    // CLAUDE
+    /// a string-keyed map's values by key
+    #[cfg_attr(not(target_family = "wasm"), test)]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
+    fn map_keys_are_fields() {
+        #[derive(Component, Reflect, Default)]
+        #[reflect(Component, Default)]
+        struct Rows(HashMap<String, f32>);
+
+        let mut world = World::new();
+        world.init_resource::<AppTypeRegistry>();
+        world.resource::<AppTypeRegistry>().write().register::<Rows>();
+        let entity = world.spawn(Rows([("reveal".to_string(), 1.0)].into_iter().collect())).id();
+        let rows = entity_key(entity);
+        with_world_scope(&mut world, || {
+            let r = component(&rows, "Rows").unwrap();
+            write(&r.child("0").child("reveal"), Field::Float(2.0)).unwrap();
+            assert!(matches!(read(&r.child("0").child("nope")), Ok(Read::Missing)));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(world.get::<Rows>(entity).unwrap().0["reveal"], 2.0);
     }
 }

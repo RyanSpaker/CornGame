@@ -1,20 +1,19 @@
-use std::{marker::PhantomData, time::Duration};
+use std::time::Duration;
 
-use avian3d::prelude::Collider;
-use bevy::{audio::Volume, prelude::*};
+use bevy::prelude::*;
 
-use crate::systems::{audio::{Fade, WindNoise}, character::Player};
+use crate::systems::{audio::{Fade, WindNoise}, scripting::ScriptListener};
 
 pub struct SoundtrackPlugin;
 
 impl Plugin for SoundtrackPlugin {
     fn build(&self, app: &mut App) {
-        app.register_type::<DelayCounter>();
         app.register_type::<Soundtrack>();
         app.register_type::<SoundTrackOnEnter>();
-        app.add_observer(SoundTrackOnEnter::enter);
-        app.add_observer(SoundTrackOnEnter::exit);
-        app.add_systems(Update, SoundTrackOnEnter::delay);
+        // entering and leaving zones is scripted: assets/scripts/music.js (CLAUDE)
+        app.add_systems(Startup, |mut commands: Commands| {
+            commands.spawn(ScriptListener::new("OnAdd", "scripts/music.js", "zone").with_component("SoundTrackOnEnter"));
+        });
         app.add_systems(Update, SoundTrackOnEnter::attenuate);
     }
 }
@@ -28,107 +27,14 @@ pub struct Soundtrack;
 #[require(avian3d::prelude::CollisionEventsEnabled)]
 #[require(avian3d::prelude::Sensor)]
 #[require(avian3d::prelude::Collider = avian3d::prelude::Collider::cuboid(2.0,2.0,2.0) )]
+/// a music zone: data for scripts/music.js (CLAUDE)
 pub struct SoundTrackOnEnter {
-    track: String,
-    delay: Option<f32>,
-    fade_on_leave: bool,
-}
-
-#[derive(Debug, Default, Clone, Component, Reflect)]
-#[reflect(Component)]
-pub struct DelayCounter {
-    counter: f32,
-    // idea is that a single entity might need multiple of these.
-    // _dummy: PhantomData<T>
+    pub track: String,
+    pub delay: Option<f32>,
+    pub fade_on_leave: bool,
 }
 
 impl SoundTrackOnEnter {
-    /// system to play a track when entering a avian sensor
-    fn exit(
-        event: Trigger<avian3d::prelude::OnCollisionEnd>,
-        mut commands: Commands,
-        player: Single<Entity, With<Player>>,
-        sensors: Query<(Entity, &Self)>,
-        soundtrack: Query<Entity, With<Soundtrack>>,
-    ) {
-        let Ok((entity, conf)) = sensors.get(event.target()) else{
-            return;
-        };
-
-        if event.body.unwrap_or(event.collider) != *player {
-            return;
-        }
-
-        dbg!(&entity);
-        commands.entity(entity).remove::<DelayCounter>();
-
-        let Ok(soundtrack) = soundtrack.single() else {
-            return;
-        };
-
-        // TODO what about multiple soundtracks, or if this collider is not responsible for the current soundtrack
-        if conf.fade_on_leave {
-            info!("Stop soundtrack");
-            commands.entity(soundtrack).insert(Fade {
-                duration: Duration::from_secs(2),
-                target: 0.0,
-            });
-        }
-    }
-
-    fn enter(
-        event: Trigger<avian3d::prelude::OnCollisionStart>,
-        mut commands: Commands,
-        player: Single<Entity, With<Player>>,
-        mut sensors: Query<(Entity, &Self, Option<&DelayCounter>)>,
-    ) {
-        let Ok((entity, conf, delay)) = sensors.get_mut(event.target()) else{
-            return;
-        };
-
-        if event.body.unwrap_or(event.collider) != *player {
-            return;
-        }
-
-        dbg!(&entity);
-
-        if delay.is_none() {
-            commands.entity(entity).insert(DelayCounter::default());
-        }
-    }
-
-    fn delay(
-        mut sensors: Query<(Entity, &Self, &mut DelayCounter)>,
-        mut commands: Commands,
-        asset_server: Res<AssetServer>,
-        frame_time: Res<Time>,
-        soundtrack: Query<Entity, With<Soundtrack>>,
-    ){
-        for (entity, conf, mut delay) in sensors.iter_mut(){
-            delay.counter += frame_time.delta_secs();
-            // TODO what if soundtrack did not get despawned
-
-            if delay.counter >= conf.delay.unwrap_or_default() {
-                for s in soundtrack.iter() {
-                    warn!(entity=%s, "soundtrack should have despawned already");
-                    commands.entity(s).despawn();
-                }
-
-                commands.spawn((
-                    Soundtrack,
-                    AudioPlayer::<AudioSource>(asset_server.load(&conf.track)),
-                    PlaybackSettings {
-                        mode: bevy::audio::PlaybackMode::Despawn,
-                        volume: Volume::Linear(1.0),
-                        ..Default::default()
-                    },
-                ));
-
-                commands.entity(entity).remove::<DelayCounter>();
-            }
-        }
-    }
-
     /// UNTESTED
     fn attenuate(
         mut commands: Commands, 

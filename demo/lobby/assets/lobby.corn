@@ -1,0 +1,366 @@
+/* CODEX (GPT-6): lobby case study. No Skein or glTF extras. All game components attach here.
+   Visual/input tuning: Player, Monitor, MonitorView, PreviewSettings, lights and ambient below. */
+
+use lobby;
+
+/* CODEX (GPT-6): isolated small-key struggle hints; thresholds and copy live in this include. */
+include "stuck_player_key_helper.corn";
+
+/* CLAUDE (claude-opus-5-5): the door, the keys and the hook are one-offs, so their logic is here. Carrying
+   (Holdable/Held, R to drop), Say and the prompts are rust (hold.rs, interaction.rs). The door is locked:
+   the big key on the hook is too big; the small one in the back corner goes in its key_slot, then turns. */
+script {
+const one = (e, name) => select(e, `:root [Name="${name}"]`)[0] ?? null;
+const all = (e, name) => select(e, `:root [Name="${name}"]`);
+const holding = (e) => select_one(e, ":root Held");
+const name = (x) => (x == null ? null : get(x, "Name"));
+const say = (text) => trigger(null, "Say", { text });
+const prompt = (x, text) => insert(x, "InteractionText", { prompt: text });
+function sound(path, at, gain = 1) {
+  spawn({ "AudioPlayer<AudioSource>": path, PlaybackSettings: { mode: "Despawn", volume: { Linear: gain }, spatial: true }, Transform: { translation: at } });
+}
+// by the handle: the door's origin is its hinge, the key slot about a metre along it
+function at_handle(door) {
+  const t = get(door, "Transform").translation;
+  return [t.x - 0.98, t.y + 1.08, t.z];
+}
+// the realkey in its slot: the blade (its local -x) through the door, the bow just out of it
+const KEY_IN_SLOT = { translation: [0, 0, -0.024], rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2], scale: [2.476, 2.476, 2.476] };
+
+// "locked" -> "key in" (the realkey is in its slot) -> "open"
+let door = "locked";
+
+// what the door and the hook offer follows the door and what's carried
+function refresh(e) {
+  const held = name(holding(e));
+  const offer = door === "locked" ? (held === "realkey" ? "unlock" : held === "key" ? "unlock door" : "open") : door === "key in" ? "unlock" : "";
+  for (const d of all(e, "door")) prompt(d, offer);
+  for (const h of all(e, "hook")) prompt(h, held === "key" ? "put back" : "");
+}
+// a key was picked up (hold.rs has made it Held by now)
+exports.picked_up = function (e) {
+  refresh(e);
+};
+// CODEX (GPT-6): E only picks up. The independent held F action owns the switch.
+exports.pick_up_flashlight = function (e) {
+  prompt(e, "");
+  refresh(e);
+};
+// CODEX: preserve color/intensity tuning and the switch state across drop and repickup.
+exports.toggle_flashlight = function (e) {
+  if (get(e, "Held") == null) return;
+  const beam = select(e, "SpotLight")[0];
+  if (beam == null) return;
+  const off = get(beam, "Visibility") === "Hidden";
+  insert(beam, "Visibility", off ? "Inherited" : "Hidden");
+};
+// CODEX: dropping restores pickup, preserving the switch state and authored light intensity/color.
+exports.release_flashlight = function (e) {
+  prompt(e, "pick up");
+  refresh(e);
+};
+exports.use_door = function (e) {
+  const held = holding(e);
+  if (door === "locked" && name(held) === "realkey") {
+    remove(held, "Held");
+    remove(held, "Holdable");
+    remove(held, "InteractionText");
+    // in the lock it's part of the door's body, not one of its own
+    remove(held, "Body");
+    remove(held, "RigidBody");
+    insert(held, "ChildOf", one(e, "key_slot"));
+    insert(held, "Transform", KEY_IN_SLOT);
+    sound("sounds/unlock.ogg", at_handle(e));
+    door = "key in";
+  } else if (door === "locked" && name(held) === "key") {
+    say("it's too big, obviously");
+  } else if (door === "locked") {
+    sound("sounds/jostle.ogg", at_handle(e), 0.8);
+    say("it's locked");
+  } else if (door === "key in") {
+    insert(e, "AutoPlay", { clip: "lobby.gltf#Animation1" });
+    sound("sounds/doorcreak.ogg", at_handle(e), 0.9);
+    door = "open";
+  }
+  refresh(e);
+};
+// the big key goes back on its hook, where it was authored
+exports.hang_key = function (e) {
+  const held = holding(e);
+  if (name(held) !== "key") return;
+  const home = get(held, "Holdable").home;
+  remove(held, "Held");
+  insert(held, "Transform", home);
+  // it hangs there, not falling (it's dynamic if it was dropped)
+  insert(held, "Body", "Static");
+  refresh(e);
+};
+
+// CODEX (GPT-6): note lifecycle, following the keys above. Rust only copies/carries/places paper and
+// edits/rasterizes PaperText. Tune the carry size here; resource("PaperSettings") tunes fit and reach.
+const BAD_WORDS = new Set([
+  "ass", "asshole", "assholes", "bastard", "bastards", "bitch", "bitches", "bullshit",
+  "cock", "cocks", "cocksucker", "crap", "cunt", "cunts", "dick", "dickhead", "dumbass",
+  "fuck", "fucked", "fucker", "fuckers", "fucking", "motherfucker", "motherfuckers",
+  "piss", "pissed", "prick", "pussy", "shit", "shitty", "slut", "sluts", "twat", "whore", "whores"
+]);
+const NOTE_REJECTION_SECONDS = 1.5;
+let noteBusy = false;
+let noteTaken = false;
+// CODEX: exact words avoid rejecting harmless words like "class" or "hello".
+const hurtful = (text) => (text.toLowerCase().match(/[a-z]+/g) ?? []).some(word => BAD_WORDS.has(word));
+const sheets = (stack) => [1, 2, 3, 4].map(i => select(stack, `[Name="postit${i}"]`)[0]).filter(x => x != null);
+exports.setup_notes = function (stack) {
+  const notes = sheets(stack);
+  const visible = notes.find(n => get(n, "Visibility") !== "Hidden") ?? notes[0];
+  for (const n of notes) insert(n, "Visibility", n === visible ? "Inherited" : "Hidden");
+};
+// CODEX: a coroutine keeps this one-off state machine beside the door/hook logic. One sheet at a time.
+exports.take_note = function* (stack) {
+  if (noteBusy || holding(stack) != null) return;
+  const notes = sheets(stack);
+  const source = noteTaken ? notes[Math.floor(Math.random() * notes.length)]
+    : notes.find(n => get(n, "Visibility") !== "Hidden");
+  if (source == null) return;
+  noteBusy = true;
+  noteTaken = true;
+  const note = spawn({ Name: "post-it", Transform: {}, Paper: {},
+    Holdable: { screen_height: 0.16, below: 0.05, face_camera: true } });
+  trigger(null, "CopyPaper", { entity: note, source });
+  insert(source, "Visibility", "Hidden");
+  yield;
+  // The carry mechanic removes Held when E posts the paper, then supplies an editor.
+  while (get(note, "Held") != null) yield;
+  while (get(note, "PaperText")?.action === "") yield;
+  const message = get(note, "PaperText");
+  if (message == null) { noteBusy = false; return; }
+  insert(note, "PaperText", { editing: false });
+  noteBusy = false;
+  if (message.action === "discard" || hurtful(message.text)) {
+    if (message.action !== "discard") yield NOTE_REJECTION_SECONDS;
+    // Non-spatial: paper can be on any side of the player; its sound outlives the despawn.
+    spawn({ "AudioPlayer<AudioSource>": "sounds/paper_crumple.ogg", PlaybackSettings: { mode: "Despawn" } });
+    despawn(note);
+    if (message.action !== "discard") trigger(null, "SayCentered", { text: "better not, might hurt someones feelings" });
+  }
+};
+}
+
+/* CODEX: the cabin body owns the walls/floor; top-level props below own their child colliders. */
+Body: Static;
+
+include "lobby.gltf#Scene0" {
+  /* CODEX: Blender owns the voicebox's horizontal position and full rotation. Raycast tunes its height. */
+  #voice_box_spawn {
+    VoiceBoxSpawn: { ray_height: 0.5; ray_distance: 4; gap: 0.002; }
+  }
+  /* CODEX — GPT-6.1: Blender positions the radio above barrel_freestanding; a downward ray fits its feet. */
+  #radio_spawn { RadioSpawn: { ray_height: 0.3; ray_distance: 4; gap: 0.002; } }
+  /* CODEX: Marker transforms define inner/outer ellipsoids, including child offsets, rotations and
+     nonuniform scales. Fade is linear between intersections along the inner-center-to-radio ray.
+     Secret reception uses the RADIO position, not the listener; keep the outer shape around the inner. */
+  #radio_signal_drone { RadioSignal: { frequency: 0.9; sound: "sounds/radio/drone.ogg"; gain: 1; } }
+  #radio_signal_near { RadioSignal: { frequency: 0.9; sound: "sounds/radio/near.ogg"; gain: 1; } }
+  #radio_signal_numbers { RadioSignal: { frequency: 0.9; sound: "sounds/radio/numbers.ogg"; gain: 1; } }
+  #radio_signal_message { RadioSignal: { frequency: 0.2; sound: "sounds/radio/message.ogg"; gain: 1; } }
+  #radio_signal_drone_falloff, #radio_signal_near_falloff,
+  #radio_signal_numbers_falloff, #radio_signal_message_falloff { RadioFalloff: default; }
+  /* Bevy's glTF animation player is on this animation's authored hierarchy root. */
+  #ceiling_light {
+    AutoPlay: { clip: "lobby.gltf#Animation0"; repeat: true; }
+  }
+  #Spot > SpotLight { SpotLight.shadow_maps_enabled: true; }
+  /* CLAUDE: the Sun is not a light: its direction/colour/strength feed the moon's material (moon_shader.rs).
+     The overhead spot is the only light that keeps its shadow on WebGL2 (scene.rs web_shadows). */
+  #Sun > #Sun { MoonSun: default; }
+  #ceiling_light #Spot { WebShadow: default; }
+
+  #skybox {
+    Transform: { translation: [0, 0, 0]; rotation: [0, 0, 0, 1]; scale: [3000, 3000, 3000]; }
+    Mesh3d { NotShadowCaster: default; NotShadowReceiver: default; }
+  }
+
+  #moon {
+    Orbit: { distance: 1000; radians_per_second: -0.002; }
+    DirectionalLight: { color: #ffffff; illuminance: 30; shadow_maps_enabled: true; shadow_depth_bias: 0.02; shadow_normal_bias: 1.8; }
+    MoonSurface: default;
+    include "moon.gltf#Scene0" as child;
+    Mesh3d { NotShadowReceiver: default; }
+  }
+
+  /* Scene entry replaces SoundTrackOnEnter: this standalone lobby starts immediately. */
+  #sound {
+    AudioPlayer<AudioSource>: "sounds/crickets.ogg";
+    PlaybackSettings: { mode: Loop; volume: Linear(0.35); }
+  }
+
+  /* The authored SpawnLocation is now the local camera, with no character/network bootstrap. */
+  #spawn {
+    Player: { speed: 2.5; run_speed: 4; sensitivity: 0.002; yaw: -0.65; pitch: -0.08; radius: 0.25; eye_height: 1.68; step: 0.35; face_spawn_view: false; }
+    Camera3d: default;
+    Camera: { clear_color: Custom(#030408); }
+    Msaa: Off;
+    AmbientLight: { color: #ff0000; brightness: 0.1; affects_lightmapped_meshes: false; }
+    Transform.translation.y: 1.68;
+    Transform.translation.z: 1.6;
+    SpatialListener: default;
+  }
+
+  /* CLAUDE: colliders only where something can touch: the shell's curved walls as meshes (a hull would
+     fill the room or the doorway), the furniture and things on it as convex hulls. The floor is a plane
+     (`spawn floor` below). None on the corn (LOD2*), roof, ceiling light, sky or the keys. */
+  #"Cylinder.001", #"Cylinder.002", #"Cylinder.003", #"Cylinder.004",
+  #"Cylinder.006", #"Cylinder.007", #"Cylinder.008" {
+    ColliderConstructorHierarchy: { default_constructor: TrimeshFromMesh; }
+  }
+  #barrel, #"barrel.001", #"barrel.002", #"barrel.003", #Cylinder, #Plane,
+  #"wenjianaigui.001", #pc, #"Desktop office computer",
+  #"Gigabyte Computer", #"Main case", #BODY, #NumpadIntro, #"NumpadIntro.001", #"NumpadIntro.002",
+  #"White G915 keyboard.001", #"White G915 keyboard.002" {
+    /* CODEX: one body per top-level prop, shared by all its mesh colliders. */
+    Body: Static;
+    ColliderConstructorHierarchy: { default_constructor: ConvexHullFromMesh; }
+  }
+  /* CODEX (GPT-6): trimeshes let dropped props settle on the table and radio barrel.
+     Include the barrel's nested Cylinder so its shared convex rule cannot override this choice.
+     TODO: fix convex-hull contact instability or replace these with authored colliders.
+     TODO: retry convex hulls when Avian switches from Parry to the author's WIP collision library, Peck. */
+  #tabletop, #barrel_freestanding, #barrel_freestanding #Cylinder {
+    Body: Static;
+    ColliderConstructorHierarchy: { default_constructor: TrimeshFromMesh; }
+  }
+  #"Dell Optiplex 3000 SFF" {
+    Body: Static;
+    ColliderConstructorHierarchy: { default_constructor: ConvexHullFromMesh; }
+  }
+
+  /* CLAUDE: dooropen (Animation1) swings it: a kinematic body of its own, so its hulls (and the key in its
+     slot) go with it; the scene's static body doesn't follow animated children */
+  #door {
+    Body: Kinematic;
+    ColliderConstructorHierarchy: { default_constructor: ConvexHullFromMesh; }
+    InteractionText: { prompt: "open"; range: 2.5; }
+    on Interact: use_door;
+  }
+  /* CLAUDE: the big key, on its hook by the door. Taken, the hook offers putting it back. Static on the hook,
+     dynamic once dropped, its collider a box fitted to its mesh. */
+  #key {
+    /* CODEX: large key: lower, heavier metallic clank than the tiny real key. */
+    KickSound: { sound: "sounds/kicks/large_key.ogg"; gain: 0.9; }
+    Body: Static;
+    FittedBox: default;
+    Restitution: { coefficient: 0.5; }
+    Holdable: { droppable: true; }
+    InteractionText: { prompt: "pick up"; range: 2.5; }
+    on Interact: picked_up;
+  }
+  #hook {
+    InteractionText: { prompt: ""; range: 2.5; }
+    on Interact: hang_key;
+  }
+  /* CODEX (GPT-6): only the OUTER flashlight is a body/holdable. Its inner namesake and Spot keep
+     their exported transforms. The outer node's local -X is the beam direction; leave its authored
+     vertical window pose alone until pickup. Holdable tuning can be overridden on any prop:
+     depth_scale 0.5, below 0.05, center_on_collider true; center_offset [x,y,z] overrides the center
+     in the outer node's local space (use [0,0,0] to hold by the origin). */
+  :root > #flashlight {
+    /* CODEX: hollow metal tube with a short lens/switch rattle. */
+    KickSound: { sound: "sounds/kicks/flashlight.ogg"; gain: 0.85; }
+    Body: Static;
+    FittedBox: default;
+    /* CODEX: flashlight-only tuning: 18% below center, closer carry, and 60% camera pitch. */
+    Holdable: { droppable: true; toggle_prompt: "toggle"; below: 0.18; depth_scale: 0.18; aim_forward: [-1, 0, 0]; aim_pitch: 0.6; }
+    InteractionText: { name: "flashlight"; prompt: "pick up"; range: 2.5; }
+    on Interact: pick_up_flashlight;
+    on ToggleHeld: toggle_flashlight;
+    on OnRemove(Held): release_flashlight;
+  }
+  /* CODEX: warm beam calibrated for this scene's EV100 9.7 exposure: 40 lumens was effectively
+     invisible. Tune intensity/range here without changing the camera or other lights. Visibility is
+     the switch, so F preserves tuning. Scope to the flashlight; the ceiling also has a Spot. */
+  #flashlight #Spot > SpotLight {
+    Visibility: Hidden;
+    /* CODEX: wider inner-to-outer cone transition softens the beam edge; angles are radians. */
+    SpotLight: { color: #ffc58f; intensity: 4000; range: 8; radius: 0.015; inner_angle: 0.2; outer_angle: 0.43; shadow_maps_enabled: true; }
+  }
+  /* CODEX: the four authored sheets are reusable templates; only one is visible on the stack. */
+  #postit_stack {
+    PostItStack: default;
+    InteractionText: { name: "post-it notes"; prompt: "take"; range: 2.5; }
+    on OnAdd(PostItStack): setup_notes;
+    on Interact: take_note;
+  }
+  /* CLAUDE: the real key, tiny, in the back corner: no hint; any part of the cursor on its box will do.
+     A dynamic body on the floor (kinematic once carried, none in the key slot), its collider a box fitted
+     to its mesh (physics.rs). */
+  #realkey {
+    /* CODEX: tiny key: bright, light metallic tick and jingle. */
+    KickSound: { sound: "sounds/kicks/small_key.ogg"; gain: 0.65; }
+    Body: Dynamic;
+    FittedBox: default;
+    Restitution: { coefficient: 0.5; }
+    Holdable: { droppable: true; }
+    InteractionText: { prompt: "pick up"; hint: false; range: 2.5; cursor_cast: true; }
+    on Interact: picked_up;
+  }
+
+  /* The old marker was on the mesh's extras. Select its actual primitive explicitly. */
+  #pc [Name=screen] > Mesh3d {
+    Monitor: { texture_size: 512; cursor_speed: 0.4; transition_seconds: 0.4; }
+    InteractionText: { prompt: "use the computer"; active_prompt: "stop using the computer"; range: 2.5; }
+    spawn focus {
+      MonitorView: default;
+      Transform: ${ Transform.from_xyz(0, 4.5, 0.3).looking_at(Vec3.Z.mul(0.4), Vec3.NEG_Z) }
+    }
+  }
+  /* These replace BlenderMouse's name lookup with scoped, authored bounds. */
+  #pc [Name=bounds] { MouseBounds: default; }
+}
+
+/* CLAUDE: the floor, inside and out: flat at the cabin floor's height (the ground mesh's top, 0.012). A big
+   thin box, not a HalfSpace: in avian 0.8 a half-space lets many-vertex convex hulls (the real key) sink
+   into it and jitter, while a box holds them. */
+spawn floor {
+  Transform.translation: [0, -0.488, 0];
+  ColliderConstructor: Cuboid { x_length: 200; y_length: 1; z_length: 200; }
+}
+
+/* CODEX: Initial and permission-loss spawns use the exported voice_box_spawn empty. Stay hidden until
+   its raycast and the glass case bounds are ready; no hardcoded position or rotation here. */
+spawn voice_box {
+  /* CODEX: glass-case tap over a muted base thump; this does not break the case. */
+  KickSound: { sound: "sounds/kicks/voice_box.ogg"; gain: 0.75; }
+  Visibility: Hidden;
+  /* CLAUDE TODO: voice_box.rs requests the mic when the sound entity despawns (`MicAfterSound`). Ideally one
+     generator script does it: yield until the sound is despawned, or a timeout / load error, then request
+     the mic (so a sound that never plays can't leave the player without a voice box). Needs a way to wait
+     on an event or entity, which scripting lacks: yield only takes seconds, a frame, or FixedUpdate. */
+  VoiceBox: { sound: "sounds/voice_box_crack.ogg"; }
+  InteractionText: { name: "voice box"; prompt: "pick up"; font_size: 36; range: 2.5; }
+  /* CLAUDE: held, E puts it in (voice_box.rs); R drops it. Its own body (static until dropped, hold.rs),
+     its collider a box fitted to the glass case alone (physics.rs): the larynx parts sticking out don't count */
+  Holdable: { droppable: true; use_prompt: "put it in"; }
+  Body: Static;
+  /* CLAUDE: a little bounce when dropped: averaged with the floor (0), 0.25 */
+  Restitution: { coefficient: 0.5; }
+  include "voice_box.gltf#Scene0" as child {
+    #case { FittedBox: default; }
+  }
+}
+
+/* CODEX — GPT-6.1: radio.corn owns the whole prop; lobby only chooses its spawn marker and signals. */
+spawn radio {
+  include "radio.corn";
+}
+
+/* A separate layer/view composites the four authored Blender models into the desktop. */
+spawn previews {
+  /* Original view and exported transforms. Play the original clips directly, looping at their
+     authored 1.25-second duration. There are no procedural position/rotation/scale overrides. */
+  PreviewSettings: { players: 1; ortho_height: 2; view_center: [0, 0, 0]; camera_distance: 1; viewport_origin: [0, 0]; viewport_size: [512, 512]; }
+  include "players.gltf#Scene0" as child {
+    #"Collection 2" {
+      AutoPlay: { clips: ["players.gltf#Animation0", "players.gltf#Animation1", "players.gltf#Animation2", "players.gltf#Animation3"]; repeat: true; }
+    }
+  }
+}

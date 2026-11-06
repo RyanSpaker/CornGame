@@ -1,0 +1,28 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs */
+.solid { Kind: Static; }
+.solid { Label: "second rule of the class"; }
+.late { Health.regen: 3; }
+
+Health: { max: 10; }
+spawn player {
+  Health.max: 100;
+  Health.regen: 2;
+  Health: default;
+  class: solid;
+  spawn hat { Health.max: 7; }
+}
+spawn direct { class: solid; Kind: Box { size: 3 }; Health.max: 1; Health: default; }
+spawn no_rules { class: nothing_selects_this; }
+spawn ui {
+  spawn a { Button: default; }
+  spawn b { Button: default; Label: "b"; }
+}
+include "parts.corn#crate";
+include "parts.corn#crate";
+
+Button {
+  spawn icon { Button: default; Label: "icon"; }
+}
+#ui > Button[Label="b"] { Health.max: 5; Health.regen: 1; }
+.solid #hat { Label: "solid hat"; }
+#hat { class: late; }

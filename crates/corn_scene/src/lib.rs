@@ -35,7 +35,10 @@
 //!   with the files' items applied to its root, their `spawn`s as children
 //! - a file attaches them: `spawn level { include "level.gltf#Scene0"; include "level.corn"; }`
 //!
-//! `include` copies at load time, so outer rules reach into what's included. A child that keeps its own
+//! In the last two, the attached files' rules select the gltf's entities by `[Name=lamp]`: `#lamp` only
+//! names what the file itself spawned (see [`build`]).
+//!
+//! `include` copies at load time, so rules can reach into what's included. A child that keeps its own
 //! rules is a component instead: `WorldAssetRoot: "x.corn";` spawns it when the parent spawns.
 //!
 //! - [`doc`]: the syntax and the parsed form; [`names`]: component names and crate precedence
@@ -59,7 +62,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use bevy::asset::{io::Reader, AssetLoader, LoadContext};
 use bevy::prelude::*;
 use bevy::reflect::{TypeRegistry, TypeRegistryArc};
-use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
+use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady, WorldInstanceSpawner};
 use corn_assets::ReflectInlineAsset;
 
 pub use build::{Classes, Included, SceneFileRoot, SceneListener, SceneListeners, Spawned};
@@ -79,6 +82,49 @@ pub fn parse_doc(src: &str, path: &str, registry: &TypeRegistry, precedence: &[S
         }
         Err(errors) => Err(errors.join("\n")),
     }
+}
+
+// CLAUDE
+/// triggered on each entity of a scene file's scene once the whole scene has spawned (children before their
+/// parents), so `on Ready:` can count on its subtree being there. Not for scenes spawned through a
+/// `WorldAssetRoot` inside it: those spawn later, with `Ready`s of their own
+#[derive(EntityEvent, Reflect, Clone, Copy, Debug)]
+#[reflect(Debug, Clone)]
+pub struct Ready {
+    pub entity: Entity,
+}
+
+// CLAUDE
+fn trigger_ready(
+    event: On<WorldInstanceReady>,
+    spawner: Res<WorldInstanceSpawner>,
+    roots: Query<(), With<SceneFileRoot>>,
+    all_children: Query<&Children>,
+    mut commands: Commands,
+) {
+    let instance: HashSet<Entity> = spawner.iter_instance_entities(event.instance_id).collect();
+    let Some(root) = instance.iter().copied().find(|&e| roots.contains(e)) else { return };
+    // depth first, each entity after its children
+    let mut order = vec![];
+    let mut stack = vec![(root, false)];
+    while let Some((e, children_done)) = stack.pop() {
+        if children_done {
+            order.push(e);
+            continue;
+        }
+        stack.push((e, true));
+        if let Ok(children) = all_children.get(e) {
+            stack.extend(children.iter().rev().filter(|c| instance.contains(c)).map(|c| (c, false)));
+        }
+    }
+    // after the commands that attach the scene's script listeners
+    commands.queue(move |world: &mut World| {
+        for entity in order {
+            if world.get_entity(entity).is_ok() {
+                world.trigger(Ready { entity });
+            }
+        }
+    });
 }
 
 /// the crate precedence for bare component names, shared with the loader
@@ -327,11 +373,17 @@ impl AssetLoader for SceneFileLoader {
 pub struct SceneFilePlugin {
     /// the crate precedence file; written with the default order when missing. None: default order
     pub precedence_file: Option<PathBuf>,
+    /// written at startup: every registered type, for editor tooling ([`names::types_dump`]). None: not written
+    pub types_file: Option<PathBuf>,
 }
 
 impl Default for SceneFilePlugin {
     fn default() -> Self {
-        SceneFilePlugin { precedence_file: (!cfg!(target_family = "wasm")).then(|| "assets/scene_precedence.txt".into()) }
+        let native = !cfg!(target_family = "wasm");
+        SceneFilePlugin {
+            precedence_file: native.then(|| "assets/scene_precedence.txt".into()),
+            types_file: native.then(|| "assets/scene_types.json".into()),
+        }
     }
 }
 
@@ -356,6 +408,8 @@ impl Plugin for SceneFilePlugin {
             .register_type::<ChildOf>()
             .register_type::<Children>()
             .register_type::<Name>()
+            .register_type::<Ready>()
+            .add_observer(trigger_ready)
             .add_systems(Update, build::serve);
         value::register_builtin(app);
         corn_assets::register::<WorldAsset>(app);
@@ -366,11 +420,31 @@ impl Plugin for SceneFilePlugin {
     }
 
     // CLAUDE
-    /// reads (or writes) the precedence file once every type is registered
+    /// reads (or writes) the precedence file once every type is registered, and writes the types file
     fn finish(&self, app: &mut App) {
-        let Some(file) = &self.precedence_file else { return };
-        let index = names::TypeIndex::new(&app.world().resource::<AppTypeRegistry>().read());
-        let list = match std::fs::read_to_string(file) {
+        let registry = app.world().resource::<AppTypeRegistry>().read();
+        let index = names::TypeIndex::new(&registry);
+        let list = self.precedence_file.as_ref().map(|file| Self::precedence(file, &index));
+        if let Some(file) = &self.types_file {
+            let default = || names::default_precedence(index.crates());
+            let text = names::types_dump(&registry, &list.clone().unwrap_or_else(default));
+            // unchanged: leave it, so editors watching it don't reload
+            if std::fs::read_to_string(file).ok().as_deref() != Some(text.as_str()) {
+                if let Err(e) = std::fs::write(file, text) {
+                    warn!("can't write {}: {e}", file.display());
+                }
+            }
+        }
+        drop(registry);
+        if let Some(list) = list {
+            *app.world().resource::<ScenePrecedence>().0.write().unwrap() = list;
+        }
+    }
+}
+
+impl SceneFilePlugin {
+    fn precedence(file: &std::path::Path, index: &names::TypeIndex) -> Vec<String> {
+        match std::fs::read_to_string(file) {
             Ok(text) => names::parse_precedence(&text, index.crates()),
             Err(_) => {
                 let list = names::default_precedence(index.crates());
@@ -380,7 +454,6 @@ impl Plugin for SceneFilePlugin {
                 }
                 list
             }
-        };
-        *app.world().resource::<ScenePrecedence>().0.write().unwrap() = list;
+        }
     }
 }

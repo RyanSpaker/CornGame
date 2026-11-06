@@ -9,7 +9,7 @@ pub enum Tok {
     Ident(String),
     Number { value: f64, unit: Option<String> },
     Str(String),
-    /// `#abc`: an id in selectors, a hex color in values
+    /// `#abc`: an id in selectors, a hex color in values. `#"a b"` and `#a\ b` are `a b`
     Hash(String),
     /// `::`
     PathSep,
@@ -108,6 +108,10 @@ impl<'a> Lexer<'a> {
         }
         if c == '#' {
             self.pos += 1;
+            // `#"ceiling light"`: a name that isn't an identifier, as `#ceiling\ light` is too
+            if let Some(quote @ ('"' | '\'')) = self.peek_char() {
+                return token(Tok::Hash(self.string(quote)?));
+            }
             return token(Tok::Hash(self.ident_chars()));
         }
         let digit_at = |i: usize| rest[i..].starts_with(|c: char| c.is_ascii_digit());
@@ -214,10 +218,12 @@ mod tests {
         use Tok::*;
         let id = |s: &str| Ident(s.into());
         assert_eq!(
-            toks(r#"avian3d::RigidBody: Static; #Cube\.002 /* c */ 40px -1.5 50% #ffffff64 "a\"b" .x-y"#),
+            toks(r#"avian3d::RigidBody: Static; #Cube\.002 #a\ b #"a b" /* c */ 40px -1.5 50% #ffffff64 "a\"b" .x-y"#),
             vec![
                 id("avian3d"), PathSep, id("RigidBody"), Punct(':'), id("Static"), Punct(';'),
                 Hash("Cube.002".into()),
+                Hash("a b".into()),
+                Hash("a b".into()),
                 Number { value: 40.0, unit: Some("px".into()) },
                 Number { value: -1.5, unit: None },
                 Number { value: 50.0, unit: Some("%".into()) },

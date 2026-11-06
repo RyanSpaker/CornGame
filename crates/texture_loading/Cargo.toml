@@ -1,0 +1,18 @@
+# CLAUDE (claude-opus-5-5): small-first texture loading from the texture sets tools/ktx2_convert writes; see src/lib.rs.
+[package]
+name = "texture_loading"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { version = "=0.20.0", default-features = false, features = [
+  "bevy_asset", "bevy_image", "bevy_render", "bevy_log", "png", "jpeg", "ktx2", "zstd_rust",
+] }
+async-lock = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+# CLAUDE: `?textures=` picks the set in the browser
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Location", "UrlSearchParams"] }

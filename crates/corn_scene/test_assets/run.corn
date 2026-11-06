@@ -1,0 +1,8 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: a run configuration */
+spawn level { include "thing.fake"; include "props.corn"; }
+spawn player { include "player.corn"; }
+spawn sub { WorldAssetRoot: "sub.corn"; }
+include "mode.corn";
+on ScriptPing: ${ insert(e, "Label", "pinged"); }
+/* the including file beats everything it includes */
+#player { Label: "run"; }

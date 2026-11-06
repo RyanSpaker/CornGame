@@ -148,6 +148,11 @@ impl Plugin for CornPhysicsPlugin {
 
         app.add_observer(BlenderCollider::on_add);
         app.register_type::<BlenderCollider>();
+
+        // scripts can listen for collisions (CLAUDE)
+        use crate::systems::scripting::ScriptEventsExt;
+        app.register_script_event::<OnCollisionStart>()
+            .register_script_event::<OnCollisionEnd>();
     }
 }
 

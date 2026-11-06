@@ -32,9 +32,11 @@
           sqlite.dev
 
           alsa-lib alsa-lib.dev
+          # CODEX (GPT-6): native network_audio encodes/decodes the browser-compatible Opus wire format.
+          libopus libopus.dev
           vulkan-tools vulkan-headers vulkan-loader vulkan-validation-layers
           lutris
-          xorg.libX11 xorg.libXcursor xorg.libXi xorg.libXrandr # To use the x11 feature
+          libX11 libXcursor libXi libXrandr # To use the x11 feature
           wayland
           libxkbcommon
         ];
@@ -48,6 +50,10 @@
 
 					inherit buildInputs;
           nativeBuildInputs = with pkgs; [
+            # CODEX (GPT-6): the lobby's portable web packager uses only Python's standard library.
+            python3
+            # CLAUDE (Opus 5.5): precompresses the lobby's wasm for nginx (Content-Encoding: br).
+            brotli
             nixd
             rustpkgs
             pkg-config
@@ -68,10 +74,11 @@
 
             sccache
             mold-wrapped
+            wild
 
             renderdoc
 						
-						tracy-glfw
+						tracy #-glfw
 						libGL
 
 						rgp #radeon graphics profiler

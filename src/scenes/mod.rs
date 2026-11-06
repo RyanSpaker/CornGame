@@ -52,15 +52,17 @@ impl LoadScene {
                 let path = asset_server.get_path(h.0.id()).map(|p| p.to_string());
                 debug!(path, "{:#?}", gltf);
 
-                let scene = if l.scene != "" {
-                    l.scene.clone().into_boxed_str()
+                let scene = if l.scene.is_empty() {
+                    // Respect the glTF author's default scene. `named_scenes` is a HashMap,
+                    // so taking its first entry made unnamed loads nondeterministic.
+                    gltf.default_scene.clone()
                 } else {
-                    gltf.named_scenes.keys().next().unwrap().clone()
+                    gltf.named_scenes.get(l.scene.as_str()).cloned()
                 };
 
-                match gltf.named_scenes.get(&scene) {
-                    Some(s) => {
-                        commands.entity(entity).insert(SceneRoot(s.clone()));
+                match scene {
+                    Some(scene) => {
+                        commands.entity(entity).insert(SceneRoot(scene));
                     }
                     None => error!(
                         path = l.file,

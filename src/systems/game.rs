@@ -137,7 +137,10 @@ fn sync_levels(
                 UidGen::manual(format!("{}:{}", key.0, key.1))
             ));
 
-            if path.ends_with("glb") || path.ends_with("gltf") {
+            // Scene labels use `asset.gltf#Scene`; inspect the asset portion so a
+            // valid labeled GLTF is not mistaken for a reflected RON component.
+            let asset_path = path.split('#').next().unwrap_or(&path);
+            if asset_path.ends_with("glb") || asset_path.ends_with("gltf") {
                 spawned.insert(LoadScene::new(&*path));
             }else{
                 let path = format!("{{ \"{}\": () }}", path); // ron is a bit annoying

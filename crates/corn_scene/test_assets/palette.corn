@@ -1,0 +1,2 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: an asset other files use by path */
+asset blue: Paint { shine: 9; }

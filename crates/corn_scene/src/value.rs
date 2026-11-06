@@ -11,6 +11,8 @@
 //! - `default` anywhere: the type's whole Default
 //! - `Handle<A>` (registered with corn_assets): `"path"` loads it, `name` is the file's `asset name: ..`,
 //!   and data makes a new asset (registered inline): `{ base_color: #ff0000 }` patches `A::default()`
+//! - `Entity`: `#name` or `select(selector, ..)`, which must match exactly one entity. a list of entities
+//!   takes everything one matches. what they match is looked up before patching ([`EntityRefs`])
 //!
 //! Types the generic rules can't express get a parser hook, [`ReflectParseValue`] type data: implement
 //! [`ParseValue`] and `#[reflect(ParseValue)]` on your own types, or [`RegisterValueParser`] for types
@@ -33,6 +35,8 @@ use bevy::reflect::{
 };
 use corn_assets::{ReflectAssetPath, ReflectInlineAsset};
 
+use crate::doc::Selector;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     /// `2`, `-1.5`, `40px`, `50%`
@@ -54,9 +58,64 @@ pub enum Value {
     Script(usize),
     /// a script's result
     Json(serde_json::Value),
+    /// `select(selector, ..)`: entities, for `Entity` fields (`#name` also is one there)
+    Select(SelectorList),
+}
+
+// CLAUDE
+/// the selectors of a `select(..)`; values compare by identity
+#[derive(Debug, Clone)]
+pub struct SelectorList(pub Arc<Vec<Selector>>);
+
+impl PartialEq for SelectorList {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+// CLAUDE
+/// what the entity references in a value (`#name`, `select(..)`) matched, found before patching
+#[derive(Default)]
+pub struct EntityRefs {
+    pub names: HashMap<String, Vec<Entity>>,
+    /// by the address of the `select(..)`'s selectors
+    pub selects: HashMap<usize, Vec<Entity>>,
+}
+
+impl EntityRefs {
+    /// the matches of an entity reference, None if `value` isn't one
+    pub fn get(&self, value: &Value) -> Option<&[Entity]> {
+        match value {
+            Value::Hex(name) => self.names.get(name).map(Vec::as_slice),
+            Value::Select(list) => self.selects.get(&(Arc::as_ptr(&list.0) as usize)).map(Vec::as_slice),
+            _ => None,
+        }
+    }
 }
 
 impl Value {
+    // CLAUDE
+    /// whether it holds something that may be an entity reference: `select(..)`, or `#name` (which may
+    /// also be a color)
+    pub fn has_ref(&self) -> bool {
+        match self {
+            Value::Select(_) | Value::Hex(_) => true,
+            Value::Call(_, items) | Value::List(items) | Value::Seq(items) => items.iter().any(Value::has_ref),
+            Value::Struct(_, entries) => entries.iter().any(|(_, v)| v.has_ref()),
+            _ => false,
+        }
+    }
+
+    /// each possible entity reference in it, see [`Value::has_ref`]
+    pub fn each_ref<'v>(&'v self, f: &mut impl FnMut(&'v Value)) {
+        match self {
+            Value::Select(_) | Value::Hex(_) => f(self),
+            Value::Call(_, items) | Value::List(items) | Value::Seq(items) => items.iter().for_each(|v| v.each_ref(f)),
+            Value::Struct(_, entries) => entries.iter().for_each(|(_, v)| v.each_ref(f)),
+            _ => {}
+        }
+    }
+
     /// whether `${ .. }` is in it
     pub fn has_script(&self) -> bool {
         match self {
@@ -95,6 +154,17 @@ impl Value {
             Value::Struct(n, _) => format!("{n} {{..}}"),
             Value::List(_) => "[..]".into(),
             Value::Seq(_) => "a list of values".into(),
+            Value::Select(_) => "select(..)".into(),
+        }
+    }
+
+    // CLAUDE
+    /// a plain value as text, for attribute selectors: strings, names, numbers
+    pub fn as_text(&self) -> Option<String> {
+        match self {
+            Value::Str(s) | Value::Path(s) => Some(s.clone()),
+            Value::Num { value, unit } => Some(format!("{value}{}", unit.as_deref().unwrap_or(""))),
+            _ => None,
         }
     }
 }
@@ -108,6 +178,8 @@ pub struct ParseCx<'a> {
     pub named: Option<&'a HashMap<String, UntypedHandle>>,
     /// patches with a script's result (JSON, as scripts write components); None without scripting
     pub json: Option<JsonPatch>,
+    /// what the value's entity references matched; None where entities can't be referenced
+    pub entities: Option<&'a EntityRefs>,
 }
 
 pub type JsonPatch = fn(&mut dyn PartialReflect, &serde_json::Value, &TypeRegistry, Option<&AssetServer>) -> Result<(), String>;
@@ -189,6 +261,13 @@ pub fn patch(target: &mut dyn PartialReflect, value: &Value, cx: &ParseCx) -> Re
         Value::Script(_) => return Err("`${..}` was not run".into()),
         _ => {}
     }
+    if type_id == TypeId::of::<Entity>() {
+        return match entity_ref(value, cx)? {
+            [one] => apply(target, Box::new(*one)),
+            [] => Err(format!("{} matches no entity", value.describe())),
+            many => Err(format!("{} matches {} entities, it must match one", value.describe(), many.len())),
+        };
+    }
     if let Some(hook) = cx.registry.get_type_data::<ReflectParseValue>(type_id) {
         if let Some(v) = (hook.0)(value, cx)? {
             return apply(target, v);
@@ -236,12 +315,32 @@ pub fn patch(target: &mut dyn PartialReflect, value: &Value, cx: &ParseCx) -> Re
             }
             Ok(())
         }
+        // a list of entities: everything the reference matches
+        (ReflectRef::List(_), Value::Select(_) | Value::Hex(_))
+            if matches!(info, TypeInfo::List(l) if l.item_ty().id() == TypeId::of::<Entity>()) =>
+        {
+            let entities = entity_ref(value, cx)?.to_vec();
+            let ReflectMut::List(l) = target.reflect_mut() else { unreachable!() };
+            l.drain();
+            entities.into_iter().for_each(|e| l.push(Box::new(e)));
+            Ok(())
+        }
         (ReflectRef::Opaque(_), value) => match primitive(type_id, value) {
             Some(v) => apply(target, v?),
             None => Err(format!("no parser for `{}`: register one (RegisterValueParser)", info.type_path())),
         },
         _ => Err(expected()),
     }
+}
+
+// CLAUDE
+/// the entities `#name` or `select(..)` matched
+fn entity_ref<'c>(value: &Value, cx: &'c ParseCx) -> Result<&'c [Entity], String> {
+    if !matches!(value, Value::Hex(_) | Value::Select(_)) {
+        return Err(format!("an entity is `#name` or `select(selector)`, got {}", value.describe()));
+    }
+    let refs = cx.entities.ok_or("entities can't be referenced here")?;
+    refs.get(value).ok_or_else(|| format!("{} was not looked up", value.describe()))
 }
 
 fn field_count(target: &dyn PartialReflect) -> usize {
@@ -350,6 +449,10 @@ pub fn default_of(info: &'static TypeInfo, registry: &TypeRegistry) -> Result<Bo
     if let Some(d) = registry.get_type_data::<ReflectDefault>(info.type_id()) {
         return Ok(d.default().into_partial_reflect());
     }
+    // until a reference sets it
+    if info.type_id() == TypeId::of::<Entity>() {
+        return Ok(Box::new(Entity::PLACEHOLDER));
+    }
     let field = |id: TypeId, path: &str| {
         let info = registry.get_type_info(id).ok_or_else(|| format!("`{path}` is not registered"))?;
         default_of(info, registry)
@@ -397,6 +500,63 @@ pub fn default_of(info: &'static TypeInfo, registry: &TypeRegistry) -> Result<Bo
         }
         _ => return Err(format!("`{}` has no Default", info.type_path())),
     })
+}
+
+// CLAUDE
+/// the type at a field path, None if the path isn't there (an enum's field may be in any variant)
+pub(crate) fn type_at(registry: &TypeRegistry, mut info: &'static TypeInfo, path: &[String]) -> Option<&'static TypeInfo> {
+    for field in path {
+        let id = match info {
+            TypeInfo::Struct(s) => s.field(field)?.type_id(),
+            TypeInfo::TupleStruct(s) => s.field_at(field.parse().ok()?)?.type_id(),
+            TypeInfo::Tuple(t) => t.field_at(field.parse().ok()?)?.type_id(),
+            TypeInfo::Enum(e) => e.iter().find_map(|v| match v {
+                VariantInfo::Struct(s) => s.field(field).map(|f| f.type_id()),
+                VariantInfo::Tuple(t) => t.field_at(field.parse().ok()?).map(|f| f.type_id()),
+                VariantInfo::Unit(_) => None,
+            })?,
+            _ => return None,
+        };
+        info = registry.get_type_info(id)?;
+    }
+    Some(info)
+}
+
+// CLAUDE
+/// whether a value of this type can hold an `Entity`
+pub(crate) fn holds_entity(registry: &TypeRegistry, info: &'static TypeInfo) -> bool {
+    fn walk(registry: &TypeRegistry, id: TypeId, seen: &mut Vec<TypeId>) -> bool {
+        if id == TypeId::of::<Entity>() {
+            return true;
+        }
+        if seen.contains(&id) {
+            return false;
+        }
+        seen.push(id);
+        let Some(info) = registry.get_type_info(id) else { return false };
+        let mut ids: Vec<TypeId> = vec![];
+        match info {
+            TypeInfo::Struct(s) => ids.extend(s.iter().map(|f| f.type_id())),
+            TypeInfo::TupleStruct(s) => ids.extend(s.iter().map(|f| f.type_id())),
+            TypeInfo::Tuple(t) => ids.extend(t.iter().map(|f| f.type_id())),
+            TypeInfo::List(l) => ids.push(l.item_ty().id()),
+            TypeInfo::Array(a) => ids.push(a.item_ty().id()),
+            TypeInfo::Set(s) => ids.push(s.value_ty().id()),
+            TypeInfo::Map(m) => ids.extend([m.key_ty().id(), m.value_ty().id()]),
+            TypeInfo::Enum(e) => {
+                for v in e.iter() {
+                    match v {
+                        VariantInfo::Struct(s) => ids.extend(s.iter().map(|f| f.type_id())),
+                        VariantInfo::Tuple(t) => ids.extend(t.iter().map(|f| f.type_id())),
+                        VariantInfo::Unit(_) => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        ids.into_iter().any(|id| walk(registry, id, seen))
+    }
+    walk(registry, info.type_id(), &mut vec![])
 }
 
 fn primitive(type_id: TypeId, value: &Value) -> Option<Result<Box<dyn PartialReflect>, String>> {
@@ -559,7 +719,7 @@ mod tests {
     #[test]
     fn patches() {
         let registry = registry();
-        let cx = ParseCx { registry: &registry, assets: None, named: None, json: None };
+        let cx = ParseCx { registry: &registry, assets: None, named: None, json: None, entities: None };
         let mut big = Big::default();
         let value = Value::Struct(String::new(), vec![
             entry("n", num(3.0)),

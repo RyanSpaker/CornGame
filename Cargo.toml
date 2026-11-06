@@ -3,14 +3,29 @@ name = "corn_game"
 version = "0.1.0"
 edition = "2021"
 
+# CLAUDE: corn_scripting is a member so its own tests (which have dev-dependencies) run from here
+[workspace]
+members = ["crates/corn_assets", "crates/corn_scripting", "crates/corn_dev", "crates/corn_scene", "crates/pylon", "demo/lobby", "tools/ktx2_convert", "crates/texture_loading", "crates/network_audio"]
+exclude = ["forks", "crates/spakernet", ".agents"]
+
 [profile.dev]
 opt-level = 1
 
+# CODEX (GPT-6): deployment builds strip debug data and favor a smaller WebGL2 download.
+[profile.web]
+inherits = "release"
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
 [profile.dev.package."*"]
 opt-level = 3
+debug = false
 
 [profile.dev.package.corn_game]
 opt-level = 1
+debug = "line-tables-only"
 
 [features]
 web = [
@@ -26,7 +41,6 @@ web = [
 # multiple places are NOT combined (see <https://github.com/rust-lang/cargo/issues/5376>).
 getrandom = { version = "0.3", default-features = false, features = ["wasm_js"]}
 getrandom2 = { package="getrandom", version = "0.2", default-features = false, features = ["js"]}
-
 [dependencies]
 # spakernet = { path = "crates/spakernet" }
 
@@ -159,6 +173,8 @@ itertools = "0.14.0"
 bevy_asset_loader = "0.23.0"
 extension-trait = "1.0.2"
 bevy_enhanced_input = "0.18"
+corn_scripting = { path = "crates/corn_scripting" } # (CLAUDE)
+corn_assets = { path = "crates/corn_assets" } # (CLAUDE)
 # bevy_rich_text3d = "0.5.1"
 
 [patch.crates-io]

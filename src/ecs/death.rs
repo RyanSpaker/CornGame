@@ -1,6 +1,11 @@
-use avian3d::prelude::{LinearVelocity, LockedAxes, Position, RigidBody, Sensor};
+use avian3d::prelude::{LinearVelocity, LockedAxes, RigidBody, Sensor};
 use bevy::{
-    ecs::observer, input::mouse, math::FloatPow, prelude::*, render::view::RenderLayers, state::commands, window::CursorOptions
+    ecs::observer,
+    input::mouse,
+    math::FloatPow,
+    prelude::*,
+    state::commands,
+    window::CursorOptions,
 };
 use bevy_dog::settings::DoGSettings;
 use bevy_easings::CustomComponentEase;
@@ -17,15 +22,19 @@ use crate::{
     scenes::{LoadScene, main_menu},
     systems::{
         animation_context::{AnimationContext, AutoPlayAnimation},
-        camera_target::{ControlledBy, Controls},
+        camera_target::Controls,
         character::{Character, Player, SpawnPlayerEvent, controller::CornGameCharController},
         network::ReplicateAuto,
+        scripting::{RunScript, ScriptBundlesExt, ScriptListener},
     },
-    util::{math::{ExpEaseTo, lerp}, specialized_material::SetItemPipelineDbg},
+    util::{
+        math::{ExpEaseTo, lerp},
+        specialized_material::SetItemPipelineDbg,
+    },
 };
 
 // render layer specific to death camera
-pub const DEAD_RENDER_LAYER :usize = 177;
+pub const DEAD_RENDER_LAYER: usize = 177;
 
 pub fn plugin(app: &mut App) {
     app.add_plugins(DeathCharController::plugin);
@@ -68,145 +77,36 @@ pub fn plugin(app: &mut App) {
         },
     );
 
-    // On death
-    app.add_systems(
-        Update,
-        |player: Query<(Entity, Has<Player>), (Added<Dead>, With<Character>)>,
-         main_camera: Query<Entity, With<MainCamera>>,
-         mut commands: Commands,
-         clear: Res<ClearColor>,
-         asset_server: ResMut<AssetServer>| {
-            for (entity, is_local_player) in player {
-                commands
-                    .entity(entity)
-                    .remove::<avian3d::prelude::RigidBody>()
-                    .despawn_related::<Children>(); // remove colliders
+    // On death: a character becoming a ghost is scripted, death.js#ghost (CLAUDE)
+    app.add_systems(Startup, |mut commands: Commands| {
+        commands.spawn(ScriptListener::new("OnAdd", "scripts/death.js", "ghost").with_component("corn_game::ecs::death::Dead"));
+    });
+    script_api(app);
+    // TODO can there be issues with one frame flicker when death seq ends? Perhaps this should be an observer?
 
-                // TODO temp spawn a transparent sphere as orb placeholder
-                commands.entity(entity).with_children(|parent| {
-                    parent.spawn((
-                        Mesh3d::from(
-                            asset_server.add(
-                                Mesh::from(Tetrahedron::default()).scaled_by(Vec3::splat(0.15)),
-                            ),
-                        ),
-                        MeshMaterial3d::from(asset_server.add(StandardMaterial {
-                            base_color: Color::srgba(0.2, 0.5, 1.0, 0.3),
-                            unlit: true,
-                            ..default()
-                        })),
-                    ));
-                });
+    // death sequence: scripted in assets/scripts/death.js, started by `Die` (CLAUDE)
+    // notes kept from the rust version:
+    // RATIONAL: death_seq moves player, and puts him back at the end.
+    // TODO might just be better to spawn a new entity and attach the camera to that.
+    // black screen TODO blood animation https://github.com/bevyengine/bevy/issues/5221
+}
 
-                if is_local_player {
-                    // activate death character controller
-                    // note, could have it be a relation to a character controller, its a 1 to 1
-                    commands
-                        .entity(entity)
-                        .remove::<CornGameCharController>()
-                        .remove::<bevy_tnua::prelude::TnuaController>(); // TODO remove all the tnua crap? perhaps replace entire entity in place
-                    commands
-                        .entity(entity)
-                        .insert_if_new(DeathCharController::bundle());
-
-                    // activate death camera
-                    if let Some(camera) = main_camera.iter().next() {
-                        commands
-                            .entity(camera)
-                            .insert_if_new((
-                                bevy_dog::settings::DoGSettings {
-                                    dog_strength: -10.0,
-                                    enable_layers: Vec4::splat(1.0),
-                                    thresholds: Vec4::new(80.0, 40.0, 20.0, 1.0),
-                                    thresholding: 1,
-                                    ..bevy_dog::settings::DoGSettings::OUTLINE_DITHER
-                                },
-                                bevy_dog::settings::PassesSettings::default(),
-                            ))
-                            .insert((
-                                AmbientLight {
-                                    color: Color::WHITE,
-                                    brightness: 1000.0,
-                                    ..default()
-                                },
-                                DistanceFog {
-                                    color: clear.0, //Color::srgb(0.25, 0.25, 0.25),
-                                    falloff: FogFalloff::Linear {
-                                        start: 4.0,
-                                        end: 22.0,
-                                    },
-                                    ..default()
-                                },
-                            ))
-                            .insert(ControlledBy(entity))
-                            .insert(RenderLayers::default().with(DEAD_RENDER_LAYER));
-                    }
-
-                    // TODO can there be issues with one frame flicker when death seq ends? Perhaps this should be an observer?
-                } else {
-                }
-            }
-        },
-    );
-
-    // death sequence
-    app.add_systems(
-        Update,
-        |this: Single<(Entity, &mut DeathSeq)>, mut commands: Commands, time: Res<Time>| {
-            let (entity, mut this) = this.into_inner();
-            this.timer.tick(time.delta());
-            if this.timer.just_finished() {
-                // RATIONAL: death_seq moves player, and puts him back at the end.
-                // TODO might just be better to spawn a new entity and attach the camera to that.
-                commands
-                    .entity(entity)
-                    .insert(Dead)
-                    .insert(Position::from(
-                        this.death_position.unwrap_or_default().translation,
-                    )) // TODO rotation?
-                    .remove::<DeathSeq>();
-                if let Some(field) = this.death_field {
-                    commands.entity(field).despawn();
-                }
-            }
-        },
-    );
-    app.add_observer(
-        |trigger: Trigger<OnAdd, DeathSeq>,
-         mut player: Query<&mut DeathSeq>,
-         mut commands: Commands,
-         asset_server: Res<AssetServer>| {
-            // RATIONAL: DeathSeq owns the visual death transition. Spawning, and setting up camera belongs here.
-            // TODO test now with black screen.
-
-            // black screen TODO blood animation https://github.com/bevyengine/bevy/issues/5221
-            // bevy fullscreen ui image node
-            let black_screen = commands
-                .spawn((
-                    Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Percent(100.0),
-                        ..default()
-                    },
-                    ImageNode::new(asset_server.load("textures/black_screen_death.jpg")),
-                ))
-                .id();
-
-            let mut death_seq = player.get_mut(trigger.target()).unwrap();
-            death_seq.death_field = Some(black_screen); // so it get's despawned.
-
-            // spooky audio
-            commands.spawn((
-                AudioPlayer::new(asset_server.load("sounds/spooky.ogg")),
-                PlaybackSettings {
-                    mode: bevy::audio::PlaybackMode::Despawn,
-                    volume: bevy::audio::Volume::Linear(0.1),
-                    paused: false,
-                    ..Default::default()
-                },
-            ));
-        },
-    );
+// CLAUDE
+/// what death.js needs registered
+pub fn script_api(app: &mut App) {
+    // what can't be script data: the controller swap, with its input actions
+    app.register_script_bundle("DeathCharController::bundle", |entity| {
+        // note, could have it be a relation to a character controller, its a 1 to 1
+        entity
+            .remove::<CornGameCharController>()
+            .remove::<bevy_tnua::prelude::TnuaController>() // TODO remove all the tnua crap? perhaps replace entire entity in place
+            .insert_if_new(DeathCharController::bundle());
+    });
+    // scripts patch these over their defaults
+    app.register_type::<DoGSettings>()
+        .register_type_data::<DoGSettings, ReflectDefault>()
+        .register_type::<bevy_dog::settings::PassesSettings>()
+        .register_type_data::<bevy_dog::settings::PassesSettings, ReflectDefault>();
 }
 
 #[derive(Debug, Clone, Component, Reflect, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -256,11 +156,11 @@ impl Command for Die {
         let pos = world
             .get::<GlobalTransform>(self.entity)
             .map(|p| p.compute_transform());
-        world.entity_mut(self.entity).insert(DeathSeq {
-            timer: Timer::from_seconds(3.0, TimerMode::Once),
-            death_position: pos,
-            death_field: None,
-        });
+        // scripted: death.js picks the sequence (CLAUDE)
+        let position = pos.unwrap_or_default().translation.to_array();
+        RunScript::new("scripts/death.js", "die", self.entity)
+            .with_args(serde_json::json!({ "position": position }))
+            .apply(world);
 
         // TODO when death sequence is refactored to use seperate camera
         world.entity_mut(self.entity).remove::<Alive>(); //.insert(Dead);
@@ -287,6 +187,7 @@ impl Command for Die {
     }
 }
 
+// CLAUDE: unused since the sequence moved to assets/scripts/death.js. kept for the design notes below
 /// IDEA this should be its own entity, with relation to player. and death field as child, instead of component on player.
 /// this additionally makes sense since different death sequences can be different entities.
 ///
@@ -336,6 +237,8 @@ pub struct DeathCharController {
     /// whether to depress at edges or not.
     use_real_vel_for_drop: bool,
 
+    /// speed after releasing movement input
+    float_speed: f32,
     speed: f32,
     portals: bool,
 
@@ -361,11 +264,13 @@ pub struct DeathCharController {
 impl Default for DeathCharController {
     fn default() -> Self {
         Self {
-            height: 2.8,
+            height: 3.0,
             height_drop: 0.5,
             height_rate: (2.5, 5.0),
             use_real_vel_for_drop: true,
             speed: 5.0,
+            // disabled TODO implement accel based float
+            float_speed: 0.0,
             portals: true,
             gradient_threshold: 0.05,
             gradient_offset: 0.5, // if this is 0.25 it gets bumpy
@@ -479,9 +384,10 @@ impl DeathCharController {
 
                         // narrow fov based on how much we are pushing against the edge
                         // calc before clamping velocity to wall!
+                        let ratio = ((velocity.length() - controller.float_speed) / controller.speed).clamp(0.0, 1.0);
                         target_fov -= -dot_of_norm
                             * controller.fov_narrowing
-                            * (velocity.length() / controller.speed);
+                            * ratio;
 
                         // friction against wall
                         // EAS: not super happy with how this feels. it's too fast near 90deg and too slow in the middleing angles.
@@ -505,10 +411,12 @@ impl DeathCharController {
             transform.translation += velocity * time.delta_secs();
 
             // push down when moving
-            let ratio = match controller.use_real_vel_for_drop {
-                false => (controller.movement.length() / controller.speed).clamp(0.0, 1.0),
-                true => (velocity.length() / controller.speed).clamp(0.0, 1.0),
+            let vel = match controller.use_real_vel_for_drop {
+                false => controller.movement.length(),
+                true => velocity.length() 
             };
+
+            let ratio = ((vel - controller.float_speed) / controller.speed).clamp(0.0, 1.0);
 
             let target = controller.height - ratio * controller.height_drop;
             let rate = if target < transform.translation.y {
@@ -592,6 +500,11 @@ impl DeathCharController {
         let mut v = movement.value.extend(0.0).xzy();
         v.z = -v.z;
 
+        // TODO better float. should work like momentum, not mocking input. We should have accel too
+        if v.length_squared() < controller.float_speed {
+            v = v.normalize() * controller.float_speed;
+        }
+
         // XXX annoying detail of bei: this stops being emitted when there is no input, so I never set movement to 0
         // NOTE: I actually like that there is always some slow movement. feels floaty
         // I could observe release, but it would be better to move all movement logic here, so we aren't doing cornsensors tests if we don't have to.
@@ -601,14 +514,16 @@ impl DeathCharController {
     }
 }
 
-fn spawn_dead(
-    query: Query<Entity, With<Player>>,
-    mut commands: Commands
-){
-    let player = query.single().unwrap_or_else(|_|commands.spawn((Player::bundle(), 
-    // prevent panic in death controller
-    Transform::default())).id());
+fn spawn_dead(query: Query<Entity, With<Player>>, mut commands: Commands) {
+    let player = query.single().unwrap_or_else(|_| {
+        commands
+            .spawn((
+                Player::bundle(),
+                // prevent panic in death controller
+                Transform::default(),
+            ))
+            .id()
+    });
     commands.entity(player).insert(Dead);
     commands.trigger(SpawnPlayerEvent::default());
 }
-

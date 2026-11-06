@@ -1,0 +1,21 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: `script { }` in a body builds children, `on OnAdd(Comp)` */
+script {
+  function build_ring(e, count) {
+    for (let i = 0; i < count; i++) spawn({ ChildOf: e, Health: { max: i } });
+  }
+  exports.ready = (e) => insert(e, "Label", "ready");
+}
+
+spawn ring {
+  Health: { max: 5; }
+  script { build_ring(e, get(e, "Health").max); }
+  /* the scene gives ring its Health before the listener exists: it's called once anyway */
+  on OnAdd(Health): ready;
+}
+
+/* rules see what scripts spawned */
+#ring > Health { Label: "lamp"; }
+
+/* what this file's scripts spawn is this file's: `#name` names it */
+spawn shelf { script { spawn({ ChildOf: e, Name: "bulb" }); } }
+#bulb { Label: "named"; }

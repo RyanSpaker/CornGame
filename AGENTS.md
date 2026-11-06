@@ -1,0 +1,7 @@
+1. we REQUIRE strong seperation of ai written code/docs and human written. 
+   - NEVER write to any documentations files except those marked "CODEX"/"CLAUDE" or "AGENT" at the top. In particular never write to README or DEVLOG. 
+   - put agent name "CODEX" or "CLAUDE" and the model at the top of any files you create or meaningfully replace. comment CODEX or CLAUDE above any functions/structs/etc created by the agent, as well as any large code blocks. targeted changes do not require annotation. 
+   - you many create documentation files in .agents/doc for memory purposes, you may create throwaway code in .agents/tmp. In both cases, the date of creation and purpose should be on the first line, after the agent name. 
+2. Unless instruction explicity indicates you should make changes, always prompt whether changes should be made. Do not assume a statement or question is an instruction to edit.
+3. this repo uses a nix flake for dev env, and nix is available for programs you need.
+4. there is a changelog in .agents/doc/changelog.md which should be updated accoring to the instructions and example in the first 20 lines of the file. Changelog is only to be used when editing one of the repo's main deliverables (tests, utils, and temporary fixtures excluded). 

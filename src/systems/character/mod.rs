@@ -107,6 +107,8 @@ impl Plugin for MyCharacterPlugin {
 pub struct CharacterNetworkPlugin;
 impl Plugin for CharacterNetworkPlugin {
     fn build(&self, app: &mut App) {
+        app.register_type::<Player>();
+        app.register_type::<controller::WalkDisabled>();
         app.register_component::<Character>();
         app.register_component::<MyAnimationState>();
     }
@@ -118,7 +120,8 @@ impl Plugin for CharacterNetworkPlugin {
 pub struct Character;
 
 // The client's player entity
-#[derive(Debug, Component)]
+#[derive(Debug, Component, Reflect)]
+#[reflect(Component)]
 pub struct Player;
 impl Player {
     pub fn bundle() -> impl Bundle {

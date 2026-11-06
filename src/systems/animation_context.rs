@@ -173,10 +173,18 @@ impl AnimationContext {
 }
 
 #[derive(Debug, Component, Reflect)]
-#[reflect(Component)]
+#[reflect(Component, Default)]
 #[require(AnimationContext)]
 pub struct AutoPlayAnimation{
     pub repeat: bool,   
+}
+
+impl Default for AutoPlayAnimation {
+    fn default() -> Self {
+        // Older GLTF exports stored this component as `{}` while it was a marker.
+        // Preserve that marker's looping behavior when reflecting those assets back in.
+        Self { repeat: true }
+    }
 }
 
 // #[derive(Debug, Component, Reflect)]

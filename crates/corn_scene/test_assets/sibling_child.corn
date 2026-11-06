@@ -1,0 +1,3 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: a scene of this file spawning another isn't a loop */
+spawn user { WorldAssetRoot: "sibling_child.corn#used"; }
+spawn used { Label: "used"; }

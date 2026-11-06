@@ -10,6 +10,16 @@ serde = "1"
 serde_json = "1"
 corn_assets = { path = "../corn_assets" }
 
+[features]
+default = ["mesh", "remote_console"]
+# `mesh()`, `Cuboid(..)`: scripts build meshes (in rust, as they call)
+mesh = ["corn_assets/mesh"]
+# time host calls and drive_scripts (see src/profile.rs)
+profile = []
+# the remote console (on by default; native only, see src/remote_console.rs): `screenshot()`, `record()`, `exit()` for scripts, and with
+# CORN_DEV=<port> a local socket agents send js to (crates/corn_dev is its client)
+remote_console = ["bevy/bevy_render"]
+
 # native: V8
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 v8 = "152"

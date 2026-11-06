@@ -1,0 +1,13 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs */
+spawn holder {
+  Kind: Box { size: 8 };
+  include "thing.fake" {
+    /* the body names what's included */
+    #inner { Health.max: 7; }
+  }
+}
+spawn plain { include "thing.fake"; }
+/* this file didn't spawn #inner, so it doesn't name it */
+#inner { Health.regen: 1; }
+/* but anything else selects it */
+[Name=inner] { Label: "by rule"; }

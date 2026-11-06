@@ -256,6 +256,7 @@ impl Plugin for CornGame {
                 .expect("Failed to serialize type registry");
             std::fs::write("type_registry.json", serialized)
                 .expect("Failed to write type registry");
+            export_registry_defaults(registry);
             if cli.export_registry {
                 // if using cli flag, just write json and exit
                 std::process::exit(0);
@@ -316,3 +317,28 @@ impl Plugin for StressTestPlugin {
         });
     }
 } 
+
+/// Same as the registry export, but each type that has `ReflectDefault` also gets a `"default"` key
+/// holding its default value serialized the same way skein stores component data in gltf extras.
+/// If serializing the default fails, `"defaultError"` is set instead.
+fn export_registry_defaults(registry: &AppTypeRegistry) {
+    use bevy::reflect::{prelude::ReflectDefault, serde::TypedReflectSerializer};
+
+    let registry = registry.read();
+    let mut out = serde_json::Map::new();
+    for registration in registry.iter() {
+        let (path, schema) = export_type(registration);
+        let mut schema = serde_json::to_value(schema).expect("schema is serializable");
+        if let Some(default) = registration.data::<ReflectDefault>() {
+            let default = default.default();
+            let result = serde_json::to_value(TypedReflectSerializer::new(default.as_partial_reflect(), &registry));
+            match result {
+                Ok(value) => schema["default"] = value,
+                Err(e) => schema["defaultError"] = e.to_string().into(),
+            }
+        }
+        out.insert(path.to_string(), schema);
+    }
+    let serialized = serde_json::to_string_pretty(&out).expect("Failed to serialize type registry");
+    std::fs::write("type_registry_defaults.json", serialized).expect("Failed to write type registry defaults");
+}

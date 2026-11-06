@@ -15,7 +15,7 @@ use lightyear::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ecs::cameras::MainCamera, scenes::resolver::{EntityPointer, EntityResolver}, systems::{animation_context::AnimationParams, network::uid::{Uid, UidUsePath}}, Cli
+    ecs::cameras::MainCamera, scenes::resolver::{EntityPointer, EntityResolver}, systems::{animation_context::AnimationParams, network::uid::{Uid, UidUsePath}, scripting::ScriptEventsExt}, Cli
 };
 
 use super::character::Player;
@@ -42,7 +42,8 @@ impl Plugin for InteractPlugin {
         app.register_type::<Interactable>();
         app.register_type::<ToggleInteractionBlender>();
         app.register_type::<ToggleInteractionState>();
-        app.register_type::<FlipVisible>();
+        app.register_script_event::<Interaction>(); // CLAUDE: scripts can listen for it (light switches)
+        app.register_type::<Controls>();
         app.register_type::<Hover>();
         app.register_type::<InteractionText>();
         app.register_type::<Pickup>();
@@ -57,8 +58,6 @@ impl Plugin for InteractPlugin {
 
         app.add_observer(ToggleInteractionBlender::observer);
         app.add_observer(Pickup::observer);
-        app.add_observer(ToggleInteractionBlender::handle_flip);
-        app.add_observer(ToggleInteractionBlender::flip_init);
 
         app.register_type::<DehydratedController>();
         app.add_systems(PostUpdate, DehydratedController::hydrate);
@@ -303,17 +302,10 @@ impl Pickup {
     }
 }
 
-#[derive(Debug, Clone, Component, Reflect)]
-#[reflect(Component)]
-pub struct FlipVisible {
-    /// currently unused
-    vis: bool,
-    delay: f32,
-}
-
 /// attatched to ex. light switches
 /// TODO deal with many-to-many
 #[derive(Debug, Clone, Component, Reflect)]
+#[reflect(Component)]
 #[relationship_target(relationship = ControlledBy)]
 pub struct Controls(Vec<Entity>);
 
@@ -368,44 +360,6 @@ impl ToggleInteractionBlender {
             if animated.player.all_finished() {
                 // TODO what if there is an idle animation
                 state.active = false;
-            }
-        }
-    }
-
-    /// make sure initial light state matches FlipVisible.vis
-    fn flip_init(        
-        event: Trigger<OnAdd, ControlledBy>,
-        mut vis: Query<(&mut Visibility, &ControlledBy)>,
-        flip: Query<(&FlipVisible, &ToggleInteractionState)>,
-    ){
-        let Ok((mut vis, controlled_by)) = vis.get_mut(event.target()) else { return; };
-        if let Ok((flip, _state)) = flip.get(controlled_by.0){
-            *vis = match flip.vis {
-                false => Visibility::Hidden,
-                true => Visibility::Inherited,
-            }
-        }
-    }
-
-    fn handle_flip(
-        // NOTE vecs appear broken in blenvy so I can't add AnimationMarkers
-        // TODO revert this back to a component on the breaker
-        event: Trigger<Interaction>,
-        query: Query<(&FlipVisible, &ToggleInteractionState, &Controls)>,
-        mut target: Query<&mut Visibility>,
-    ) {
-        let flip = query.get(event.target());
-        if let Ok((flip, _state, controls)) = flip {
-            dbg!(event.event(), &flip);
-            for c in controls.iter() {
-                let Ok(mut vis) = target.get_mut(c) else {continue};
-                // TODO deal with state
-
-                if *vis == Visibility::Hidden {
-                    *vis = Visibility::Inherited;
-                } else {
-                    *vis = Visibility::Hidden;
-                }
             }
         }
     }

@@ -1,0 +1,2 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: spawns loop_a, which spawns this */
+spawn next { WorldAssetRoot: "loop_a.corn"; }

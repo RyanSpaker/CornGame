@@ -1,0 +1,4 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: pasted by run.corn */
+Health.max: 100;
+Label: "inner";
+spawn hat { Label: "hat"; }

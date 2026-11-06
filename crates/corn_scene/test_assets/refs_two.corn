@@ -1,0 +1,4 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: a reference matching two entities */
+spawn x { Target: select(.lamp); }
+spawn a { class: lamp; }
+spawn b { class: lamp; }

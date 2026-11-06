@@ -1,0 +1,5 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: written fields beat a scene wherever it comes in */
+spawn patch_first { Health.max: 1; include "health_via.corn"; }
+spawn include_first { include "health_via.corn"; Health.max: 1; }
+/* written whole: the scene's Kind doesn't come in */
+spawn whole { Kind: Box { size: 2 }; include "health_via.corn"; }

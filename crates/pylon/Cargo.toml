@@ -1,0 +1,17 @@
+# CLAUDE (claude-opus-5-5): port of three_corn's pylon demo, the use case for corn files and scripting. see src/lib.rs
+[package]
+name = "pylon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { version = "=0.20.0", default-features = false, features = ["3d", "default_app", "default_platform", "bevy_audio", "mp3", "wav", "png", "webp"] }
+corn_assets = { path = "../corn_assets", features = ["mesh"] }
+corn_scene = { path = "../corn_scene" }
+corn_scripting = { path = "../corn_scripting", features = ["profile"] }
+serde_json = "1"
+bevy_rich_text3d = { version = "0.8", features = ["reflect"] }
+
+[dev-dependencies]
+# type names in errors
+bevy = { version = "=0.20.0", default-features = false, features = ["debug"] }

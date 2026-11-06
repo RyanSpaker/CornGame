@@ -4,7 +4,9 @@
 //! (`crate::Type`, or `crate::module::Type` where the modules are a suffix of the real module path;
 //! `bevy::` stands for any `bevy_*` crate), or a bare `Type`. Bare names are looked up in the file's
 //! `use` lines, then in each crate of the precedence list in order. Two candidates in the same crate
-//! warn and pick the shorter path, then the alphabetically first.
+//! warn and pick the shorter path, then the alphabetically first. A bare name the precedence list (not a
+//! `use` line) settles between crates also warns: adding a type to a crate earlier in the list would
+//! silently change what the name means.
 //!
 //! The precedence list lives in a file (one crate per line, `#` comments). When it doesn't exist it is
 //! written with the default order: bevy crates, then all others, each alphabetical. Registered crates
@@ -113,6 +115,63 @@ pub fn parse_precedence<'a>(text: &str, crates: impl IntoIterator<Item = &'a str
     list
 }
 
+// CLAUDE
+/// every registered type for editor tooling (the corn-scene VS Code extension, tree-sitter-corn/vscode):
+/// `{precedence, types: [{path, short, crate, module, kind, fields?: [[name, type]], variants?: [[name,
+/// [[name, type]]]], items?: [type]}]}`. Tuple fields are named `0`, `1`, ..
+pub fn types_dump(registry: &TypeRegistry, precedence: &[String]) -> String {
+    use bevy::reflect::{enums::VariantInfo, TypeInfo};
+    use serde_json::{json, Map, Value};
+
+    let pairs = |fields: Vec<(String, &str)>| Value::Array(fields.into_iter().map(|(n, t)| json!([n, t])).collect());
+    let numbered = |types: Vec<&str>| pairs(types.into_iter().enumerate().map(|(i, t)| (i.to_string(), t)).collect());
+    let mut types: Vec<Value> = registry
+        .iter()
+        .map(|registration| {
+            let info = registration.type_info();
+            let table = info.type_path_table();
+            let mut entry = Map::new();
+            entry.insert("path".into(), table.path().into());
+            entry.insert("short".into(), table.short_path().into());
+            entry.insert("crate".into(), table.crate_name().into());
+            entry.insert("module".into(), table.module_path().into());
+            let (kind, key, value) = match info {
+                TypeInfo::Struct(s) => ("struct", "fields", pairs(s.iter().map(|f| (f.name().to_string(), f.type_path())).collect())),
+                TypeInfo::TupleStruct(s) => ("tuple_struct", "fields", numbered(s.iter().map(|f| f.type_path()).collect())),
+                TypeInfo::Tuple(t) => ("tuple", "fields", numbered(t.iter().map(|f| f.type_path()).collect())),
+                TypeInfo::Enum(e) => {
+                    let variants = e
+                        .iter()
+                        .map(|v| {
+                            let fields = match v {
+                                VariantInfo::Struct(s) => pairs(s.iter().map(|f| (f.name().to_string(), f.type_path())).collect()),
+                                VariantInfo::Tuple(t) => numbered(t.iter().map(|f| f.type_path()).collect()),
+                                VariantInfo::Unit(_) => json!([]),
+                            };
+                            json!([v.name(), fields])
+                        })
+                        .collect();
+                    ("enum", "variants", Value::Array(variants))
+                }
+                TypeInfo::List(l) => ("list", "items", json!([l.item_ty().path()])),
+                TypeInfo::Array(a) => ("array", "items", json!([a.item_ty().path()])),
+                TypeInfo::Set(s) => ("set", "items", json!([s.value_ty().path()])),
+                TypeInfo::Map(m) => ("map", "items", json!([m.key_ty().path(), m.value_ty().path()])),
+                TypeInfo::Opaque(_) => ("opaque", "", Value::Null),
+                #[allow(unreachable_patterns)]
+                _ => ("other", "", Value::Null),
+            };
+            entry.insert("kind".into(), kind.into());
+            if !key.is_empty() {
+                entry.insert(key.into(), value);
+            }
+            Value::Object(entry)
+        })
+        .collect();
+    types.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+    serde_json::to_string(&json!({ "precedence": precedence, "types": types })).unwrap()
+}
+
 pub fn precedence_file_text(list: &[String]) -> String {
     let mut out = String::from(
         "# crate precedence for bare component names in scene files: the first crate with a match wins.\n\
@@ -172,14 +231,21 @@ impl<'a> Resolver<'a> {
         }
         let candidates = self.index.by_short.get(name).map(Vec::as_slice).unwrap_or_default();
         let mut crates: Vec<&str> = self.use_crates.iter().map(String::as_str).collect();
+        let used = crates.len();
         if !self.no_default_use {
             crates.extend(self.precedence.iter().map(String::as_str));
         }
-        for c in crates {
+        for (i, c) in crates.into_iter().enumerate() {
             let in_crate: Vec<&TypeEntry> = candidates.iter().filter(|e| crate_matches(c, &e.crate_name)).collect();
-            if !in_crate.is_empty() {
-                return Ok(pick(name, in_crate));
+            if in_crate.is_empty() {
+                continue;
             }
+            let mut resolved = pick(name, in_crate);
+            // a `use crate;` line chose it; the precedence list only shadows
+            if i >= used {
+                resolved.warning = resolved.warning.or_else(|| shadowed(name, candidates, resolved.type_id));
+            }
+            return Ok(resolved);
         }
         Err(match (candidates.first(), self.no_default_use) {
             (Some(e), true) => format!("`{name}` is not imported (nodefaultuse): `use {};`", e.full),
@@ -230,6 +296,22 @@ impl<'a> Resolver<'a> {
             None => String::new(),
         }
     }
+}
+
+// CLAUDE
+/// a warning when the precedence list picked `chosen` for a bare name other crates also have: a type added to
+/// a crate earlier in the list would silently change what the name means
+fn shadowed(name: &str, candidates: &[TypeEntry], chosen: TypeId) -> Option<String> {
+    let full = &candidates.iter().find(|e| e.type_id == chosen)?.full;
+    let mut others: Vec<&str> = candidates.iter().filter(|e| e.type_id != chosen).map(|e| e.full.as_str()).collect();
+    if others.is_empty() {
+        return None;
+    }
+    others.sort();
+    Some(format!(
+        "`{name}` is also {}: using `{full}` by crate precedence (write the path, or `use {full};`, to choose)",
+        others.iter().map(|o| format!("`{o}`")).collect::<Vec<_>>().join(", ")
+    ))
 }
 
 /// one crate's candidates: the shortest path, then alphabetical; more than one warns
@@ -289,7 +371,8 @@ mod tests {
         assert_eq!(precedence, ["bevy_pbr", "avian3d", "corn_game"]);
 
         let mut r = Resolver::new(&index, &precedence);
-        assert_eq!(chosen(&index, &r, "AmbientLight"), ("bevy_pbr::light::ambient_light::AmbientLight", false));
+        // corn_game has one too: the precedence list decides, with a warning
+        assert_eq!(chosen(&index, &r, "AmbientLight"), ("bevy_pbr::light::ambient_light::AmbientLight", true));
         assert_eq!(chosen(&index, &r, "corn_game::AmbientLight"), ("corn_game::ecs::ambient_light::AmbientLight", false));
         assert_eq!(chosen(&index, &r, "bevy::AmbientLight"), ("bevy_pbr::light::ambient_light::AmbientLight", false));
         assert_eq!(chosen(&index, &r, "Dead"), ("corn_game::ecs::death::Dead", true));

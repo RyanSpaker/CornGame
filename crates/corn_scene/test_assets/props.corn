@@ -1,0 +1,13 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: attached to scenes that have an #inner */
+script {
+  exports.opened = function* (e) { insert(e, "Label", "opened"); };
+}
+asset varnish: Paint { shine: 4; }
+
+/* the scene it is attached to spawned #inner, not this file */
+[Name=inner] {
+  Health.max: ${ 40 + 2 };
+  Painted: varnish;
+  on ScriptPing: opened;
+}
+spawn scarecrow { Label: "straw"; }

@@ -11,12 +11,18 @@
 //! - `class: a b;` gives this entity classes. `.a { .. }` is an ordinary rule: any number, in any file
 //! - `Comp: value;` / `Comp.field.sub: value;`: a component patch. a space after the `:` is required,
 //!   which tells it from a pseudo-class (`Button:hover`)
-//! - `selector, selector { .. }`: a rule over this entity and its descendants
-//! - `script { .. }` (top level only): the file's script module, raw JS. its top-level code runs once,
-//!   when the file loads, before the file's items apply
-//! - `on Event: handler;` or `on Event: ${ .. }`: a script listener on this entity, once spawned
+//! - `selector, selector { .. }`: a rule over this entity and its descendants. combinators: ` `, `>`, `/Comp/`
+//!   (related by `Comp`; a space must follow the closing `/`, `/*` starts a comment). `#name` only names
+//!   what this file spawned (`[Name=x]` names anything). `:root` is the root of the scene being built
+//! - `script { .. }` at the top level: the file's script module, raw JS. its top-level code runs once,
+//!   when the file loads, before the file's items apply. In an entity's body (or a rule's) it runs once
+//!   per entity it applies to, in order with the other items, as `(e, root)`
+//! - `on Event: handler;` or `on Event: ${ .. }`: a script listener on this entity, once spawned.
+//!   lifecycle events name their component: `on OnAdd(Comp): handler;` (also `OnInsert`, `OnRemove`)
 //! - `asset name: Type value` (top level only): a new asset, `Type::default()` (or its recipe) patched
 //!   with the value. handle fields take it as `name`, other files as `"file.corn#name"`
+//!
+//! An `Entity` value is a reference: `Target: #door;`, `Lamps: select(.lamp);`, see [`crate::build`].
 //!
 //! `${ .. }` is inline JS, any number of statements. As a value it runs once per entity it applies to,
 //! as `(e, root)`, and its last statement is the value. As a handler it is the body of
@@ -30,7 +36,7 @@ use std::sync::Arc;
 use crate::js_scan;
 use crate::lexer::{Lexer, Loc, Tok, Token};
 use crate::names::Resolver;
-use crate::value::Value;
+use crate::value::{SelectorList, Value};
 
 // CLAUDE
 /// an `include` path's file and label
@@ -51,7 +57,10 @@ pub enum Item {
     Spawn { name: String, body: Body, key: u32, loc: Loc },
     Include { path: String, child: bool, body: Option<Body>, loc: Loc },
     Rule { selectors: Vec<Selector>, body: Body, loc: Loc },
-    On { event: TypeId, event_name: String, handler: Handler, loc: Loc },
+    /// `component`: a lifecycle event's component
+    On { event: TypeId, event_name: String, component: Option<TypeId>, handler: Handler, loc: Loc },
+    /// `script { .. }` in a body: index into [`Doc::inline`]
+    Script { index: usize, loc: Loc },
     /// `asset name: Type value`: made when the file loads, a labeled asset `file#name`
     Asset { name: String, asset: TypeId, type_name: String, value: Value, loc: Loc },
 }
@@ -68,6 +77,8 @@ pub enum Handler {
 pub enum Combinator {
     Descendant,
     Child,
+    /// `/Comp/`: an entity `Comp` relates to the one before, see [`crate::build`]
+    Relation(TypeId),
 }
 
 /// compounds joined by combinators; the first one's combinator relates it to the rule's scope
@@ -75,6 +86,7 @@ pub enum Combinator {
 pub struct Selector {
     pub parts: Vec<(Combinator, Compound)>,
 }
+
 
 #[derive(Debug, Default)]
 pub struct Compound {
@@ -87,17 +99,18 @@ pub struct Compound {
     pub pseudo: Vec<String>,
 }
 
-/// `[Comp]`, `[Comp.field="v"]`
+/// `[Comp]`, `[Comp.field="v"]`, `[Comp=Variant { a: 1 }]`, `[ChildOf=#a]`
 #[derive(Debug)]
 pub struct Attr {
     pub component: TypeId,
     pub field: Vec<String>,
-    pub test: Option<(AttrOp, String)>,
+    pub test: Option<(AttrOp, Value)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttrOp {
-    /// `=`
+    /// `=`: equal as the field's type (the value parsed as a patch would be). for an `Entity`, one of what
+    /// `#name` / `select(..)` matches
     Equals,
     /// `~=`: one of the whitespace separated words
     Word,
@@ -122,10 +135,26 @@ pub struct Doc {
 #[derive(Debug)]
 pub struct Inline {
     pub source: String,
-    /// an `on` handler, not a value
-    pub handler: bool,
+    pub kind: InlineKind,
     pub loc: Loc,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlineKind {
+    /// `${ .. }` as a value
+    Value,
+    /// `${ .. }` as an `on` handler
+    Handler,
+    /// `script { .. }` in a body
+    Run,
+}
+
+/// `on` names for the component lifecycle events, and the events' type paths
+const LIFECYCLE_EVENTS: [(&str, &str); 3] = [
+    ("OnAdd", "bevy_ecs::lifecycle::AddEvent"),
+    ("OnInsert", "bevy_ecs::lifecycle::InsertEvent"),
+    ("OnRemove", "bevy_ecs::lifecycle::RemoveEvent"),
+];
 
 // CLAUDE
 /// turns `${ .. }` code into a value: an expression if it parses as one (so `{ a: 1 }` is an object),
@@ -179,7 +208,11 @@ impl Doc {
 
     /// the name of `${ .. }` number `index` in the module
     pub fn inline_function(&self, index: usize) -> String {
-        if self.inline[index].handler { format!("__scene_h{index}") } else { format!("__scene_v{index}") }
+        match self.inline[index].kind {
+            InlineKind::Value => format!("__scene_v{index}"),
+            InlineKind::Handler => format!("__scene_h{index}"),
+            InlineKind::Run => format!("__scene_r{index}"),
+        }
     }
 
     // CLAUDE
@@ -203,12 +236,19 @@ impl Doc {
         out.push_str(VALUE_PRELUDE);
         for (index, inline) in self.inline.iter().enumerate() {
             let name = self.inline_function(index);
-            if inline.handler {
-                let _ = writeln!(out, "exports.{name} = function* (e, args, event) {{\n{}\n}};", inline.source);
-            } else {
-                // a JSON string is a JS string literal
-                let body = serde_json::to_string(&inline.source).unwrap();
-                let _ = writeln!(out, "exports.{name} = __scene_value({body});");
+            match inline.kind {
+                InlineKind::Handler => {
+                    let _ = writeln!(out, "exports.{name} = function* (e, args, event) {{\n{}\n}};", inline.source);
+                }
+                InlineKind::Value => {
+                    // a JSON string is a JS string literal
+                    let body = serde_json::to_string(&inline.source).unwrap();
+                    let _ = writeln!(out, "exports.{name} = __scene_value({body});");
+                }
+                // whatever it returns, the call has a value
+                InlineKind::Run => {
+                    let _ = writeln!(out, "exports.{name} = function (e, root) {{ (function () {{\n{}\n}})(); return null; }};", inline.source);
+                }
             }
         }
         Some(out)
@@ -225,6 +265,7 @@ pub fn parse(src: &str, path: &str, resolver: Resolver) -> Result<(Doc, Vec<Stri
         errors: vec![],
         warnings: vec![],
         next_key: 0,
+        warned: HashSet::new(),
         asset_names: HashSet::new(),
         scripts: vec![],
         inline: vec![],
@@ -240,6 +281,37 @@ pub fn parse(src: &str, path: &str, resolver: Resolver) -> Result<(Doc, Vec<Stri
     Ok((doc, p.warnings))
 }
 
+// CLAUDE
+/// a selector list on its own (`#door, .lamp > Mesh3d`), as scripts' `select` takes
+pub fn parse_selectors(src: &str, resolver: Resolver) -> Result<Vec<Selector>, String> {
+    let mut p = Parser {
+        lex: Lexer::new(src),
+        ahead: Vec::new(),
+        resolver,
+        path: "selector",
+        errors: vec![],
+        warnings: vec![],
+        next_key: 0,
+        warned: HashSet::new(),
+        asset_names: HashSet::new(),
+        scripts: vec![],
+        inline: vec![],
+    };
+    let mut selectors = vec![p.selector()?];
+    while p.is(0, ',')? {
+        p.next()?;
+        selectors.push(p.selector()?);
+    }
+    let t = p.next()?;
+    if t.tok != Tok::Eof {
+        return Err(p.msg(t.at, "expected `,` or the end of the selector"));
+    }
+    if !p.errors.is_empty() {
+        return Err(p.errors.join("\n"));
+    }
+    Ok(selectors)
+}
+
 struct Parser<'a> {
     lex: Lexer<'a>,
     ahead: Vec<Token>,
@@ -249,6 +321,8 @@ struct Parser<'a> {
     errors: Vec<String>,
     warnings: Vec<String>,
     next_key: u32,
+    /// name warnings given, to give each once
+    warned: HashSet<String>,
     asset_names: HashSet<String>,
     scripts: Vec<(String, Loc)>,
     inline: Vec<Inline>,
@@ -378,15 +452,25 @@ impl<'a> Parser<'a> {
                 };
                 items.push(Item::Include { path, child, body, loc: self.loc(t.at) });
             } else if word == "script" && self.is(1, '{')? {
-                if !top {
-                    return Err(self.msg(t.at, "`script` blocks are the file's module: top level only"));
-                }
                 self.next()?;
                 let (source, at) = self.js_block()?;
-                self.scripts.push((source, self.loc(at)));
+                if top {
+                    self.scripts.push((source, self.loc(at)));
+                } else {
+                    self.inline.push(Inline { source, kind: InlineKind::Run, loc: self.loc(t.at) });
+                    items.push(Item::Script { index: self.inline.len() - 1, loc: self.loc(t.at) });
+                }
             } else if word == "on" && matches!(self.peek(1)?.tok, Tok::Ident(_)) {
                 self.next()?;
                 let (event_name, at) = self.type_name()?;
+                let component = if self.is(0, '(')? {
+                    self.next()?;
+                    let (name, at) = self.type_name()?;
+                    self.expect(')')?;
+                    Some((name, at))
+                } else {
+                    None
+                };
                 self.expect(':')?;
                 let handler = if self.is_inline()? {
                     Handler::Inline(self.inline(true)?)
@@ -399,8 +483,15 @@ impl<'a> Parser<'a> {
                         other => return Err(self.msg(t.at, format!("expected a handler, found {}", describe(&other)))),
                     }
                 };
-                if let Some(event) = self.resolve(&event_name, at) {
-                    items.push(Item::On { event, event_name, handler, loc: self.loc(t.at) });
+                let path = LIFECYCLE_EVENTS.iter().find(|(name, _)| *name == event_name).map_or(event_name.as_str(), |(_, path)| path);
+                let event = self.resolve(path, at);
+                // None: the name didn't resolve
+                let component = match component {
+                    Some((name, at)) => self.resolve(&name, at).map(Some),
+                    None => Some(None),
+                };
+                if let (Some(event), Some(component)) = (event, component) {
+                    items.push(Item::On { event, event_name, component, handler, loc: self.loc(t.at) });
                 }
             } else if word == "asset" && matches!(self.peek(1)?.tok, Tok::Ident(_)) && self.is(2, ':')? {
                 if !top {
@@ -493,7 +584,8 @@ impl<'a> Parser<'a> {
     fn resolve(&mut self, name: &str, at: usize) -> Option<TypeId> {
         match self.resolver.resolve(name) {
             Ok(r) => {
-                if let Some(w) = r.warning {
+                // once per file
+                if let Some(w) = r.warning.filter(|w| self.warned.insert(w.clone())) {
                     let m = self.msg(at, w);
                     self.warnings.push(m);
                 }
@@ -595,7 +687,8 @@ impl<'a> Parser<'a> {
     fn inline(&mut self, handler: bool) -> PResult<usize> {
         let at = self.next()?.at;
         let (source, _) = self.js_block()?;
-        self.inline.push(Inline { source, handler, loc: self.loc(at) });
+        let kind = if handler { InlineKind::Handler } else { InlineKind::Value };
+        self.inline.push(Inline { source, kind, loc: self.loc(at) });
         Ok(self.inline.len() - 1)
     }
 
@@ -645,6 +738,16 @@ impl<'a> Parser<'a> {
             Tok::Punct('[') => Value::List(self.list(']')?),
             Tok::Punct('(') => Value::Call(String::new(), self.list(')')?),
             Tok::Punct('{') => Value::Struct(String::new(), self.entries()?),
+            Tok::Ident(word) if word == "select" && self.is(0, '(')? && !self.peek(0)?.space_before => {
+                self.next()?;
+                let mut selectors = vec![self.selector()?];
+                while self.is(0, ',')? {
+                    self.next()?;
+                    selectors.push(self.selector()?);
+                }
+                self.expect(')')?;
+                Value::Select(SelectorList(Arc::new(selectors)))
+            }
             Tok::Ident(_) => {
                 self.ahead.insert(0, t);
                 let (name, _) = self.type_name()?;
@@ -718,19 +821,32 @@ impl<'a> Parser<'a> {
         Ok(Item::Rule { selectors, body, loc: self.loc(at) })
     }
 
-    fn selector(&mut self) -> PResult<Selector> {
-        let mut selector = Selector::default();
-        let mut combinator = Combinator::Descendant;
+    // CLAUDE
+    /// `>` or `/Comp/` next, if there is one
+    fn combinator(&mut self) -> PResult<Option<Combinator>> {
         if self.is(0, '>')? {
             self.next()?;
-            combinator = Combinator::Child;
+            return Ok(Some(Combinator::Child));
         }
+        if self.is(0, '/')? {
+            self.next()?;
+            let (name, at) = self.type_name()?;
+            self.expect('/')?;
+            // an unknown name is an error already; keep parsing
+            let component = self.resolve(&name, at).unwrap_or(TypeId::of::<()>());
+            return Ok(Some(Combinator::Relation(component)));
+        }
+        Ok(None)
+    }
+
+    fn selector(&mut self) -> PResult<Selector> {
+        let mut selector = Selector::default();
+        let mut combinator = self.combinator()?.unwrap_or(Combinator::Descendant);
         loop {
             selector.parts.push((combinator, self.compound()?));
-            if self.is(0, '>')? {
-                self.next()?;
-                combinator = Combinator::Child;
-            } else if self.is(0, '{')? || self.is(0, ',')? || self.is(0, ';')? || self.peek(0)?.tok == Tok::Eof {
+            if let Some(next) = self.combinator()? {
+                combinator = next;
+            } else if self.is(0, '{')? || self.is(0, ',')? || self.is(0, ';')? || self.is(0, ')')? || self.peek(0)?.tok == Tok::Eof {
                 return Ok(selector);
             } else {
                 combinator = Combinator::Descendant;
@@ -819,14 +935,13 @@ impl<'a> Parser<'a> {
         let test = match op {
             None => None,
             Some(op) => {
-                let v = self.next()?;
-                let text = match v.tok {
-                    Tok::Str(s) | Tok::Ident(s) => s,
-                    Tok::Number { value, unit } => format!("{value}{}", unit.unwrap_or_default()),
-                    other => return Err(self.msg(v.at, format!("expected a value, found {}", describe(&other)))),
-                };
+                let at = self.peek(0)?.at;
+                let value = self.value_seq()?;
+                if op != AttrOp::Equals && value.as_text().is_none() {
+                    return Err(self.msg(at, "only `=` compares a value that isn't a \"string\", name or number"));
+                }
                 self.expect(']')?;
-                Some((op, text))
+                Some((op, value))
             }
         };
         Ok(self.resolve(&name, at).map(|component| Attr { component, field, test }))

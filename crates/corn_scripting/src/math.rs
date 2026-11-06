@@ -109,6 +109,78 @@ impl Math {
     }
 }
 
+// CLAUDE (claude-sonnet-5-5)
+/// What scripts may put into the world. A NaN or infinite float, or a rotation that isn't a unit
+/// quaternion, crashes bevy later and far from the script that caused it (`Dir3::new_unchecked` panics on
+/// a non-normalized vector). So they're refused here, with an error the script can catch.
+fn finite(v: Vec3, what: &str) -> Result<(), String> {
+    if v.is_finite() { Ok(()) } else { Err(format!("{what} must be finite, not {v}")) }
+}
+
+/// a rotation must be finite and not zero. `unit` also normalizes it, as bevy assumes unit rotations.
+fn rotation(q: Quat, unit: bool) -> Result<Quat, String> {
+    if !q.is_finite() {
+        return Err(format!("a rotation must be finite, not {q}"));
+    }
+    if q.length_squared() < 1e-12 {
+        return Err("a rotation can't have zero length".into());
+    }
+    Ok(if unit { q.normalize() } else { q })
+}
+
+impl Math {
+    /// the value as it may enter the world: an error if any float isn't finite (or a rotation is zero),
+    /// rotations normalized
+    pub fn sanitized(self) -> Result<Math, String> {
+        Ok(match self {
+            Math::Vec3(v) => {
+                finite(v, "a vector")?;
+                Math::Vec3(v)
+            }
+            Math::Quat(q) => Math::Quat(rotation(q, true)?),
+            Math::Transform(mut t) => {
+                t.check(true)?;
+                Math::Transform(t)
+            }
+            Math::GlobalTransform(g) => {
+                if !g.affine().to_cols_array().iter().all(|f| f.is_finite()) {
+                    return Err("a global transform must be finite".into());
+                }
+                Math::GlobalTransform(g)
+            }
+        })
+    }
+}
+
+/// the math types a script can change in place. `live` is a place in the world, where rotations are also
+/// normalized; a script's own value isn't (setting `q.x`, `q.y`... one at a time passes through
+/// non-unit rotations), and is normalized once it enters the world.
+trait Checked: Copy {
+    fn check(&mut self, live: bool) -> Result<(), String>;
+}
+
+impl Checked for Vec3 {
+    fn check(&mut self, _: bool) -> Result<(), String> {
+        finite(*self, "a vector")
+    }
+}
+
+impl Checked for Quat {
+    fn check(&mut self, live: bool) -> Result<(), String> {
+        *self = rotation(*self, live)?;
+        Ok(())
+    }
+}
+
+impl Checked for Transform {
+    fn check(&mut self, live: bool) -> Result<(), String> {
+        finite(self.translation, "a translation")?;
+        finite(self.scale, "a scale")?;
+        self.rotation = rotation(self.rotation, live)?;
+        Ok(())
+    }
+}
+
 // CLAUDE
 /// where a math value lives
 #[derive(Debug, Clone)]
@@ -133,13 +205,29 @@ impl Slot {
 
     fn get<T: Reflect + TypePath + Copy>(&self) -> Result<T, String> {
         match self {
-            Slot::Owned(..) => self.update(|v: &mut T| *v),
+            Slot::Owned(..) => self.modify(|v: &mut T| *v),
             Slot::Live(r) => live::with_value(r, |value| value.try_downcast_ref::<T>().copied())?.ok_or_else(wrong::<T>),
         }
     }
 
-    /// run `f` on the value in place
-    fn update<T: Reflect + TypePath, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R, String> {
+    /// run `f` on the value in place. A result that isn't allowed (see [`Checked`]) is undone, and an error.
+    fn update<T: Reflect + TypePath + Checked, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R, String> {
+        let live = matches!(self, Slot::Live(_));
+        self.modify(|value: &mut T| {
+            let before = *value;
+            let out = f(value);
+            match value.check(live) {
+                Ok(()) => Ok(out),
+                Err(e) => {
+                    *value = before;
+                    Err(e)
+                }
+            }
+        })?
+    }
+
+    /// run `f` on the value in place, unchecked
+    fn modify<T: Reflect + TypePath, R>(&self, f: impl FnOnce(&mut T) -> R) -> Result<R, String> {
         match self {
             Slot::Owned(root, path) => {
                 let mut root = root.borrow_mut();
@@ -432,5 +520,58 @@ pub fn call(kind: Kind, slot: &Slot, name: &str, args: &[Arg]) -> Result<Out, St
         (Math::GlobalTransform(g), "transform_point") => math(Math::Vec3(g.transform_point(vec3(a, 0)?))),
         (value, "clone") => math(value),
         _ => Err(format!("{} has no method `{name}`", kind.name())),
+    }
+}
+
+// CLAUDE (claude-sonnet-5-5)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn owned(math: Math) -> Slot {
+        Slot::new(math)
+    }
+
+    #[test]
+    fn nan_and_infinity_are_refused_and_the_value_is_kept() {
+        let v = owned(Math::Vec3(Vec3::new(1.0, 2.0, 3.0)));
+        assert!(set_field(Kind::Vec3, &v, "x", Arg::Num(f64::NAN)).is_err());
+        assert!(set_field(Kind::Vec3, &v, "y", Arg::Num(f64::INFINITY)).is_err());
+        assert_eq!(v.value(Kind::Vec3).unwrap(), Math::Vec3(Vec3::new(1.0, 2.0, 3.0)));
+        set_field(Kind::Vec3, &v, "x", Arg::Num(5.0)).unwrap();
+        assert_eq!(v.value(Kind::Vec3).unwrap(), Math::Vec3(Vec3::new(5.0, 2.0, 3.0)));
+    }
+
+    #[test]
+    fn transform_fields_are_checked() {
+        let t = owned(Math::Transform(Transform::IDENTITY));
+        let nan = Arg::Math(Math::Vec3(Vec3::NAN));
+        assert!(set_field(Kind::Transform, &t, "translation", nan).is_err());
+        assert!(set_field(Kind::Transform, &t, "scale", nan).is_err());
+        let zero = Arg::Math(Math::Quat(Quat::from_xyzw(0.0, 0.0, 0.0, 0.0)));
+        assert!(set_field(Kind::Transform, &t, "rotation", zero).is_err());
+        assert_eq!(t.value(Kind::Transform).unwrap(), Math::Transform(Transform::IDENTITY));
+    }
+
+    #[test]
+    fn a_script_builds_a_quaternion_a_component_at_a_time() {
+        let q = owned(Math::Quat(Quat::IDENTITY));
+        for (name, n) in [("x", 0.0), ("y", 1.0), ("z", 0.0), ("w", 1.0)] {
+            set_field(Kind::Quat, &q, name, Arg::Num(n)).unwrap();
+        }
+        assert_eq!(q.value(Kind::Quat).unwrap(), Math::Quat(Quat::from_xyzw(0.0, 1.0, 0.0, 1.0)));
+    }
+
+    #[test]
+    fn values_entering_the_world_are_finite_and_normalized() {
+        assert!(Math::Vec3(Vec3::INFINITY).sanitized().is_err());
+        assert!(Math::Quat(Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0)).sanitized().is_err());
+        assert!(Math::Quat(Quat::from_xyzw(0.0, 0.0, 0.0, 0.0)).sanitized().is_err());
+        let Math::Quat(q) = Math::Quat(Quat::from_xyzw(0.0, 3.0, 0.0, 4.0)).sanitized().unwrap() else { panic!() };
+        assert!((q.length() - 1.0).abs() < 1e-6);
+        let skewed = Transform { rotation: Quat::from_xyzw(0.0, 0.0, 0.0, 2.0), ..default() };
+        let Math::Transform(t) = Math::Transform(skewed).sanitized().unwrap() else { panic!() };
+        assert!((t.rotation.length() - 1.0).abs() < 1e-6);
+        assert!(Math::Transform(Transform::from_xyz(f32::NAN, 0.0, 0.0)).sanitized().is_err());
     }
 }

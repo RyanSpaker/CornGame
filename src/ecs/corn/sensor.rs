@@ -71,11 +71,9 @@ impl<'w, 's> CornQuery<'w, 's> {
         };
 
         for (entity, corn, corn_gt) in self.cornfields.iter() {
-            //TODO make corn fields use transform for gods sake!
-            let corn_gt : GlobalTransform = Transform::from_translation(corn.center).into();
-
-            // sensor position in corn space
-            let in_corn_space = gt.reparented_to(&corn_gt).translation;
+            // The corn generator renders in field-local space and then applies this entity's
+            // GlobalTransform. Use that identical transform for map/sensor UV lookup.
+            let in_corn_space = gt.reparented_to(corn_gt).translation - corn.center;
 
             if !in_corn_space.abs().xz().cmplt(corn.half_extents).all() {
                 // we are outside this cornfield
@@ -111,7 +109,7 @@ impl<'w, 's> CornQuery<'w, 's> {
                     // TODO is there a more efficient way to do this (avoiding gt recompute)
                     let sample_pos = GlobalTransform::from_translation(
                         position + Vec3::new(angle.cos(), 0.0, angle.sin()) * offset,
-                    ).reparented_to(&corn_gt).translation;
+                    ).reparented_to(corn_gt).translation - corn.center;
 
                     let sample_uv_pos = Vec2::new(
                         0.5 * sample_pos.x / corn.half_extents.x + 0.5,
@@ -186,11 +184,8 @@ impl CornSensor {
             sensor.is_in_corn = false;
             sensor.value = 0.0;
             for (entity, corn, corn_gt) in cornfields.iter() {
-                // TODO make corn fields use transform
-                let corn_gt : GlobalTransform = Transform::from_translation(corn.center).into();
-
-                // sensor position in corn space
-                let in_corn_space = gt.reparented_to(&corn_gt).translation;
+                // Mirror the field's render transform before converting local position to UV.
+                let in_corn_space = gt.reparented_to(corn_gt).translation - corn.center;
 
                 if in_corn_space.abs().xz().cmplt(corn.half_extents).all() {
                     if let Some(image) = images.get(corn.image.id()) {

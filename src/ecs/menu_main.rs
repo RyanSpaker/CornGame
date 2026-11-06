@@ -10,12 +10,12 @@ use bevy_simple_text_input::TextInput;
 use lightyear::prelude::Connected;
 
 use crate::{
-    ecs::cameras::MainCamera,
     scenes::LoadScene,
     systems::{
         game::{Game, SceneMetadata},
         network::NetworkCrap,
         scenes::OnSpawnScene,
+        scripting::ScriptListener,
     },
     util::parts::PartOf,
 };
@@ -31,27 +31,10 @@ pub struct MenuMain;
 #[derive(Debug, Default, Clone, Component, Reflect)]
 pub struct SillyTest(pub usize);
 
-/// a camera in blender which the MainCamera should be moved too
+/// a camera in blender which the MainCamera should be moved too: scripts/setup.js#blender_camera (CLAUDE)
 #[derive(Debug, Default, Clone, Component, Reflect)]
 #[reflect(Component)]
 pub struct BlenderCamera;
-impl BlenderCamera {
-    fn on_add(
-        query: Query<(Entity, &GlobalTransform), Added<BlenderCamera>>,
-        camera: Query<Entity, With<MainCamera>>,
-        mut commands: Commands,
-    ) {
-        let Ok(camera) = camera.single() else { return };
-        for (entity, gt) in query {
-            commands.entity(camera).insert((
-                gt.compute_transform(),
-                gt.clone(), // also insert gt so that first frame is correct
-            ));
-            // TODO better handle non-main cameras
-            commands.entity(entity).remove::<Camera>();
-        }
-    }
-}
 
 #[derive(Debug, Event, Reflect)]
 pub struct OnSubmitDumb(String);
@@ -79,10 +62,11 @@ pub fn plugin(app: &mut App) {
     app.register_type::<BlenderCamera>();
     app.register_type::<MenuMain>();
     app.register_type::<SillyTest>();
-    app.add_systems(
-        PostUpdate,
-        BlenderCamera::on_add.after(TransformSystem::TransformPropagate),
-    );
+    // CLAUDE
+    app.add_systems(Startup, |mut commands: Commands| {
+        let listener = ScriptListener::new("OnAdd", "scripts/setup.js", "blender_camera").with_component("BlenderCamera");
+        commands.spawn(listener);
+    });
     app.add_observer(on_create_lobby);
     app.add_observer(on_join_lobby);
     app.add_plugins(OnSubmitDumb::plugin);

@@ -3,20 +3,16 @@
 //!
 
 use std::{
-    f32::consts::{PI, TAU},
+    f32::consts::PI,
     time::Duration,
 };
 
 use avian3d::prelude::*;
 use bevy::{audio::Volume, prelude::*, render::{Render, view::RenderLayers}};
 use itertools::Itertools;
-use rand::random;
 
 use crate::{
-    Cli, ecs::{corn::{CornField, sensor::CornSensor, stored::image::ImageCarvedHexagonalShader}, death::{Alive, Die}}, scenes::LoadScene, systems::character::{
-        Player,
-        controller::{WalkDisabled, input_handler},
-    }, util::math::lerp
+    Cli, ecs::{corn::{CornField, sensor::CornSensor, stored::image::ImageCarvedHexagonalShader}, death::{Alive, Die}}, scenes::LoadScene, systems::character::controller::input_handler, util::math::lerp
 };
 
 fn spawn_monster(asset_server: Res<AssetServer>, mut commands: Commands) {
@@ -75,6 +71,7 @@ fn spawn_monster(asset_server: Res<AssetServer>, mut commands: Commands) {
 }
 
 #[derive(Debug, Component, Reflect)]
+#[reflect(Component)]
 pub struct TrackerBrain;
 
 #[derive(Debug, Component, Reflect)]
@@ -147,99 +144,17 @@ impl TrackerBrain {
     }
 }
 
-#[derive(Component)]
-pub struct SpookyAudio;
-
-#[derive(Debug, Default, Reflect, Component)]
-pub struct Dead {
-    timer: Timer,
-}
-impl Dead {
-    pub fn on_death(
-        mut player: Query<(Entity, &mut Dead, &Transform), (With<Player>, Added<Dead>)>,
-        asset_server: Res<AssetServer>,
-        mut commands: Commands,
-    ) {
-        for (entity, mut death, t) in player.iter_mut() {
-            let mut t = *t; // XXX I have to insert pos and rot bc lightyear breaks transform->position sync
-
-            t.translation = Vec3::new(935.0, 1.0, 0.0);
-            t = t.looking_to(Vec3::X, Vec3::Y);
-            commands
-                .entity(entity)
-                .insert((Position(t.translation), Rotation(t.rotation), t));
-
-            commands.spawn((
-                AudioPlayer::new(asset_server.load("sounds/spooky.ogg")),
-                PlaybackSettings {
-                    mode: bevy::audio::PlaybackMode::Despawn,
-                    volume: Volume::Linear(0.1),
-                    paused: false,
-                    ..Default::default()
-                },
-                SpookyAudio,
-            ));
-
-            death.timer = Timer::from_seconds(10.0, TimerMode::Once);
-        }
-    }
-
-    pub fn update(
-        mut commands: Commands,
-        time: Res<Time>,
-        mut player: Query<(Entity, &mut Dead, &Transform), With<Player>>,
-        sfx: Query<Entity, With<SpookyAudio>>,
-        monster: Query<&Transform, (With<TrackerBrain>, Without<Player>)>,
-    ) {
-        for (id, mut death, t) in player.iter_mut() {
-            let mut t = *t; // XXX I have to insert pos and rot bc lightyear breaks transform->position sync
-            t.translation.x += time.delta_secs();
-            death.timer.tick(time.delta());
-
-            if death.timer.finished() {
-                t.translation = Vec3::X * 50.0;
-                t.rotate_around(Vec3::ZERO, Quat::from_rotation_y(TAU * random::<f32>()));
-                t.translation.y = 1.5;
-                if let Some(monster) = monster.iter().next() {
-                    // start looking at monster in case it is close by
-                    t.look_at(monster.translation, Vec3::Y);
-                }
-                if let Ok(sfx) = sfx.single() {
-                    // sfx.stop() //XXX need sound fx system
-                    commands.entity(sfx).despawn(); // TODO fade
-                }
-                dbg!();
-                commands
-                    .entity(id)
-                    .remove::<Dead>()
-                    .remove::<WalkDisabled>();
-                commands.run_system_cached(
-                    |camera: Single<Entity, With<crate::ecs::cameras::MainCamera>>,
-                     mut commands: Commands| {
-                        commands.entity(*camera).insert((
-                            bevy_dog::settings::DoGSettings::OUTLINE_DITHER,
-                            bevy_dog::settings::PassesSettings::default(),
-                        ));
-                    },
-                );
-            }
-            commands
-                .entity(id)
-                .insert((Position(t.translation), Rotation(t.rotation), t)); // every frame cringe
-        }
-    }
-}
+// the death-field sequence that was here (npc::Dead) is scripted: death.js#death_field_sequence (CLAUDE)
 
 pub struct NpcPlugin;
 impl Plugin for NpcPlugin {
     fn build(&self, app: &mut App) {
-        app.register_type::<Dead>();
+        app.register_type::<TrackerBrain>();
         app.add_systems(
             Update,
             (
                 TrackerBrain::update,
-                (TrackerBrain::munch, Dead::on_death, Dead::update)
-                    .chain()
+                TrackerBrain::munch
                     .after(input_handler),
             ),
         );

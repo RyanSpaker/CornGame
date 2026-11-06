@@ -1,0 +1,30 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: entity references and typed attribute selectors */
+spawn switch {
+  /* before the entities they name */
+  Target: #door;
+  Targets: select(.lamp);
+  Health.max: 3;
+}
+spawn door { Health: { max: 2; regen: 5; } }
+spawn lamps {
+  spawn a { class: lamp; }
+  spawn b { class: lamp; Kind: Box { size: 2 }; }
+}
+.lamp { MaybeTarget: #switch; }
+/* another relationship than spawn's */
+spawn stray { ChildOf: #lamps; }
+
+[ChildOf=#lamps] { Label: "lamp"; }
+/* relations: a relationship goes back to what points at #lamps, anything else forward (references are
+   written in source order, so `select` sees #switch's Target) */
+#lamps /ChildOf/ .lamp { Health.regen: 2; }
+#lamps /Children/ #b { Health.regen: 3; }
+spawn probe { MaybeTarget: select(#switch /Target/ *); }
+spawn root_probe { MaybeTarget: select(:root); }
+[Health.regen=5] { Label: "regen 5"; }
+[Kind=Box { size: 2 }] { Health.max: 7; }
+[Kind=Box { size: 3 }] { Health.max: 8; }
+/* names that aren't identifiers: escaped, or quoted after `#` */
+spawn ceiling\ light { Health.max: 4; }
+spawn spaced_probe { MaybeTarget: #"ceiling light"; }
+#ceiling\ light { Label: "spaced"; }

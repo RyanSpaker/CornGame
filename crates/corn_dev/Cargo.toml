@@ -1,0 +1,12 @@
+# CLAUDE (claude-opus-5-5): command line client for corn_scripting's remote console. see src/main.rs
+[package]
+name = "corn_dev"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "corn-dev"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"

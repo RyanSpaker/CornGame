@@ -97,6 +97,7 @@ pub fn look_handler(
 }
 
 #[derive(Debug, Clone, Reflect, Component)]
+#[reflect(Component)]
 pub struct WalkDisabled;
 
 // controls the main camera and the Player entity (these are intractibly linked)

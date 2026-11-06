@@ -1,0 +1,8 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: a game mode, included after the player. what it
+   changes another file spawned, so it selects by `[Name=..]`: `#name` only names this file's own */
+[Name=player] { Health.max: 1; Health.regen: 5; Label: "mode"; MaybeTarget: select(:root [Name=level]); }
+[Name=hat] { Label: "mode hat"; }
+/* player.corn spawned the hat, so this names nothing */
+#hat { Label: "named"; }
+[Name=sealed] { Label: "reached"; }
+[Included~="thing.fake"] { Label: "level"; }

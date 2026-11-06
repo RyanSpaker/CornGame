@@ -17,7 +17,8 @@
 //!   inside another script (a host call that flushes commands). Before its module has loaded, it queues.
 //!
 //! A function that is a generator runs over time: `yield seconds` sleeps (bare `yield` = one frame) and
-//! evaluates to the time actually slept. The driver steps it until it finishes or its owner (the
+//! evaluates to the time actually slept. `yield FixedUpdate` waits for the next fixed step and resumes in
+//! it (FixedUpdate, where `Time` is the fixed clock), evaluating to the step's length. The driver steps it until it finishes or its owner (the
 //! listener, or the RunScript target) is despawned.
 //!
 //! **Host api**. values cross as JSON through bevy_reflect:
@@ -26,6 +27,9 @@
 //! - `get_resource("Type")` likewise for a resource
 //! - `remove(entity, "Type")`, `despawn(entity)`
 //! - `find("Type")` the entities that have the component
+//! - `select(e, "selector")` the entities in `e`'s subtree (`e` too) a scene file selector matches, in tree
+//!   order; `select_one(e, "selector")` the first, or null. `#name` names what the calling script's
+//!   scene file spawned, as in that file. needs corn_scene
 //! - `spawn({ "Type": {...}, ... })` a new entity with these components, returns it
 //! - "Type" may also name a bundle the app registered for scripts ([`ScriptBundlesExt`]), and a `Handle`
 //!   field may take an object that makes a new asset (see [`values`])
@@ -36,10 +40,15 @@
 //!   if it has none), null if not loaded. the asset type must be registered with `register_asset_reflect`
 //! - `trigger(entity | null, "Event", {...})` triggers a registered event. rust observers run right away,
 //!   script listeners are queued.
-//! - `mesh()` and the shapes `Cuboid(x, y, z)`, `Sphere(r)`, `Cylinder(r, h)`, `Capsule3d(r, len)`,
-//!   `Cone(r, h)`, `Torus(inner, outer)`, `Plane3d(w, d)`: a mesh built in rust from a recipe
-//!   (corn_assets::mesh), as the value of a `Handle<Mesh>` field: `insert(e, "Mesh3d", Cuboid(1, 2, 1))`,
-//!   `mesh().add(Cylinder(0.1, 3), { translate: [0, 1.5, 0] }).add(Sphere(0.3), { translate: [0, 3, 0] })`
+//! - `module("path.corn")` another loaded module's exports (by module name, or a scene file's path), or
+//!   null: the same objects, so an including file can change an included one's exported settings
+//! - meshes with bevy's names (corn_scripting's mesh.rs): `Cuboid.new(1, 2, 1).mesh().build()`,
+//!   `Mesh.new()`, `merge`, `transformed_by`..., as the value of a `Handle<Mesh>` field:
+//!   `insert(e, "Mesh3d", Cuboid.new(1, 2, 1).mesh().build())`
+//!
+//! - `console.log(..)` (and `info`, `warn`, `error`, `debug`) to bevy's log, on native too
+//! - with the `remote_console` feature (native): `screenshot(path?)`, `record(prefix, frames)`, `exit()`, and the
+//!   remote console agents connect to. see remote_console.rs
 //!
 //! "Type" is a full type path, or a short one if unambiguous. `Handle` fields are asset paths (see
 //! [`values`]), entities are their id strings ([`entity_key`]).
@@ -50,7 +59,13 @@
 //! `world.get`, `world.get_resource` and `world.find` read the app's world. Their `on` handlers become
 //! `ScriptListener` + `ListenerOf` once the scene spawns, calling into the same module instance.
 
-use std::{cell::Cell, collections::HashMap, ptr, rc::Rc};
+use std::{
+    cell::Cell,
+    collections::HashMap,
+    ptr,
+    rc::Rc,
+    sync::{LazyLock, RwLock},
+};
 
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext, LoadState},
@@ -58,7 +73,7 @@ use bevy::{
     prelude::*,
     reflect::{
         serde::{TypedReflectDeserializer, TypedReflectSerializer},
-        ReflectMut, TypeRegistration, TypeRegistry,
+        ReflectDeserialize, ReflectMut, TypeInfo, TypeRegistration, TypeRegistry,
     },
 };
 use serde::de::DeserializeSeed;
@@ -69,7 +84,12 @@ use values::ScriptValues;
 mod events;
 mod live;
 mod math;
+#[cfg(feature = "mesh")]
+mod mesh;
+pub mod profile;
 pub mod values;
+#[cfg(all(feature = "remote_console", not(target_family = "wasm")))]
+mod remote_console;
 #[cfg(test)]
 mod bench;
 #[cfg(not(target_family = "wasm"))]
@@ -85,6 +105,10 @@ const GLUE: &str = include_str!("glue.js");
 /// scripts running scripts (through commands) deeper than this is an error, not a stack overflow
 const MAX_DEPTH: u32 = 64;
 
+// CODEX (GPT-6): dependent transforms/cameras can run after script writes, before normal propagation.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScriptSystems;
+
 pub fn plugin(app: &mut App) {
     app.init_asset::<ScriptModule>()
         .init_asset_loader::<ScriptModuleLoader>()
@@ -96,10 +120,15 @@ pub fn plugin(app: &mut App) {
         .init_resource::<Threads>()
         .init_resource::<events::ScriptEventRegistry>()
         .insert_non_send(ScriptEngine(Rc::new(js::Js::new().expect("failed to start the js engine"))))
-        .add_systems(PostUpdate, drive_scripts.before(TransformSystems::Propagate));
-    events::register_lifecycle::<bevy::ecs::lifecycle::AddEvent>(app, "OnAdd");
-    events::register_lifecycle::<bevy::ecs::lifecycle::InsertEvent>(app, "OnInsert");
-    events::register_lifecycle::<bevy::ecs::lifecycle::RemoveEvent>(app, "OnRemove");
+        .add_systems(PostUpdate, drive_scripts.in_set(ScriptSystems).before(TransformSystems::Propagate))
+        .add_systems(FixedUpdate, drive_fixed)
+        // `Time` is `Time<()>`
+        .register_default_generic::<Time>();
+    events::register_lifecycle::<bevy::ecs::lifecycle::AddEvent>(app, "OnAdd", true);
+    events::register_lifecycle::<bevy::ecs::lifecycle::InsertEvent>(app, "OnInsert", true);
+    events::register_lifecycle::<bevy::ecs::lifecycle::RemoveEvent>(app, "OnRemove", false);
+    #[cfg(all(feature = "remote_console", not(target_family = "wasm")))]
+    remote_console::plugin(app);
 }
 
 /// a resource's entity (resources are components on their own entities)
@@ -185,7 +214,7 @@ fn ready(world: &mut World, engine: &js::Js, name: &str) -> Result<bool, String>
         };
     };
     let source = module.source.clone();
-    let result = with_world_scope(world, || engine.load(name, &source));
+    let result = with_world_scope(world, || as_module(name, || engine.load(name, &source)));
     let state = if result.is_ok() { Module::Ready } else { Module::Failed };
     world.resource_mut::<ScriptModules>().0.insert(name.to_string(), state);
     result.map(|()| true)
@@ -231,8 +260,9 @@ impl ScriptListener {
         world.commands().queue(move |world: &mut World| {
             let event = events::resolve_listener(world, &listener);
             match (event, world.get_entity_mut(entity)) {
-                (Ok(event), Ok(mut listener)) => {
-                    listener.insert(event);
+                (Ok(event), Ok(_)) => {
+                    events::catch_up(world, entity, &listener, &event);
+                    world.entity_mut(entity).insert(event);
                 }
                 (Err(e), _) => error!(%entity, "script listener: {e}"),
                 (_, Err(_)) => {}
@@ -311,8 +341,40 @@ struct Thread {
     owner: Option<Entity>,
     /// `module#function`, for errors
     name: String,
-    sleep: f64,
+    module: String,
+    wait: Wait,
     slept: f64,
+    /// someone waiting for it to finish (the remote console)
+    waiter: Option<Waiter>,
+}
+
+// CLAUDE
+/// a thread's outcome goes to `done` when it finishes: its final value as JSON (empty for undefined) or
+/// its error, and what it logged meanwhile
+pub(crate) struct Waiter {
+    pub logs: Vec<String>,
+    pub done: Box<dyn FnOnce(Result<String, String>, Vec<String>) + Send + Sync>,
+}
+
+// CLAUDE
+/// what a generator's yield waits for
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Wait {
+    /// `yield seconds` (bare `yield`: 0, the next frame)
+    Seconds(f64),
+    /// `yield FixedUpdate`: the next fixed step, resumed in it
+    Fixed,
+}
+
+impl Wait {
+    /// the glue's `step` result: seconds, -2 for FixedUpdate, -1 when finished
+    fn from_step(n: f64) -> Option<Wait> {
+        match n {
+            n if n >= 0.0 => Some(Wait::Seconds(n)),
+            -2.0 => Some(Wait::Fixed),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Default, Resource)]
@@ -330,11 +392,15 @@ trait Engine {
     /// `args` and `event` are JSON
     fn call(&self, module: &str, function: &str, thread: u32, target: Option<&str>, args: &str, event: &str)
         -> Result<bool, String>;
-    /// resume a thread. seconds to sleep, or None when finished
-    fn step(&self, thread: u32, slept: f64) -> Result<Option<f64>, String>;
+    /// resume a thread. what it waits for next, or None when finished
+    fn step(&self, thread: u32, slept: f64) -> Result<Option<Wait>, String>;
     fn stop(&self, thread: u32);
     /// call an exported function as `(target, root)` for its value: JSON, empty for `undefined`
     fn evaluate(&self, module: &str, function: &str, target: &str, root: &str) -> Result<String, String>;
+    /// the remote console: run `source` as a top-level script (see glue.js `repl`). true if its value is a
+    /// generator, now stepped as `thread`; otherwise its value is in `RESULT`, as for `evaluate`
+    #[cfg_attr(not(feature = "remote_console"), allow(dead_code))]
+    fn repl(&self, source: &str, thread: u32) -> Result<bool, String>;
 }
 
 /// not Send: the engine must stay on the main thread. an Rc so a script can run while the world is
@@ -360,14 +426,14 @@ fn start(world: &mut World, engine: &js::Js, call: Call) -> Option<Call> {
     let target = call.target.map(entity_key);
     let args = if call.args.trim().is_empty() { "{}" } else { &call.args };
     let result = with_world_scope(world, || {
-        match engine.call(&call.module, &call.function, id, target.as_deref(), args, &call.event)? {
+        as_module(&call.module, || match engine.call(&call.module, &call.function, id, target.as_deref(), args, &call.event)? {
             true => engine.step(id, 0.0),
             false => Ok(None),
-        }
+        })
     });
     match result {
-        Ok(Some(sleep)) => {
-            let thread = Thread { id, owner: call.owner, name, sleep, slept: 0.0 };
+        Ok(Some(wait)) => {
+            let thread = Thread { id, owner: call.owner, name, module: call.module, wait, slept: 0.0, waiter: None };
             world.resource_mut::<Threads>().running.push(thread);
         }
         Ok(None) => {}
@@ -380,9 +446,27 @@ fn start(world: &mut World, engine: &js::Js, call: Call) -> Option<Call> {
 /// The script driver: resumes sleeping threads, then runs the queued calls. Calls queued while it runs
 /// wait for the next frame.
 fn drive_scripts(world: &mut World) {
+    let _t = profile::time("drive_scripts");
     let engine = world.non_send::<ScriptEngine>().0.clone();
-    let dt = world.resource::<Time>().delta_secs_f64();
+    resume(world, &engine, false);
 
+    let calls = std::mem::take(&mut world.resource_mut::<ScriptQueue>().0);
+    let waiting: Vec<Call> = calls.into_iter().filter_map(|call| start(world, &engine, call)).collect();
+    world.resource_mut::<ScriptQueue>().0.splice(0..0, waiting);
+}
+
+// CLAUDE
+/// In FixedUpdate: resumes the threads waiting for it (`Time` is the fixed clock there)
+fn drive_fixed(world: &mut World) {
+    let _t = profile::time("drive_scripts");
+    let engine = world.non_send::<ScriptEngine>().0.clone();
+    resume(world, &engine, true);
+}
+
+/// resume the threads that are due: in the frame's pass (`fixed` false) those whose sleep is over, in
+/// a fixed step those waiting for one. drops the threads whose owner is gone
+fn resume(world: &mut World, engine: &js::Js, fixed: bool) {
+    let dt = world.resource::<Time>().delta_secs_f64();
     let mut due = Vec::new();
     let mut orphaned = Vec::new();
     world.resource_scope(|world, mut threads: Mut<Threads>| {
@@ -391,8 +475,18 @@ fn drive_scripts(world: &mut World) {
                 orphaned.push(thread.id);
                 return false;
             }
-            thread.slept += dt;
-            if thread.slept >= thread.sleep {
+            let ready = match thread.wait {
+                Wait::Seconds(sleep) if !fixed => {
+                    thread.slept += dt;
+                    thread.slept >= sleep
+                }
+                Wait::Fixed if fixed => {
+                    thread.slept += dt;
+                    true
+                }
+                _ => false,
+            };
+            if ready {
                 due.push((thread.id, thread.slept));
             }
             true
@@ -403,38 +497,49 @@ fn drive_scripts(world: &mut World) {
     }
     for (id, slept) in due {
         // an earlier thread may have despawned this one's owner
-        let owner = world.resource::<Threads>().running.iter().find(|t| t.id == id).and_then(|t| t.owner);
+        let Some(thread) = world.resource::<Threads>().running.iter().find(|t| t.id == id) else { continue };
+        let (owner, module) = (thread.owner, thread.module.clone());
         if owner.is_some_and(|owner| world.get_entity(owner).is_err()) {
             engine.stop(id);
             continue;
         }
-        let result = with_world_scope(world, || engine.step(id, slept));
+        // a waited for thread's console output goes to its waiter
+        let waiter = |world: &mut World| world.resource_mut::<Threads>().running.iter_mut().find(|t| t.id == id).and_then(|t| t.waiter.as_mut().map(|w| std::mem::take(&mut w.logs)));
+        let logs = waiter(world);
+        let (result, logs) = capture_logs(logs, || with_world_scope(world, || as_module(&module, || engine.step(id, slept))));
+        if let Some(logs) = logs {
+            let mut threads = world.resource_mut::<Threads>();
+            if let Some(w) = threads.running.iter_mut().find(|t| t.id == id).and_then(|t| t.waiter.as_mut()) {
+                w.logs = logs;
+            }
+        }
         resumed(world, id, result);
     }
-
-    let calls = std::mem::take(&mut world.resource_mut::<ScriptQueue>().0);
-    let waiting: Vec<Call> = calls.into_iter().filter_map(|call| start(world, &engine, call)).collect();
-    world.resource_mut::<ScriptQueue>().0.splice(0..0, waiting);
 }
 
-/// record a step: keep the thread sleeping, or drop it when finished or failed
-fn resumed(world: &mut World, id: u32, result: Result<Option<f64>, String>) {
+/// record a step: keep the thread waiting, or drop it when finished or failed
+fn resumed(world: &mut World, id: u32, result: Result<Option<Wait>, String>) {
     let mut threads = world.resource_mut::<Threads>();
     let Some(index) = threads.running.iter().position(|t| t.id == id) else {
         return;
     };
     match result {
-        Ok(Some(sleep)) => {
+        Ok(Some(wait)) => {
             let thread = &mut threads.running[index];
-            thread.sleep = sleep;
+            thread.wait = wait;
             thread.slept = 0.0;
         }
         Ok(None) => {
-            threads.running.remove(index);
+            if let Some(waiter) = threads.running.remove(index).waiter {
+                (waiter.done)(Ok(RESULT.take().unwrap_or_default()), waiter.logs);
+            }
         }
         Err(e) => {
             let thread = threads.running.remove(index);
-            error!(script = thread.name, "{e}");
+            match thread.waiter {
+                Some(waiter) => (waiter.done)(Err(e), waiter.logs),
+                None => error!(script = thread.name, "{e}"),
+            }
         }
     }
 }
@@ -448,6 +553,82 @@ thread_local! {
     static SWAPPED: Cell<*mut World> = const { Cell::new(ptr::null_mut()) };
     /// what `evaluate` gave, as JSON
     static RESULT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    /// the module whose code is running, for host calls that depend on it (`select`)
+    static MODULE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    /// script data made assets since the last host call: they're on their way to `Assets` (see `with_host_world`)
+    static MADE_ASSETS: Cell<bool> = const { Cell::new(false) };
+    /// CLAUDE: console output, collected for the remote console while its code runs
+    static LOGS: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+// CLAUDE
+/// runs `f`, adding its console output to `logs` (if collecting), which it gives back
+fn capture_logs<R>(logs: Option<Vec<String>>, f: impl FnOnce() -> R) -> (R, Option<Vec<String>>) {
+    let outer = LOGS.replace(logs);
+    let result = f();
+    (result, LOGS.replace(outer))
+}
+
+// CLAUDE
+/// host: `console.log` and co. to the log, as the running module
+fn host_log(level: &str, text: String) {
+    let module = MODULE.with_borrow(|m| m.clone()).unwrap_or_default();
+    match level {
+        "error" => error!(script = module, "{text}"),
+        "warn" => warn!(script = module, "{text}"),
+        "debug" => debug!(script = module, "{text}"),
+        _ => info!(script = module, "{text}"),
+    }
+    LOGS.with_borrow_mut(|logs| {
+        if let Some(logs) = logs {
+            logs.push(if matches!(level, "log" | "info") { text } else { format!("[{level}] {text}") });
+        }
+    });
+}
+
+/// values.rs: script data made an asset
+fn made_asset() {
+    MADE_ASSETS.set(true);
+}
+
+// CLAUDE
+/// where assets are: the app world, also while a scene builds (its own world has none)
+fn assets_world(world: &mut World) -> &mut World {
+    let app = APP_WORLD.get();
+    if app.is_null() {
+        return world;
+    }
+    // SAFETY: as in `type_registry`; `world` (the scene's, or the app's swapped in) isn't used meanwhile
+    unsafe { &mut *app }
+}
+
+// CLAUDE
+/// assets made from script data go through the asset server, which hands them to `Assets` in its next
+/// update: bevy's `handle_internal_asset_events`, run now, so a script that made one sees it at once
+/// (`asset(get(e, "MeshMaterial3d<StandardMaterial>")[0], ..)`, also while a scene builds)
+fn deliver_made_assets(world: &mut World) {
+    if !MADE_ASSETS.take() {
+        return;
+    }
+    let world = assets_world(world);
+    if world.contains_resource::<AssetServer>() {
+        // `Assets` storage can move
+        live::clear_cache();
+        bevy::asset::handle_internal_asset_events(world);
+    }
+}
+
+// CLAUDE
+/// runs `f` as `module`'s code (see `MODULE`). a nested call restores the outer module after
+fn as_module<R>(module: &str, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            MODULE.set(self.0.take());
+        }
+    }
+    let _restore = Restore(MODULE.replace(Some(module.to_string())));
+    f()
 }
 
 // CLAUDE
@@ -457,8 +638,9 @@ thread_local! {
 /// resources: the type registry and asset server come from `app`. The module stays loaded for later
 /// calls, such as the scene's event handlers once it is spawned.
 pub fn load_scene_module(app: &mut World, scene: &mut World, name: &str, source: &str) -> Result<(), String> {
+    let _t = profile::time("scene script");
     let engine = app.non_send::<ScriptEngine>().0.clone();
-    in_scene(app, scene, || engine.load(name, source))?;
+    in_scene(app, scene, || as_module(name, || engine.load(name, source)))?;
     app.resource_mut::<ScriptModules>().0.insert(name.to_string(), Module::Ready);
     Ok(())
 }
@@ -466,8 +648,9 @@ pub fn load_scene_module(app: &mut World, scene: &mut World, name: &str, source:
 /// calls `function(target, root)` of a module loaded with [`load_scene_module`], against `scene`, and
 /// gives its value as JSON
 pub fn eval_in_scene(app: &mut World, scene: &mut World, module: &str, function: &str, target: Entity, root: Entity) -> Result<serde_json::Value, String> {
+    let _t = profile::time("scene script");
     let engine = app.non_send::<ScriptEngine>().0.clone();
-    let json = in_scene(app, scene, || engine.evaluate(module, function, &entity_key(target), &entity_key(root)))?;
+    let json = in_scene(app, scene, || as_module(module, || engine.evaluate(module, function, &entity_key(target), &entity_key(root))))?;
     if json.is_empty() {
         return Err("no value (the last statement is the value)".into());
     }
@@ -568,6 +751,7 @@ fn host_trigger(target: Option<&str>, event: &str, json: &str) -> Result<(), Str
 
 // CLAUDE
 fn host_insert(entity: &str, type_name: &str, json: &str) -> Result<(), String> {
+    let _t = profile::time("insert");
     let patch: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let entity = parse_entity(entity)?;
     with_host_world(|world| insert_json(world, entity, type_name, &patch))
@@ -576,6 +760,8 @@ fn host_insert(entity: &str, type_name: &str, json: &str) -> Result<(), String> 
 // CLAUDE
 /// replace a math component (`Transform`...) with a math value
 fn host_insert_math(entity: &str, type_name: &str, value: math::Math) -> Result<(), String> {
+    let _t = profile::time("insert");
+    let value = value.sanitized()?;
     let entity = parse_entity(entity)?;
     with_host_world(|world| {
         live::clear_cache();
@@ -600,6 +786,7 @@ enum Got {
 
 // CLAUDE
 fn host_get(entity: &str, type_name: &str) -> Result<Got, String> {
+    let _t = profile::time("get");
     with_host_world(|world| {
         let entity = parse_entity(entity)?;
         let registry = type_registry(world);
@@ -616,6 +803,7 @@ fn host_get(entity: &str, type_name: &str) -> Result<Got, String> {
 // CLAUDE
 /// a resource, as `get` gives a component. null if it doesn't exist
 fn host_get_resource(type_name: &str) -> Result<Got, String> {
+    let _t = profile::time("get");
     with_host_world(|world| {
         let registry = type_registry(world);
         let registry = registry.read();
@@ -645,6 +833,7 @@ fn copy(value: &dyn PartialReflect, registry: &TypeRegistry) -> Result<Got, Stri
 
 // CLAUDE
 fn host_remove(entity: &str, type_name: &str) -> Result<(), String> {
+    let _t = profile::time("remove");
     with_host_world(|world| {
         let entity = parse_entity(entity)?;
         let registry = type_registry(world);
@@ -658,6 +847,7 @@ fn host_remove(entity: &str, type_name: &str) -> Result<(), String> {
 
 // CLAUDE
 fn host_spawn(json: &str) -> Result<String, String> {
+    let _t = profile::time("spawn");
     let components: serde_json::Map<String, serde_json::Value> =
         serde_json::from_str(json).map_err(|e| format!("spawn takes an object of components: {e}"))?;
     with_host_world(|world| {
@@ -670,8 +860,30 @@ fn host_spawn(json: &str) -> Result<String, String> {
 }
 
 // CLAUDE
+/// how `select(e, "selector")` matches: corn_scene sets it (corn_scripting knows no selectors). the
+/// entities under `scope` (it included) that match, in tree order. given the calling script's module
+pub type SelectFn = fn(&World, Entity, &str, Option<&str>) -> Result<Vec<Entity>, String>;
+static SELECT: std::sync::OnceLock<SelectFn> = std::sync::OnceLock::new();
+
+pub fn set_select(f: SelectFn) {
+    let _ = SELECT.set(f);
+}
+
+// CLAUDE
+fn host_select(scope: &str, selector: &str) -> Result<String, String> {
+    let _t = profile::time("select");
+    let select = SELECT.get().ok_or("`select` needs corn_scene (with its scripting feature)")?;
+    with_host_world(|world| {
+        let module = MODULE.with_borrow(|m| m.clone());
+        let found = select(world, parse_entity(scope)?, selector, module.as_deref())?;
+        serde_json::to_string(&found.into_iter().map(entity_key).collect::<Vec<_>>()).map_err(|e| e.to_string())
+    })
+}
+
+// CLAUDE
 /// the entities with a component, as a JSON array
 fn host_find(type_name: &str) -> Result<String, String> {
+    let _t = profile::time("find");
     with_host_world(|world| {
         let registry = type_registry(world);
         let type_id = lookup(&registry.read(), type_name)?.0.type_id();
@@ -779,11 +991,47 @@ fn parse_entity(entity: &str) -> Result<Entity, String> {
         .ok_or_else(|| format!("not an entity: `{entity}`"))
 }
 
+/// a type by its full or short path, or a generic type's name for its default (see [`DefaultGenericExt`])
 fn registration<'a>(registry: &'a TypeRegistry, name: &str) -> Result<&'a TypeRegistration, String> {
-    registry
-        .get_with_type_path(name)
-        .or_else(|| registry.get_with_short_type_path(name))
-        .ok_or_else(|| format!("unknown type `{name}` (not registered, or an ambiguous short name)"))
+    if let Some(registration) = registry.get_with_type_path(name).or_else(|| registry.get_with_short_type_path(name)) {
+        return Ok(registration);
+    }
+    match DEFAULT_GENERICS.read().unwrap().get(name) {
+        Some(Some(path)) => registry.get_with_type_path(path).ok_or_else(|| format!("`{name}` is `{path}`, which isn't registered")),
+        Some(None) => Err(format!("`{name}` is the default of more than one generic type: write which")),
+        None => Err(format!("unknown type `{name}` (not registered, or an ambiguous short name)")),
+    }
+}
+
+// CLAUDE
+/// generic types' names (bare and with their module), each to its default's full type path. None: two
+/// types' defaults have that name. Rust's defaults aren't reflected, and are a fact about the type, so
+/// this is one table for the process
+static DEFAULT_GENERICS: LazyLock<RwLock<HashMap<String, Option<String>>>> = LazyLock::new(Default::default);
+
+// CLAUDE
+/// scripts name a generic type without its parameters to mean its default, as rust does:
+/// `app.register_default_generic::<Time>()` makes `resource("Time")` `Time<()>`
+pub trait DefaultGenericExt {
+    fn register_default_generic<T: TypePath>(&mut self) -> &mut Self;
+}
+
+impl DefaultGenericExt for App {
+    fn register_default_generic<T: TypePath>(&mut self) -> &mut Self {
+        let (Some(ident), path) = (T::type_ident(), T::type_path()) else { return self };
+        let mut names = DEFAULT_GENERICS.write().unwrap();
+        let mut add = |name: String| {
+            let default = names.entry(name).or_insert_with(|| Some(path.to_string()));
+            if default.as_deref() != Some(path) {
+                *default = None;
+            }
+        };
+        add(ident.to_string());
+        if let Some(module) = T::module_path() {
+            add(format!("{module}::{ident}"));
+        }
+        self
+    }
 }
 
 fn lookup<'a>(registry: &'a TypeRegistry, name: &str) -> Result<(&'a TypeRegistration, &'a ReflectComponent), String> {
@@ -811,10 +1059,17 @@ pub fn apply_json(
             return Ok(());
         }
     }
-    // a newtype is its field's data
+    // a newtype is its field's data, unless only the newtype knows its serde form (`Name`, around a
+    // hashed string). handles and entities are always their field's (the processor reads them)
+    let serde_of = |info: Option<&TypeInfo>| info.is_some_and(|i| registry.get_type_data::<ReflectDeserialize>(i.type_id()).is_some());
+    let newtype_serde = serde_of(target.get_represented_type_info());
     if let ReflectMut::TupleStruct(newtype) = target.reflect_mut() {
         if newtype.field_len() == 1 {
-            return apply_json(newtype.field_mut(0).unwrap(), json, registry, assets);
+            let field = newtype.field_mut(0).unwrap();
+            let read_by_processor = values::is_handle(field, registry) || field.try_downcast_ref::<Entity>().is_some();
+            if !newtype_serde || serde_of(field.get_represented_type_info()) || read_by_processor {
+                return apply_json(field, json, registry, assets);
+            }
         }
     }
     if values::is_unchanged_handle(target, json, registry) {
@@ -884,12 +1139,12 @@ exports.spawn_child = function (e) {
             with_world_scope(world, || engine.call("probe", function, thread, Some(&e), r#"{"label":"hi"}"#, r#"{"x":7}"#))
         };
         assert!(call(world, "run", 1).unwrap());
-        assert_eq!(with_world_scope(world, || engine.step(1, 0.0)).unwrap(), Some(0.5));
+        assert_eq!(with_world_scope(world, || engine.step(1, 0.0)).unwrap(), Some(Wait::Seconds(0.5)));
         assert_eq!(label(world), "hi 7 1");
         assert_eq!(with_world_scope(world, || engine.step(1, 0.75)).unwrap(), None);
         // module state carries over to the next call
         assert!(call(world, "run", 2).unwrap());
-        assert_eq!(with_world_scope(world, || engine.step(2, 0.0)).unwrap(), Some(0.5));
+        assert_eq!(with_world_scope(world, || engine.step(2, 0.0)).unwrap(), Some(Wait::Seconds(0.5)));
         assert_eq!(label(world), "hi 7 2");
         engine.stop(2);
         assert_eq!(with_world_scope(world, || engine.step(2, 1.0)).unwrap(), None, "stopped");
@@ -927,7 +1182,7 @@ exports.removed = (e) => insert(e, "Gone", {});"#;
             world.resource_mut::<ScriptModules>().insert(&mut assets, "test/lifecycle", module);
         });
         let listener = |event, function| ScriptListener::new(event, "test/lifecycle", function).with_component("Probe");
-        world.spawn(listener("OnAdd", "added"));
+        let everywhere = world.spawn(listener("OnAdd", "added")).id();
         let [a, b] = [(); 2].map(|_| world.spawn_empty().id());
         world.spawn((listener("OnRemove", "removed"), ListenerOf(b)));
         let no_component = world.spawn(ScriptListener::new("OnAdd", "test/lifecycle", "added")).id();
@@ -946,9 +1201,56 @@ exports.removed = (e) => insert(e, "Gone", {});"#;
         world.entity_mut(a).remove::<Probe>();
         world.entity_mut(b).remove::<Probe>();
         app.update();
-        let world = app.world();
+        let world = app.world_mut();
         assert!(!world.entity(a).contains::<Gone>(), "the OnRemove listener is b's only");
         assert!(world.entity(b).contains::<Gone>());
+
+        // a listener on an entity that already has the component is called once as it attaches; OnRemove isn't
+        world.despawn(everywhere);
+        let c = world.spawn(Probe::default()).id();
+        world.spawn((listener("OnAdd", "added"), ListenerOf(c)));
+        world.spawn((listener("OnRemove", "removed"), ListenerOf(c)));
+        app.update();
+        let world = app.world_mut();
+        assert!(world.get::<Probe>(c).unwrap().label.starts_with("added"));
+        assert!(!world.entity(c).contains::<Gone>());
+        world.get_mut::<Probe>(c).unwrap().label.clear();
+        app.update();
+        assert_eq!(app.world().get::<Probe>(c).unwrap().label, "", "only once");
+    }
+
+    const FIXED_JS: &str = r#"
+exports.run = function* (e) {
+  while (true) {
+    const dt = yield FixedUpdate;
+    insert(e, "Probe", { n: get(e, "Probe").n + 1, label: `${dt} ${JSON.stringify(get_resource("Time").delta)}` });
+  }
+};"#;
+
+    // CLAUDE
+    /// `yield FixedUpdate` resumes once per fixed step, in it
+    #[cfg_attr(not(target_family = "wasm"), test)]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
+    fn fixed_update_yields() {
+        use std::time::Duration;
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), plugin));
+        app.register_type::<Probe>()
+            .insert_resource(Time::<Fixed>::from_seconds(0.1))
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(Duration::from_millis(40)));
+        let world = app.world_mut();
+        world.resource_scope(|world, mut assets: Mut<Assets<ScriptModule>>| {
+            world.resource_mut::<ScriptModules>().insert(&mut assets, "test/fixed", ScriptModule { source: FIXED_JS.into() });
+        });
+        let e = world.spawn(Probe::default()).id();
+        world.commands().queue(RunScript::new("test/fixed", "run", e));
+        // 10 frames of 40ms: 4 steps of 100ms (the first frame's delta is 0)
+        for _ in 0..11 {
+            app.update();
+        }
+        let probe = app.world().get::<Probe>(e).unwrap();
+        assert_eq!(probe.n, 4.0);
+        assert_eq!(probe.label, r#"0.1 {"secs":0,"nanos":100000000}"#, "slept the step, Time is the fixed clock");
     }
 
     const MATH_JS: &str = r#"
@@ -1129,7 +1431,7 @@ exports.run = function* (e) {
 };"#;
         with_world_scope(&mut world, || js.load("held", source)).unwrap();
         assert!(with_world_scope(&mut world, || js.call("held", "run", 1, Some(&e), "{}", "null")).unwrap());
-        assert_eq!(with_world_scope(&mut world, || js.step(1, 0.0)).unwrap(), Some(0.0));
+        assert_eq!(with_world_scope(&mut world, || js.step(1, 0.0)).unwrap(), Some(Wait::Seconds(0.0)));
         assert_eq!(with_world_scope(&mut world, || js.step(1, 0.0)).unwrap(), None);
         assert_eq!(world.get::<Transform>(entity).unwrap().translation, Vec3::new(1.0, 2.0, 3.0));
     }
@@ -1144,5 +1446,31 @@ exports.run = function* (e) {
         with_world_scope(&mut world, || js.load("bad", r#"exports.f = (e) => insert(e, "Nope", {});"#)).unwrap();
         let err = with_world_scope(&mut world, || js.call("bad", "f", 1, Some(&e), "{}", "null")).unwrap_err();
         assert!(err.contains("unknown type `Nope`"), "{err}");
+    }
+
+    mod one {
+        #[derive(bevy::reflect::TypePath)]
+        pub struct Pair<T = ()>(T);
+    }
+    mod two {
+        #[derive(bevy::reflect::TypePath)]
+        pub struct Pair<T = ()>(T);
+    }
+
+    // CLAUDE
+    /// a generic type's bare name is its default; two defaults with one name need their module
+    #[test]
+    fn default_generics() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), plugin));
+        app.register_default_generic::<one::Pair>().register_default_generic::<two::Pair>();
+        let registry = app.world().resource::<AppTypeRegistry>().read();
+        for name in ["Time", "bevy_time::time::Time", "Time<()>"] {
+            assert_eq!(registration(&registry, name).unwrap().type_id(), std::any::TypeId::of::<Time>(), "{name}");
+        }
+        let one = format!("{}::one::Pair", module_path!());
+        let names = DEFAULT_GENERICS.read().unwrap();
+        assert_eq!(names["Pair"], None);
+        assert_eq!(names[&one].as_deref(), Some(<one::Pair as TypePath>::type_path()));
     }
 }

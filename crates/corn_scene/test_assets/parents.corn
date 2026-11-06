@@ -1,0 +1,14 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: parents get Transform/Visibility; scripts' select */
+spawn site {
+  on ScriptPing: ${
+    for (const d of select(e, ".door")) insert(d, "Label", "open");
+    insert(select_one(e, "#deeper > Mesh3d"), "Label", "lit");
+    insert(e, "Health", { max: select(e, "Health").length });
+    if (select_one(e, "Kind") !== null) throw new Error("nothing has Kind");
+  }
+  spawn deeper {
+    spawn lamp { Mesh3d: Cuboid(1, 1, 1); }
+  }
+  spawn left { class: door; Health: { max: 1 }; }
+  spawn right { class: door; Health: { max: 2 }; }
+}

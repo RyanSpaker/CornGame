@@ -1,0 +1,2 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: can't become one entity */
+include "two.fake";

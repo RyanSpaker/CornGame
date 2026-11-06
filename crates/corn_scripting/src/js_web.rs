@@ -7,10 +7,10 @@ use wasm_bindgen::{prelude::*, JsCast};
 use std::{cell::RefCell, collections::HashMap};
 
 use super::{
-    host_despawn, host_find, host_get, host_get_resource, host_insert, host_insert_math, host_remove, host_spawn,
+    host_despawn, host_find, host_select, host_get, host_get_resource, host_insert, host_insert_math, host_remove, host_spawn,
     host_trigger, live,
     math::{self, Arg, Kind, Out, Slot},
-    Engine, Got, GLUE,
+    Engine, Got, Wait, GLUE,
 };
 
 pub struct Js {
@@ -20,6 +20,7 @@ pub struct Js {
     step: Function,
     stop: Function,
     evaluate: Function,
+    repl: Function,
 }
 
 impl Js {
@@ -38,6 +39,13 @@ impl Js {
         set("insert", closure3(move |e, t, json| host_insert(&e, &t, &json).map(undefined)))?;
         set("get", closure2(|e, t| host_get(&e, &t).map(got_js)))?;
         set("getResource", closure1(|t| host_get_resource(&t).map(got_js)))?;
+        // CLAUDE: `mesh(op, id, name, numbers)`, see mesh.rs
+        #[cfg(feature = "mesh")]
+        set("mesh", host_fn(|op, id, name, numbers| {
+            let numbers = js_sys::Float32Array::new(&numbers).to_vec();
+            let (id, name) = (id.as_f64().unwrap_or(0.0) as u32, name.as_string().unwrap_or_default());
+            super::mesh::host_mesh(&string(&op)?, id, &name, &numbers).map(JsValue::from)
+        }))?;
         set("insertMath", host_fn(move |e, t, h, _| host_insert_math(&string(&e)?, &string(&t)?, math_of(&h)?).map(undefined)))?;
         set("refMath", host_fn(|base, t, path, _| {
             let r = live::json::at(&string(&base)?, &string(&t)?, &string(&path)?)?;
@@ -87,6 +95,7 @@ impl Js {
         set("spawn", closure1(|json| host_spawn(&json).map(JsValue::from)))?;
         set("despawn", closure1(move |e| host_despawn(&e).map(undefined)))?;
         set("find", closure1(|t| host_find(&t).map(JsValue::from)))?;
+        set("select", closure2(|e, s| host_select(&e, &s).map(JsValue::from)))?;
         set("result", closure1(move |json| {
             super::host_result(json);
             Ok(JsValue::UNDEFINED)
@@ -101,8 +110,8 @@ impl Js {
         method("init")?.call1(&glue, &host).map_err(describe)?;
 
         let (load, call, step, stop) = (method("load")?, method("call")?, method("step")?, method("stop")?);
-        let evaluate = method("evaluate")?;
-        Ok(Self { glue, load, call, step, stop, evaluate })
+        let (evaluate, repl) = (method("evaluate")?, method("repl")?);
+        Ok(Self { glue, load, call, step, stop, evaluate, repl })
     }
 }
 
@@ -118,10 +127,9 @@ impl Engine for Js {
         Ok(self.call.apply(&self.glue, &params).map_err(describe)?.is_truthy())
     }
 
-    fn step(&self, thread: u32, slept: f64) -> Result<Option<f64>, String> {
-        let sleep = self.step.call2(&self.glue, &thread.into(), &slept.into()).map_err(describe)?;
-        let sleep = sleep.as_f64().unwrap_or(-1.0);
-        Ok((sleep >= 0.0).then_some(sleep))
+    fn step(&self, thread: u32, slept: f64) -> Result<Option<Wait>, String> {
+        let wait = self.step.call2(&self.glue, &thread.into(), &slept.into()).map_err(describe)?;
+        Ok(Wait::from_step(wait.as_f64().unwrap_or(-1.0)))
     }
 
     fn stop(&self, thread: u32) {
@@ -132,6 +140,10 @@ impl Engine for Js {
         let params: [JsValue; 4] = [module.into(), function.into(), target.into(), root.into()];
         self.evaluate.apply(&self.glue, &params.into_iter().collect::<Array>()).map_err(describe)?;
         Ok(super::RESULT.take().unwrap_or_default())
+    }
+
+    fn repl(&self, source: &str, thread: u32) -> Result<bool, String> {
+        Ok(self.repl.call2(&self.glue, &source.into(), &thread.into()).map_err(describe)?.is_truthy())
     }
 }
 

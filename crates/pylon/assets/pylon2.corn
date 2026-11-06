@@ -1,0 +1,116 @@
+/* CLAUDE (claude-opus-5-5): pylon.corn lit the way three_corn's demo is, as an overlay: it includes
+   pylon.corn and changes only how bright things are. `PYLON_SCENE=pylon2.corn` runs it.
+
+   three.js (r164) tonemaps with ACES at exposure 1.08: colour * 1.08 / 0.6, then the same fit as bevy's
+   `AcesFitted`. So the cameras get that tonemapper, and an `Exposure` that scales by 1.8 too, and the
+   lights take three's numbers (converted where bevy's units differ). What bevy doesn't expose (unlit
+   colours, the chase lamps' shader) is scaled by 1.8 here. three doesn't tonemap the sky, and fogs after
+   tonemapping, so the sky and fog colours are what ACES turns into three's colours.
+
+   It reaches pylon.corn two ways: rules over what it built (cameras, lights, materials), and the
+   settings pylon.corn exports (`module("pylon.corn")`), changed before it builds. */
+
+script {
+const pylon = module("pylon.corn");
+
+const EXPOSURE = 1.08 / 0.6;
+// bevy's exposure is 2^-ev100 / 1.2: the cameras' ev100 is -log2(1.2 * EXPOSURE) = -1.111
+
+const rad = (d) => (d * Math.PI) / 180;
+function rgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => Math.pow(c / 255, 2.2));
+}
+const luminance = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+const linear = ([red, green, blue], alpha = 1) => ({ red, green, blue, alpha });
+const scaled = (hex, k) => rgb(hex).map((c) => c * k);
+
+// ---------------------------------------------------------------------------- lights
+// three's point and spot intensity is candela, falling off as d^-decay; bevy's is lumens (candela * 4pi,
+// spots too), falling off as d^-2. equal at `d` metres
+const lumens = (candela, decay, d) => candela * 4 * Math.PI * Math.pow(d, 2 - decay);
+// the cameras' ambient light is this colour (pylon.corn), uniform: one brightness stands in for three's
+const AMBIENT_COLOR = "#dce9df";
+// three's ambient (and hemisphere) intensity is irradiance, which its materials divide by pi; bevy's
+// ambient isn't divided. as bright as `hex` at `intensity`, in the cameras' colour
+const ambient = (hex, intensity) => ((intensity / Math.PI) * luminance(rgb(hex))) / luminance(rgb(AMBIENT_COLOR));
+// a hemisphere light (sky above, ground below) as a vertical surface gets it: half of each
+const hemisphere = (sky, ground, intensity) => (ambient(sky, intensity) + ambient(ground, intensity)) / 2;
+
+// the spotlights hang above the wall, aimed at its foot (pylon.corn's build_interior): matched there
+const S = pylon.S;
+const SPOT_REACH = (S.interiorPanelHeight + S.straightWallHeight + 1.05 - 0.08) / Math.cos(rad(S.spotlightTilt));
+
+// read as the room sleeps and wakes. outside, the ground faces the sky: the sky's colour only. in the
+// room, the walls get the hemisphere; woken, the ceiling's ambient fill adds to it
+const dark = hemisphere("#81938f", "#171510", 0.92);
+Object.assign(pylon.AMBIENT, { day: ambient("#dce9df", 1.55), dark, lit: dark + ambient("#ffe5bd", 0.38) });
+// emissive is exposed in bevy as in three; the chase shader's colour isn't
+Object.assign(pylon.LIGHT, { crystalGlow: 2.1, chase: EXPOSURE });
+
+// ---------------------------------------------------------------------------- tonemapped colours
+// ACES fitted (bevy's tonemapping.wesl): out = OUT * fit(IN * colour)
+const IN = [[0.59719, 0.35458, 0.04823], [0.076, 0.90834, 0.01566], [0.0284, 0.13383, 0.83777]];
+const OUT = [[1.60475, -0.53108, -0.07367], [-0.10208, 1.10813, -0.00605], [-0.00327, -0.07276, 1.07602]];
+const times = (m, v) => m.map((row) => row[0] * v[0] + row[1] * v[1] + row[2] * v[2]);
+function inverse(m) {
+  const [[a, b, c], [d, e, f], [g, h, i]] = m;
+  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  return [
+    [e * i - f * h, c * h - b * i, b * f - c * e],
+    [f * g - d * i, a * i - c * g, c * d - a * f],
+    [d * h - e * g, b * g - a * h, a * e - b * d],
+  ].map((row) => row.map((x) => x / det));
+}
+// fit(v) = (v^2 + 0.0245786 v - 0.000090537) / (0.983729 v^2 + 0.432951 v + 0.238081), solved for v >= 0
+function unfit(y) {
+  const a = 0.983729 * y - 1, b = 0.432951 * y - 0.0245786, c = 0.238081 * y + 0.000090537;
+  return (-b - Math.sqrt(b * b - 4 * a * c)) / (2 * a);
+}
+// the colour ACES shows as `hex`
+const untoned = (hex) => linear(times(inverse(IN), times(inverse(OUT), rgb(hex)).map(unfit)));
+const sky = () => ({ Custom: { LinearRgba: untoned("#9eb6b1") } });
+const fog = () => ({ LinearRgba: untoned("#b1c2af") });
+
+const SPOT = lumens(46, 1.45, SPOT_REACH);
+// lighting the floor below it, and the console from close by
+const CEILING = lumens(20, 1.45, 10);
+const CRYSTAL = lumens(10, 1.7, 1);
+}
+
+/* three's void shell: near black, glowing red at 2.5 */
+asset void_glow: StandardMaterial ${ ({ base_color: { Srgba: { red: 9 / 255, green: 0, blue: 0, alpha: 1 } }, emissive: linear(scaled("#8f0000", 2.5)), perceptual_roughness: 1 }) }
+/* the spot disks: three's unlit white is tonemapped at exposure 1.8, bevy's unlit colours aren't exposed */
+asset disk_glow: StandardMaterial ${ ({ base_color: { LinearRgba: linear(scaled("#ffffff", EXPOSURE)) }, unlit: true }) }
+/* three tints each stalk (hsl 0.16-0.22, 0.52-0.76, 0.38-0.56: about #afc42b) and shades it in its own
+   shader: darker toward the root (0.62-1.06), less ambient than a standard material. one colour here:
+   the middle tint, at ~0.76. (by script: corn's `{ base_color_texture: "..."; }` here fails the load,
+   "Handle<Image> has no Default") */
+asset corn_tint: StandardMaterial ${ ({
+  base_color: { Srgba: { red: 0x9b / 255, green: 0xad / 255, blue: 0x26 / 255, alpha: 1 } },
+  base_color_texture: "textures/corn-cluster.webp",
+  alpha_mode: { Mask: 0.16 },
+  perceptual_roughness: 0.9,
+}) }
+
+include "pylon.corn" {
+  /* the exposure is a literal:  `${ }` results skip value parsers (Exposure only has one: main.rs) */
+  #player {
+    Tonemapping: AcesFitted;
+    Exposure: -1.111;
+    Camera.clear_color: ${ sky() };
+  }
+  #window_view {
+    Exposure: -1.111;
+    Camera.clear_color: ${ sky() };
+  }
+  #outside { Realm.fog: ${ fog() }; }
+  #sun { DirectionalLight.illuminance: 3.2; }
+  #corn { MeshMaterial3d<StandardMaterial>: corn_tint; }
+
+  [Name=spotlight] { SpotLight.intensity: ${ SPOT }; }
+  #"ceiling light" { PointLight.intensity: ${ CEILING }; }
+  #"crystal light" { PointLight.intensity: ${ CRYSTAL }; }
+  #void { MeshMaterial3d<StandardMaterial>: void_glow; }
+  #"spot disks" { MeshMaterial3d<StandardMaterial>: disk_glow; }
+}

@@ -1,0 +1,43 @@
+# CODEX (GPT-6): cross-platform WebRTC voice, independent of the game's replication transport.
+[package]
+name = "network_audio"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["client"]
+client = ["dep:cpal", "dep:opus", "dep:tokio-tungstenite", "dep:wasm-bindgen", "dep:alsa"]
+relay = ["dep:axum"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+anyhow = "1"
+bytes = "1"
+# CODEX: match the lobby's CPAL/ALSA generation; update this pin with the workspace.
+cpal = { version = "=0.17.1", optional = true }
+futures-util = "0.3"
+opus = { version = "0.3", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "net", "macros", "signal"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"], optional = true }
+webrtc = "0.14"
+axum = { version = "0.8", features = ["ws"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+
+# CODEX: construct explicit ALSA PCM devices, including PipeWire targets, without changing global defaults.
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = { version = "0.10", optional = true }
+
+[[bin]]
+name = "voice-relay"
+path = "src/bin/relay.rs"
+required-features = ["relay"]
+
+[[bin]]
+name = "voice-probe"
+path = "src/bin/probe.rs"
+required-features = ["client"]

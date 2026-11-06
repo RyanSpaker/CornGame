@@ -70,3 +70,77 @@ crazy client flickering of physics when networking
 - [x] test client->server->otherclient replication for character
   - DONE: although testing was limited as I was getting 5fps per above issue.
   - [ ] test with hierarchy
+
+
+
+# Tue Sep 15 08:00:45 PM EDT 2026
+DEV PLAN V3
+
+- prototype all features in three.js
+  
+  determine look/feel, needed tweaks and editor ui, good defaults, and prefered impl/variant before ever writing a line of rust
+
+rust codebase
+- remove lightyear and roll our own networking
+  very little needs to be synced anyway
+
+  events need individual logic most of the time
+  - ex syncronizing a scripted set of transitions
+
+  lightyear update to 0.19 removes ability to have client authority
+
+  design
+  - NetworkId for matching
+    seperate spawn and sync which was an issue in replicon/lightyear
+    networkid is normally a hash, but there is NetworkIdSrc which shows how it is computed so that it can be debugged. 
+  - create seperate network sync entities which interpolate to real ones.
+    make this easy to add later
+  - scene spawner should work at many granulaties (sending "spawn scene X" or spawning scene X and streaming "spawn X object on Y parent in scene" as well as intermediate levels)
+- rethink blender assets
+  css-like syntax for attaching properities to gltf items based on 
+    name, class, hierarchy
+  executes at scene load, but can be changed in dev ui and reapplied
+  used to attach colliders, cornfields, etc.
+  consider BSN functionality overlap, though this is mostly for having a plaintext blender -> game layer. blender gets to use plain names
+- we need a state machine + curves editor
+- we need scripting, ideally in js
+- we need a good terminal, more than any other part of the editor
+- we need logging which is tied to entities (querying can use css selectors)
+- we need StandardRetroMaterial and StandardBillboard
+
+it would be nice to have shadergraph, and something like geometry nodes, but with a textual format in addition to visible. This is also the case for the statemachines.
+
+We need way fewer libraries. We should disable all bevy features we don't use.
+
+We need standard benchmarks.
+
+We need to be able to build a windows dist
+
+We need standardized values for lights, size, and materials so we can use physically sensisble defaults. 
+
+We need some way to provide in blender a box of reference size (rough bounding box) which we can then scale to a desired size in code. Rather than magic numbers. Procedural geometry scripting where we can say "line up X.top with B.bottom" etc
+
+Unsolved: settings.
+
+we need a way to break large gltf scenes up into models and references
+and this needs to be easily inspectible with cli tools
+
+we need a way to convert blender -> gltf headless, makefile
+
+we need a consistent representation for variable size textures and model LODs, so we can use the 4k in blender but game only ever loads the downscaled. 
+
+we need better workflows asset revisions 
+
+we need a way to automatically billboard, and to automatically normal map a large gltf. But also we need tools in blender to get a good first pass then manually tweak the process. And we need this asset to be clearly derived.
+
+assets should probably live next to blend file, I cant be navigating the file browser on every export.
+
+need tool which automatically detects and ideally fixes missing reflect derives.
+
+
+# Thu Nov  5 10:41:52 PM EST 2026
+need to refactor the lobby and pylon demos' seperate precompile code into something more sophisticated.
+
+I fixed the camera positioning at startup taking a frame to apply. BUT really we need to not render until startup is done. 
+
+We also should figure out whats with the blank screen we get when window first opens.

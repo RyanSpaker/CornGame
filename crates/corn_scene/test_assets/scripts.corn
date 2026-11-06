@@ -1,0 +1,31 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: scripts, inline values, handlers, meshes */
+script {
+  let count = 0;
+  const settings = world.get_resource("Settings");
+  exports.clicked = function* (e) {
+    insert(e, "Label", "clicked");
+  };
+}
+
+spawn a { Health: { max: 1; } }
+spawn b { Health: { max: 2; } }
+spawn c {
+  Label: "c";
+  on ScriptPing: clicked;
+  on ScriptPing: ${ insert(e, "Health", { max: 99 }); }
+}
+
+Health {
+  /* once per entity, seeing the scene as patched so far */
+  Health.regen: ${
+    count += 1;
+    get(e, "Health").max * 10 + count
+  }
+  Label: ${ `${settings.greeting} ${get(e, "Name")}` }
+}
+
+asset post: Mesh ${ Cylinder.new(0.1, 3).mesh().build().translated_by(Vec3.new(0, 1.5, 0)).merge(Sphere.new(0.3).mesh().build().translated_by(Vec3.new(0, 3, 0))) };
+spawn lamp { Mesh3d: post; }
+spawn box { Mesh3d: Cuboid(1, 2, 1); }
+spawn js_box { Mesh3d: ${ Cuboid.new(1, 1, 1).mesh().build() }; }
+spawn object { Kind: ${ ({ Box: { size: 3 } }) }; Health: ${ { max: 4 } } }

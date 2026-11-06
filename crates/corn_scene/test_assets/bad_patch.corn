@@ -1,0 +1,2 @@
+/* CLAUDE (claude-opus-5-5): test file for tests/scene.rs: a patch that fails fails the load */
+spawn x { Health.max: "many"; }

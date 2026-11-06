@@ -1,0 +1,838 @@
+/* CLAUDE (claude-opus-5-5): the pylon demo, ported from three_corn's demo/pylon.
+
+   A black pylon stands in a cornfield maze. Its doors open as you come near; through them is a room far
+   bigger than the pylon (the interior is a separate place 120 m away, joined by portals: see
+   crates/pylon/src/portal.rs). Stand inside a moment and it wakes: spotlights, a thud, the windows open
+   one by one onto the field, and a ring of lamps chases around the wall.
+
+   Geometry is built by script (`script { build_..(e); }`), behaviour is the `on` handlers and generators
+   at the bottom of the script. The two places are realms (`outside`, `interior`): what's spawned below
+   one is in it, and only its own lights reach it (portal.rs). */
+
+script {
+// ---------------------------------------------------------------------------- settings
+// the demo's tuned defaults (demo-defaults.json), the ones this port uses
+const S = {
+  worldSeed: 82417,
+  mazeCells: 25,
+  mazeCellSize: 3.4,
+  clearingRadius: 7,
+  cornSpacing: 1.25,
+  cornJitter: 0.2,
+  utilityPostCount: 18,
+  pylonHeight: 5.5,
+  pylonSide: 1.25,
+  doorwayWidth: 0.8,
+  doorwayHeight: 2.2,
+  // how deep the doorway is each side of its portal: the pylon's front recess, the room's jambs
+  doorwayDepth: 0.2,
+  doorSlideDuration: 0.65,
+  interiorRadius: 14,
+  interiorSegments: 20,
+  interiorPanelHeight: 3,
+  wallBevelHeight: 0.3,
+  windowSideGap: 0.18,
+  windowSideLength: 2.1,
+  windowRecess: 0.18,
+  straightWallHeight: 0.5,
+  ceilingApexHeight: 10,
+  doorAlcoveDepth: 0.45,
+  interiorShellPadding: 8,
+  pitDepth: 40,
+  catwalkWidth: 1.35,
+  railingHeight: 1.05,
+  railingPostSpacing: 1.35,
+  activationDwell: 1,
+  activationCueOffset: 0.25,
+  activationSoundCueOffset: 0.1,
+  windowRevealDuration: 0.5,
+  windowBlackTint: 0.98,
+  chaseLampDiameter: 0.2,
+  chaseLightCount: 80,
+  chasePassCount: 1,
+  chaseSpeed: 0.2,
+  chaseSoundGain: 0.1,
+  activationSoundGain: 1.3,
+  spotlightRange: 8,
+  spotlightAngle: 35.5,
+  spotlightTilt: 23,
+  spotlightIndicatorDrop: 0.22,
+  crystalAssemblyScale: 0.5,
+};
+
+// bevy light units for the demo's lights; how bright the crystals glow (emissive) and the chase lamps
+// are (a scale on their shader's colour, which isn't exposed), and the pylon's sheen (its
+// reflectance, pylonBlack: the more, the brighter its edge-on sheen, and the less black head on)
+const LIGHT = { spot: 1500000, ceiling: 2500000, crystal: 120000, crystalGlow: 2.1 * 12, chase: 1, pylonSheen: 0.11 };
+// camera ambient brightness: outside, the dark room, the woken room
+const AMBIENT = { day: 1200, dark: 0, lit: 120 };
+// a file including this one changes them with `module("pylon.corn")` before what it includes builds
+// (pylon2.corn). what's worked out from them below, at load, doesn't follow
+exports.S = S;
+exports.LIGHT = LIGHT;
+exports.AMBIENT = AMBIENT;
+
+// the doorway planes: the exterior one in the pylon's recessed front, the interior one at the end of
+// the room's entrance alcove (facing into the room). crossing one moves you by the difference
+const OUTER_DOOR = [0, S.doorwayHeight / 2, S.pylonSide / 2 - S.doorwayDepth];
+const INTERIOR_AT = [120, 0, 0];
+const INNER_DOOR_Z = S.interiorRadius + S.doorAlcoveDepth;
+const INNER_DOOR = [INTERIOR_AT[0], S.doorwayHeight / 2, INNER_DOOR_Z - 0.006];
+const PORTAL_OFFSET = [0, 1, 2].map((i) => INNER_DOOR[i] - OUTER_DOOR[i]);
+
+// ---------------------------------------------------------------------------- helpers
+const TAU = Math.PI * 2;
+const rad = (d) => (d * Math.PI) / 180;
+const deg = (r) => (r * 180) / Math.PI;
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+// a point at angle `a` (0 is +z) and radius `r` around the y axis
+const around = (a, r, y = 0) => [Math.sin(a) * r, y, Math.cos(a) * r];
+
+// mulberry32, as the demo
+function random(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const between = (r, a, b) => a + (b - a) * r();
+
+function rgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+const srgb = (hex, alpha = 1) => {
+  const [red, green, blue] = rgb(hex);
+  return { Srgba: { red, green, blue, alpha } };
+};
+// linear rgb, scaled
+const linear = (hex, scale = 1) => rgb(hex).map((c) => Math.pow(c, 2.2) * scale);
+const emissive = (hex, scale = 1) => {
+  const [red, green, blue] = linear(hex, scale);
+  return { red, green, blue, alpha: 1 };
+};
+const standard = (hex, more = {}) => ({ base_color: srgb(hex), perceptual_roughness: 0.6, metallic: 0, ...more });
+
+const yaw = (a) => [0, Math.sin(a / 2), 0, Math.cos(a / 2)];
+const placed = (at, a = 0) => ({ translation: at, rotation: yaw(a), scale: [1, 1, 1] });
+
+// meshes, with bevy's primitives and Mesh methods (each call runs in rust)
+const box = (x, y, z) => Cuboid.new(x, y, z).mesh().build();
+const cylinder = (r, h, res = 32) => Cylinder.new(r, h).mesh().resolution(res).build();
+const frustum = (top, bottom, height, res = 32) => ConicalFrustum({ radius_top: top, radius_bottom: bottom, height }).mesh().resolution(res).build();
+const circle = (r, res = 32) => Circle.new(r).mesh().resolution(res).build();
+const rectangle = (w, h) => Rectangle.new(w, h).mesh().build();
+const T = (at, rotation = Quat.IDENTITY) => Transform.from_xyz(at[0], at[1], at[2]).with_rotation(rotation);
+const turnY = (a) => Quat.from_rotation_y(a);
+// `part` moved to `at` (turned by `rotation`), merged into `m`
+const put = (m, part, at, rotation) => m.merge(part.transformed_by(T(at, rotation)));
+// raw geometry: corners in fours (quads, counter-clockwise from the front, from bottom left) or threes.
+// uvs 0..1 a quad, or with `metres`, its corners' positions in metres along its edges (u along the
+// bottom, v down the side), from the origin: a texture keeps its scale, and lines up across quads in a plane
+function quads(corners, metres = false) {
+  const uvs = [], indices = [];
+  const unit = (v) => v.map((c) => c / Math.hypot(...v));
+  for (let q = 0; q < corners.length / 4; q++) {
+    const p = corners.slice(q * 4, q * 4 + 4);
+    if (metres) {
+      const eu = unit(sub(p[1], p[0])), ev = unit(sub(p[3], p[0]));
+      uvs.push(...p.map((c) => [dot(c, eu), -dot(c, ev)]));
+    } else {
+      uvs.push([0, 1], [1, 1], [1, 0], [0, 0]);
+    }
+    indices.push(q * 4, q * 4 + 1, q * 4 + 2, q * 4, q * 4 + 2, q * 4 + 3);
+  }
+  return Mesh.new().with_inserted_attribute(Mesh.ATTRIBUTE_POSITION, corners).with_inserted_attribute(Mesh.ATTRIBUTE_UV_0, uvs)
+    .with_inserted_indices(indices).duplicate_vertices().compute_flat_normals();
+}
+function triangles(corners) {
+  const uvs = corners.map((_, i) => [[0, 1], [1, 1], [0.5, 0]][i % 3]);
+  return Mesh.new().with_inserted_attribute(Mesh.ATTRIBUTE_POSITION, corners).with_inserted_attribute(Mesh.ATTRIBUTE_UV_0, uvs)
+    .with_inserted_indices(corners.map((_, i) => i)).duplicate_vertices().compute_flat_normals();
+}
+
+// a quad's corners, ordered so it faces `toward`
+function facing(p, toward) {
+  const n = cross(sub(p[1], p[0]), sub(p[2], p[0]));
+  return dot(n, sub(toward, p[0])) >= 0 ? p : [p[1], p[0], p[3], p[2]];
+}
+
+// a mesh entity under `parent`
+function show(parent, name, shape, material, transform = placed([0, 0, 0]), more = {}) {
+  return spawn({ ChildOf: parent, Name: name, Mesh3d: shape, "MeshMaterial3d<StandardMaterial>": material, Transform: transform, ...more });
+}
+// an invisible box the player can't walk into, w x h x d, centred at `at`, turned `a` about y
+function block(parent, w, h, d, at, a = 0) {
+  return spawn({ ChildOf: parent, Blocker: { half_size: [w / 2, h / 2, d / 2] }, Transform: placed(at, a) });
+}
+// a horizontal bar from `a` to `b` (y taken from a), as a cylinder
+function bar(m, a, b, radius) {
+  const d = sub(b, a);
+  const length = Math.hypot(d[0], d[2]);
+  const rotation = Quat.from_rotation_y(Math.atan2(d[0], d[2])).mul(Quat.from_rotation_x(Math.PI / 2));
+  put(m, cylinder(radius, length, 8), [(a[0] + b[0]) / 2, a[1], (a[2] + b[2]) / 2], rotation);
+}
+// a doorway into realm `to`, crossing moves you by `offset` (portal.rs makes its surface and camera).
+// shut until its doors open (black, behind the closed outer door)
+function doorway(parent, at, a, to, offset) {
+  const portal = { size: [S.doorwayWidth, S.doorwayHeight], to, offset };
+  return spawn({ ChildOf: parent, Name: "doorway", Transform: placed(at, a), Portal: portal });
+}
+// a sliding door: two leaves in this entity's local X, each w x h x depth, of `material(side)`. A leaf is cut
+// short where it would reach past `clip` from the centre, if given (door.rs). Each realm's door is seen
+// only from its realm (a PortalFrame): through the doorway it would be a second pair behind the first
+function door(parent, at, [w, h, depth], material, clip = 0, more = {}) {
+  const d = spawn({ ChildOf: parent, Name: "door", Transform: placed(at), DoorState: { duration: S.doorSlideDuration, travel: S.doorwayWidth / 2 + DOOR_TUCK } });
+  for (const side of [-1, 1]) {
+    spawn({
+      ChildOf: d,
+      DoorLeaf: { side, width: w, clip },
+      Blocker: { half_size: [w / 2, h / 2, depth / 2] },
+      Transform: placed([(side * w) / 2, S.doorwayHeight / 2, 0]),
+      Mesh3d: box(w, h, depth),
+      "MeshMaterial3d<StandardMaterial>": material(side),
+      PortalFrame: {},
+      ...more,
+    });
+  }
+}
+// open, the leaves slide this far past the doorway's edge, into the jambs: flush, their edges z-fight the
+// jambs' faces
+const DOOR_TUCK = 0.02;
+// the pylon's outside and its door: black, with a sheen only seen edge-on, mottled there by a noise texture
+// of its roughness. smooth, and barely reflective: bevy's ambient light has a specular term (three's
+// hemisphere light hasn't) which, head on, a rough surface turns grey, a smooth one hardly at all, while
+// edge-on it grows to near a mirror's. for uvs in metres (quads(.., true)), or with a face's 0..1 uvs
+// mapped to metres (`scale`, `offset`)
+const PYLON_NOISE = 2;
+const pylonBlack = ([sx, sy] = [1, 1], [ox, oy] = [0, 0], more = {}) => standard("#000000", {
+  // times the texture's green, ~0.07..1 (srgb 0.3..1, read as colour). below ~0.25, the ambient specular
+  // head on hardly changes with roughness (the noise doesn't show), edge-on it halves from 0.05 to 0.25
+  perceptual_roughness: 0.25,
+  reflectance: LIGHT.pylonSheen,
+  metallic_roughness_texture: "textures/pylon-noise.webp",
+  uv_transform: [sx / PYLON_NOISE, 0, 0, sy / PYLON_NOISE, ox / PYLON_NOISE, oy / PYLON_NOISE],
+  ...more,
+});
+
+// ---------------------------------------------------------------------------- the field
+// a maze of corn walls; the demo's carving (a seeded depth-first walk), with a path north
+function maze(requested, seed) {
+  const size = requested % 2 === 1 ? requested : requested + 1;
+  const grid = Array.from({ length: size }, () => Array(size).fill(1));
+  const r = random(seed);
+  const stack = [[1, 1]];
+  grid[1][1] = 0;
+  while (stack.length) {
+    const [x, z] = stack[stack.length - 1];
+    const choices = [[2, 0], [-2, 0], [0, 2], [0, -2]]
+      .map(([dx, dz]) => [x + dx, z + dz, dx, dz])
+      .filter(([nx, nz]) => nx > 0 && nz > 0 && nx < size - 1 && nz < size - 1 && grid[nz][nx]);
+    if (!choices.length) {
+      stack.pop();
+      continue;
+    }
+    const [nx, nz, dx, dz] = choices[Math.floor(r() * choices.length)];
+    grid[z + dz / 2][x + dx / 2] = 0;
+    grid[nz][nx] = 0;
+    stack.push([nx, nz]);
+  }
+  const centre = Math.floor(size / 2);
+  for (let z = centre; z < size; z++) grid[z][centre] = 0;
+  return { grid, size };
+}
+
+function build_field(e) {
+  const { grid, size } = maze(S.mazeCells, S.worldSeed);
+  const r = random(S.worldSeed ^ 0x6a09e667);
+  const fieldSize = S.mazeCells * S.mazeCellSize, half = fieldSize / 2;
+  const ground = fieldSize + 18;
+  show(e, "ground", Plane3d.default().mesh().size(ground, ground).build(), standard("#8a8b71", {
+    base_color_texture: "textures/forest-floor.webp",
+    perceptual_roughness: 1,
+    uv_transform: [ground / 3, 0, 0, ground / 3, 0, 0],
+  }));
+
+  // corn: two crossed cards a stalk, each with a back face
+  const cards = [];
+  for (let z = -half + S.cornSpacing / 2; z < half; z += S.cornSpacing) {
+    for (let x = -half + S.cornSpacing / 2; x < half; x += S.cornSpacing) {
+      const cell = grid[Math.floor((z + half) / S.mazeCellSize)]?.[Math.floor((x + half) / S.mazeCellSize)];
+      if (!cell || Math.hypot(x, z) <= S.clearingRadius || (z > 0 && Math.abs(x) < S.mazeCellSize * 0.42)) continue;
+      const cx = x + between(r, -S.cornJitter, S.cornJitter), cz = z + between(r, -S.cornJitter, S.cornJitter);
+      const w = between(r, 1.8, 2.45), h = between(r, 3.35, 4.35), turn = r() * Math.PI, base = -h * 0.03;
+      for (const a of [turn, turn + Math.PI / 2]) {
+        const dx = (Math.cos(a) * w) / 2, dz = (-Math.sin(a) * w) / 2;
+        const bl = [cx - dx, base, cz - dz], br = [cx + dx, base, cz + dz];
+        const tr = [cx + dx, base + h, cz + dz], tl = [cx - dx, base + h, cz - dz];
+        cards.push(bl, br, tr, tl, br, bl, tl, tr);
+      }
+    }
+  }
+  show(e, "corn", quads(cards), standard("#d4d69a", {
+    base_color_texture: "textures/corn-cluster.webp",
+    alpha_mode: { Mask: 0.16 },
+    perceptual_roughness: 0.9,
+  }));
+
+  // utility posts on maze walls away from the clearing
+  const spots = [];
+  for (let z = 1; z < size - 1; z++) {
+    for (let x = 1; x < size - 1; x++) {
+      const at = [(x + 0.5) * S.mazeCellSize - half, (z + 0.5) * S.mazeCellSize - half];
+      if (grid[z][x] && Math.hypot(at[0], at[1]) > S.clearingRadius + 3) spots.push(at);
+    }
+  }
+  for (let i = spots.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    [spots[i], spots[j]] = [spots[j], spots[i]];
+  }
+  const wood = Mesh.new(), metal = Mesh.new();
+  for (const [x, z] of spots.slice(0, S.utilityPostCount)) {
+    const h = between(r, 5.2, 7.2), a = r() < 0.5 ? 0 : Math.PI / 2;
+    put(wood, frustum(0.09, 0.12, h, 7), [x, h / 2, z]);
+    put(wood, box(2.15, 0.13, 0.16), [x, h - 0.18, z], turnY(a));
+    for (const along of [-0.82, 0, 0.82]) {
+      put(metal, frustum(0.08, 0.1, 0.18, 8), [x + along * Math.cos(a), h - 0.02, z - along * Math.sin(a)]);
+    }
+    block(e, 0.24, h, 0.24, [x, h / 2, z], a);
+  }
+  show(e, "posts", wood, standard("#493522", { perceptual_roughness: 0.92 }));
+  show(e, "insulators", metal, standard("#6c7067", { perceptual_roughness: 0.55, metallic: 0.5 }));
+
+  // the warning sign behind the start, facing the pylon
+  const sign = box(3.8, 1.45, 0.12).translated_by(Vec3.new(0, 0.95 + 0.725, 14.5));
+  const legs = Mesh.new();
+  for (const x of [-1.35, 1.35]) put(legs, frustum(0.06, 0.06, 2.35, 8), [x, 1.175, 14.5]);
+  show(e, "sign", sign, standard("#d9c891", { perceptual_roughness: 0.82 }));
+  show(e, "sign legs", legs, standard("#4a3522", { perceptual_roughness: 0.92 }));
+  block(e, 3.8, 2.35, 0.18, [0, 1.175, 14.5]);
+}
+
+// how a sign's Text3d looks and where it sits (facing -z): bevy_rich_text3d draws it from its shared atlas
+const TEXT_ATLAS = "asset:9a5c50eb-0576-0250-9c78-36bb327807e1";
+function sign_text(e, at) {
+  const [red, green, blue] = rgb("#211e17");
+  insert(e, "Text3dStyle", { size: 64, weight: 700, align: "Center", line_height: 1.5, color: { red, green, blue, alpha: 1 }, world_scale: [0.15, 0.15], layer_offset: 0.001 });
+  insert(e, "Transform", { translation: at, rotation: yaw(Math.PI), scale: [1, 1, 1] });
+  insert(e, "MeshMaterial3d<StandardMaterial>", { base_color_texture: TEXT_ATLAS, alpha_mode: { Mask: 0.5 }, unlit: true });
+}
+
+// ---------------------------------------------------------------------------- the pylon, outside
+function build_shell(e) {
+  const b = S.pylonSide / 2, h = S.pylonHeight, dw = S.doorwayWidth / 2, dh = S.doorwayHeight;
+  const recess = b - S.doorwayDepth;
+  const mouth = [0, dh / 2, recess];
+  const out = (p) => [p[0] * 9, p[1], p[2] * 9];
+  const sides = [
+    // back, sides, top
+    facing([[-b, 0, -b], [b, 0, -b], [b, h, -b], [-b, h, -b]], [0, h / 2, -9]),
+    facing([[-b, 0, b], [-b, 0, -b], [-b, h, -b], [-b, h, b]], [-9, h / 2, 0]),
+    facing([[b, 0, -b], [b, 0, b], [b, h, b], [b, h, -b]], [9, h / 2, 0]),
+    facing([[-b, h, b], [b, h, b], [b, h, -b], [-b, h, -b]], [0, h + 9, 0]),
+    // the front around the doorway
+    facing([[-b, 0, b], [-dw, 0, b], [-dw, dh, b], [-b, dh, b]], out([0, 1, 1])),
+    facing([[dw, 0, b], [b, 0, b], [b, dh, b], [dw, dh, b]], out([0, 1, 1])),
+    facing([[-b, dh, b], [b, dh, b], [b, h, b], [-b, h, b]], out([0, 1, 1])),
+  ];
+  // the doorway's reveals, into the recess: plain black. seen edge-on, even a black metal without
+  // reflectance catches bevy's ambient light (its specular grows toward grazing), an outline round the door
+  const reveals = [
+    facing([[-dw, 0, b], [-dw, 0, recess], [-dw, dh, recess], [-dw, dh, b]], mouth),
+    facing([[dw, 0, recess], [dw, 0, b], [dw, dh, b], [dw, dh, recess]], mouth),
+    facing([[-dw, dh, b], [dw, dh, b], [dw, dh, recess], [-dw, dh, recess]], mouth),
+  ];
+  // in the field's layer. seen through the doorway from the room, all but the reveals is behind the far
+  // portal (clipped) or faces away (one-sided): the reveals and the room's jambs make one doorway. no shadow:
+  // it looks better without (and one-sided and hollow, its shadow had a hole where the doorway is)
+  show(e, "shell", quads(sides.flat(), true), pylonBlack(), placed([0, 0, 0]), { NotShadowCaster: {} });
+  show(e, "reveals", quads(reveals.flat()), standard("#000000", { reflectance: 0 }), placed([0, 0, 0]), { NotShadowCaster: {} });
+
+  doorway(e, OUTER_DOOR, 0, 1, PORTAL_OFFSET);
+  // the outer door, flush with the front (any deeper, the black reveal shows at its edges at an angle), in a
+  // pocket too narrow for it: cut at the pylon's sides as it opens. drawn
+  // behind the front where it slides under it (depth_bias, in depth steps: a fraction of a mm)
+  const leafDepth = 0.02;
+  // only its front face (a box's edges catch the sheen edge-on, bright while it slides; the box stays its
+  // blocker), mottled as the front is where it stands closed: a rectangle runs u along x from its left, v
+  // down from its top, as the front's quads (from the origin)
+  const leaf = (side) => pylonBlack([dw, dh], [side < 0 ? -dw : 0, -dh], { depth_bias: -1000 });
+  const face = rectangle(dw, dh).translated_by(Vec3.new(0, 0, leafDepth / 2));
+  door(e, [0, 0, b - leafDepth / 2], [dw, dh, leafDepth], leaf, b - 0.003, { NotShadowCaster: {}, Mesh3d: face });
+
+  block(e, S.pylonSide, h, 0.16, [0, h / 2, -b]);
+  block(e, 0.16, h, S.pylonSide, [-b, h / 2, 0]);
+  block(e, 0.16, h, S.pylonSide, [b, h / 2, 0]);
+  const side = b - dw;
+  block(e, side, dh, 0.16, [-(dw + side / 2), dh / 2, b]);
+  block(e, side, dh, 0.16, [dw + side / 2, dh / 2, b]);
+}
+
+// ---------------------------------------------------------------------------- the pylon, inside
+// all of it in the interior root's own space: the room's centre is its origin
+function build_interior(e) {
+  const at = get(e, "Transform").translation;
+  const origin = [at.x, at.y, at.z];
+  const R = S.interiorRadius, n = S.interiorSegments, step = TAU / n;
+  const chord = 2 * R * Math.sin(step / 2) * 1.015;
+  const wallTop = S.interiorPanelHeight + S.straightWallHeight;
+  const toCentre = [0, 1.7, 0];
+
+  // the void around everything, blood red where seams show it
+  const pad = R + S.doorAlcoveDepth + S.interiorShellPadding, top = S.ceilingApexHeight + S.interiorShellPadding, bottom = -S.pitDepth - S.interiorShellPadding;
+  const corner = (x, y, z) => [x * pad, y, z * pad];
+  const voidQuads = [
+    [corner(-1, bottom, -1), corner(1, bottom, -1), corner(1, top, -1), corner(-1, top, -1)],
+    [corner(-1, bottom, 1), corner(1, bottom, 1), corner(1, top, 1), corner(-1, top, 1)],
+    [corner(-1, bottom, -1), corner(-1, bottom, 1), corner(-1, top, 1), corner(-1, top, -1)],
+    [corner(1, bottom, -1), corner(1, bottom, 1), corner(1, top, 1), corner(1, top, -1)],
+    [corner(-1, top, -1), corner(1, top, -1), corner(1, top, 1), corner(-1, top, 1)],
+    [corner(-1, bottom, -1), corner(1, bottom, -1), corner(1, bottom, 1), corner(-1, bottom, 1)],
+  ].map((q) => facing(q, [0, (top + bottom) / 2, 0]));
+  show(e, "void", quads(voidQuads.flat()), standard("#8f0000", { unlit: true }));
+
+  // floors: the ring by the wall, the centre platform, three catwalks over the pit, the alcove's step
+  const perimeter = Math.min(Math.max(R * 0.16, 1.2), 2.4), inner = R - perimeter;
+  const platform = Math.max(2.35 * S.crystalAssemblyScale + 0.55, R * 0.19);
+  const catwalkAngles = [0, TAU / 3, (2 * TAU) / 3];
+  const flat = Quat.from_rotation_x(-Math.PI / 2);
+  const decks = Annulus.new(inner, R + 0.25).mesh().resolution(80).build().rotated_by(flat);
+  put(decks, cylinder(platform, 0.12, 80), [0, -0.06, 0]);
+  for (const a of catwalkAngles) put(decks, box(S.catwalkWidth, 0.12, inner - platform), around(a, (inner + platform) / 2, -0.06), turnY(a));
+  put(decks, box(chord, 0.06, S.doorAlcoveDepth + 0.28), [0, -0.03, R + S.doorAlcoveDepth / 2]);
+  show(e, "decks", decks, standard("#222626", { perceptual_roughness: 0.82, metallic: 0.2 }));
+
+  // the pit: an inward-facing shaft and its floor
+  const shaft = [];
+  for (let i = 0; i < 80; i++) {
+    const a0 = (i / 80) * TAU, a1 = ((i + 1) / 80) * TAU, r = inner - 0.04;
+    shaft.push(facing([around(a0, r, -S.pitDepth), around(a1, r, -S.pitDepth), around(a1, r, 0.06), around(a0, r, 0.06)], [0, -S.pitDepth / 2, 0]));
+  }
+  show(e, "shaft", quads(shaft.flat()), standard("#070a0a", { perceptual_roughness: 0.98 }));
+  show(e, "pit floor", circle(inner, 80).transformed_by(T([0, -S.pitDepth, 0], flat)), standard("#010202", { unlit: true }));
+
+  // railings: round the pit and the platform (open at the catwalks), and along each catwalk
+  const rails = Mesh.new();
+  const span = (a, b, firstPost) => {
+    for (const p of firstPost ? [a, b] : [b]) put(rails, frustum(0.045, 0.053, S.railingHeight, 8), [p[0], S.railingHeight / 2, p[2]]);
+    for (const y of [S.railingHeight / 2, S.railingHeight]) bar(rails, [a[0], y, a[2]], [b[0], y, b[2]], 0.035);
+  };
+  const railBlock = (a, b) => {
+    const d = sub(b, a);
+    block(e, 0.14, S.railingHeight, Math.hypot(d[0], d[2]), [(a[0] + b[0]) / 2, S.railingHeight / 2, (a[2] + b[2]) / 2], Math.atan2(d[0], d[2]));
+  };
+  for (const radius of [inner, platform]) {
+    const gap = Math.asin(Math.min(0.95, (S.catwalkWidth / 2 + 0.12) / radius));
+    catwalkAngles.forEach((a, i) => {
+      const from = a + gap, to = (catwalkAngles[i + 1] ?? TAU) - gap;
+      const count = Math.max(1, Math.ceil(((to - from) * radius) / S.railingPostSpacing));
+      for (let k = 0; k < count; k++) {
+        const p = around(from + ((to - from) * k) / count, radius), q = around(from + ((to - from) * (k + 1)) / count, radius);
+        span(p, q, k === 0);
+        railBlock(p, q);
+      }
+    });
+  }
+  for (const a of catwalkAngles) {
+    const side = [Math.cos(a), 0, -Math.sin(a)];
+    for (const s of [-1, 1]) {
+      const o = (s * S.catwalkWidth) / 2;
+      const p = around(a, platform + 0.08).map((v, i) => v + side[i] * o), q = around(a, inner - 0.08).map((v, i) => v + side[i] * o);
+      const count = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[2] - p[2]) / S.railingPostSpacing));
+      for (let k = 0; k < count; k++) {
+        const lerp = (t) => p.map((v, i) => v + (q[i] - v) * t);
+        span(lerp(k / count), lerp((k + 1) / count), k === 0);
+      }
+      railBlock(p, q);
+    }
+  }
+  show(e, "railings", rails, standard("#505454", { perceptual_roughness: 0.44, metallic: 0.58 }));
+
+  // the faceted wall: segment 0 (+z) is the entrance alcove, every other one a panel with a window
+  const panels = Mesh.new(), borders = Mesh.new(), windows = Mesh.new(), ceiling = [], disks = Mesh.new();
+  const gap = (S.interiorPanelHeight - S.wallBevelHeight * 2 - S.windowSideLength) / 2;
+  const windowWidth = chord - S.windowSideGap * 2;
+  for (let i = 0; i < n; i++) {
+    const a = i * step;
+    // in segment space: x along the wall, +z outward
+    const seg = (m, part, x, y, z, rotation = turnY(a)) => {
+      const p = [Math.cos(a) * x + Math.sin(a) * z, y, -Math.sin(a) * x + Math.cos(a) * z];
+      put(m, part, around(a, R).map((v, k) => v + p[k]), rotation);
+    };
+    // the ceiling: a wedge from the wall top up to the apex
+    const outer = R + 0.18, apex = 0.36;
+    ceiling.push(facing([around(a - step / 2, outer, wallTop), around(a + step / 2, outer, wallTop), around(a + step / 2, apex, S.ceilingApexHeight), around(a - step / 2, apex, S.ceilingApexHeight)], [0, 0, 0]));
+    if (i === 0) continue;
+    seg(borders, box(chord, S.wallBevelHeight, 0.5), 0, S.wallBevelHeight / 2, 0);
+    seg(borders, box(chord, S.wallBevelHeight, 0.5), 0, S.interiorPanelHeight - S.wallBevelHeight / 2, 0);
+    for (const x of [-(chord - S.windowSideGap) / 2, (chord - S.windowSideGap) / 2]) {
+      seg(panels, box(S.windowSideGap, S.interiorPanelHeight - S.wallBevelHeight * 2, 0.22), x, S.interiorPanelHeight / 2, 0.05);
+    }
+    if (gap > 0.001) {
+      seg(panels, box(windowWidth, gap, 0.22), 0, S.wallBevelHeight + gap / 2, 0.05);
+      seg(panels, box(windowWidth, gap, 0.22), 0, S.interiorPanelHeight - S.wallBevelHeight - gap / 2, 0.05);
+    }
+    seg(panels, box(chord, S.straightWallHeight, 0.3), 0, S.interiorPanelHeight + S.straightWallHeight / 2, 0.04);
+    // the window, recessed behind the panel face, facing in
+    seg(windows, rectangle(windowWidth, S.windowSideLength), 0, S.interiorPanelHeight / 2, 0.05 - 0.11 + S.windowRecess, turnY(a + Math.PI));
+    block(e, chord, wallTop, 0.32, around(a, R, wallTop / 2), a);
+
+    // a spotlight above each panel, aimed down at the wall's foot; a lit disk shows where it hangs. hidden
+    // until the room wakes
+    const mountR = R - 2.1, mountY = wallTop + 1.05, aimR = mountR + Math.tan(rad(S.spotlightTilt)) * (mountY - 0.08);
+    const mount = around(a, mountR, mountY), aim = around(a, aimR, 0.08);
+    spawn({
+      ChildOf: e,
+      Name: "spotlight",
+      SpotLight: { color: srgb("#ffffff"), intensity: LIGHT.spot, range: S.spotlightRange, outer_angle: rad(S.spotlightAngle), inner_angle: rad(S.spotlightAngle) * 0.45 },
+      Visibility: "Hidden",
+      Transform: Transform.from_xyz(...mount).looking_at(Vec3.new(...aim), Vec3.Y),
+    });
+    const disk = [mount[0], mount[1] - S.spotlightIndicatorDrop, mount[2]];
+    const look = sub(aim, disk);
+    const turn = Quat.from_rotation_y(Math.atan2(look[0], look[2])).mul(Quat.from_rotation_x(-Math.atan2(look[1], Math.hypot(look[0], look[2]))));
+    // and its back, turned round: the far ones are seen from behind, walking in (as three's, double sided)
+    put(disks, circle(0.18, 20), disk, turn);
+    put(disks, circle(0.18, 20), disk, turn.mul(Quat.from_rotation_y(Math.PI)));
+  }
+  show(e, "panels", panels, standard("#3f4343", { perceptual_roughness: 0.72, metallic: 0.25 }));
+  show(e, "bevels", borders, standard("#505454", { perceptual_roughness: 0.44, metallic: 0.58 }));
+  show(e, "ceiling", quads(ceiling.flat()), standard("#282c2c", { perceptual_roughness: 0.86, metallic: 0.14 }));
+  // the cap over the apex hole, on its own: merged into the ceiling (put), whose quads have no indices, it
+  // lost its own (Mesh::merge keeps them only if both have them) and the void showed through, a red disk
+  show(e, "apex cap", cylinder(0.42, 0.16, n), standard("#505454", { perceptual_roughness: 0.44, metallic: 0.58 }), placed([0, S.ceilingApexHeight - 0.03, 0]));
+  show(e, "spot disks", disks, standard("#ffffff", { unlit: true }));
+  spawn({
+    ChildOf: e,
+    Name: "windows",
+    Mesh3d: windows,
+    "MeshMaterial3d<ShaderMaterial>": {
+      fragment: "shaders/window.wesl",
+      texture: world.get_resource("ViewTextures").window,
+      // named by window.wesl
+      params: { center: [origin[0], S.interiorPanelHeight / 2, origin[2], n], reveal: [1e9, S.windowRevealDuration, S.windowBlackTint, 7], tint: [...linear("#e0e0e0"), 1] },
+    },
+  });
+
+  // the chase lamps: one mesh, the shader picks each lamp's brightness from its angle
+  const lamps = Mesh.new(), lamp = circle(S.chaseLampDiameter / 2, 16), lampY = S.interiorPanelHeight + S.straightWallHeight / 2;
+  for (let i = 0; i < S.chaseLightCount; i++) {
+    const a = (i / S.chaseLightCount) * TAU;
+    put(lamps, lamp.clone(), around(a, R - 0.18, lampY), turnY(a + Math.PI));
+  }
+  spawn({
+    ChildOf: e,
+    Name: "chase lamps",
+    Mesh3d: lamps,
+    "MeshMaterial3d<ShaderMaterial>": {
+      fragment: "shaders/chase_ring.wesl",
+      params: { center: [origin[0], lampY, origin[2], 0], color: [...linear("#f0b64f", LIGHT.chase), 0.04], timing: [S.chaseLightCount, S.chaseSpeed, S.chasePassCount, 0], envelope: [0.12, 0, 0.5, 0.004 * LIGHT.chase] },
+    },
+  });
+
+  // the entrance alcove: jambs (ending at the doorway plane, so the portal camera never sees them from
+  // behind; seen through it from outside, with the pylon's recess one doorway), the band above, a header, side walls, and the only visible door
+  const sideWidth = (chord - S.doorwayWidth) / 2, jambZ = INNER_DOOR_Z - S.doorwayDepth / 2;
+  for (const s of [-1, 1]) {
+    show(e, "jamb", box(sideWidth, wallTop, S.doorwayDepth), standard("#3f4343", { perceptual_roughness: 0.72, metallic: 0.25 }), placed([(s * (S.doorwayWidth + sideWidth)) / 2, wallTop / 2, jambZ]));
+    block(e, sideWidth, wallTop, S.doorwayDepth, [(s * (S.doorwayWidth + sideWidth)) / 2, wallTop / 2, jambZ]);
+    show(e, "alcove side", box(0.28, wallTop, S.doorAlcoveDepth), standard("#3f4343", { perceptual_roughness: 0.72, metallic: 0.25 }), placed([(s * chord) / 2, wallTop / 2, R + S.doorAlcoveDepth / 2]));
+    block(e, 0.28, wallTop, S.doorAlcoveDepth, [(s * chord) / 2, wallTop / 2, R + S.doorAlcoveDepth / 2]);
+  }
+  // the band reaches back to the doorway plane: over a shallow doorway's header, the void shows between them
+  const bandFront = R - 0.11, bandDepth = INNER_DOOR_Z - bandFront;
+  show(e, "band", box(chord, S.straightWallHeight, bandDepth), standard("#3f4343", { perceptual_roughness: 0.72, metallic: 0.25 }), placed([0, S.interiorPanelHeight + S.straightWallHeight / 2, bandFront + bandDepth / 2]));
+  const header = Math.max(0.08, S.interiorPanelHeight - S.doorwayHeight);
+  show(e, "header", box(S.doorwayWidth, header, S.doorwayDepth), standard("#505454", { perceptual_roughness: 0.44, metallic: 0.58 }), placed([0, S.doorwayHeight + header / 2, jambZ]));
+  door(e, [0, 0, INNER_DOOR_Z - S.doorwayDepth * 0.375], [S.doorwayWidth / 2, S.doorwayHeight - 0.04, 0.045], () => standard("#7d765b", { perceptual_roughness: 0.44, metallic: 0.62 }));
+  doorway(e, [0, S.doorwayHeight / 2, INNER_DOOR_Z - 0.006], Math.PI, 0, PORTAL_OFFSET.map((v) => -v));
+
+  // the console: a stepped pedestal and five crystals, at half scale
+  const k = S.crystalAssemblyScale;
+  const consoleMetal = put(frustum(0.78 * k, 1.28 * k, 1.55 * k, 14).translated_by(Vec3.new(0, 1.02 * k, 0)), Torus.new(1.05 * k, 1.31 * k).mesh().build(), [0, 1.72 * k, 0]);
+  show(e, "console", consoleMetal, standard("#59625a", { perceptual_roughness: 0.36, metallic: 0.68 }));
+  show(e, "console base", frustum(2.05 * k, 2.35 * k, 0.48 * k, 20), standard("#242a27", { perceptual_roughness: 0.55, metallic: 0.5 }), placed([0, 0.24 * k, 0]));
+  block(e, 2.2 * k * 1.6, 1.9 * k, 2.2 * k * 1.6, [0, 0.95 * k, 0]);
+  block(e, 2.2 * k * 1.6, 1.9 * k, 2.2 * k * 1.6, [0, 0.95 * k, 0], Math.PI / 4);
+  const palette = [["#b00018", "#ff001c"], ["#ff5a00", "#ff6a00"], ["#005bff", "#008cff"], ["#00c94f", "#00ff70"], ["#8a00ff", "#bc4dff"]];
+  palette.forEach(([color, glow], i) => {
+    const a = (i / palette.length) * TAU, size = (i === 0 ? 0.32 : 0.22) * k;
+    const at = placed(around(a, i === 0 ? 0 : 0.72 * k, (i === 0 ? 2.28 : 1.98) * k), a);
+    // they move in fixed steps (interior_effects), drawn eased between
+    show(e, "crystal", octahedron(size), standard(color, { emissive: emissive(glow, LIGHT.crystalGlow), perceptual_roughness: 0.18, metallic: 0.05 }),
+      at, { "Target<Transform>": at, Interpolate: {} });
+  });
+
+  // the lights the room wakes with (hidden until then), and the red glow it always has
+  spawn({ ChildOf: e, Name: "ceiling light", PointLight: { color: srgb("#ffe0aa"), intensity: LIGHT.ceiling, range: 34 }, Visibility: "Hidden", Transform: placed([0, S.ceilingApexHeight - 0.28, 0]) });
+  spawn({ ChildOf: e, Name: "crystal light", PointLight: { color: srgb("#ff2030"), intensity: LIGHT.crystal, range: 11 * k }, Transform: placed([0, 2.25 * k, 0]) });
+}
+
+function octahedron(r) {
+  const top = [0, r, 0], bottom = [0, -r, 0];
+  const ring = [[r, 0, 0], [0, 0, r], [-r, 0, 0], [0, 0, -r]];
+  const faces = [];
+  for (let i = 0; i < 4; i++) {
+    const a = ring[i], b = ring[(i + 1) % 4];
+    faces.push(a, top, b, b, bottom, a);
+  }
+  return triangles(faces);
+}
+
+// ---------------------------------------------------------------------------- behaviour
+// what handlers need to find again, gathered when the interior is ready
+const room = { root: null, windows: null, ceiling: null, crystals: [] };
+// the room is awake; and the dwell timer waiting to wake it (replaced to cancel)
+let awake = false, dwelling = null;
+
+// live refs, made once: reading one reads the field in place (`get` copies the whole value out)
+let clock = null, realm = null;
+const now = () => (clock ??= resource("Time")).elapsed_secs_wrapped;
+// everything is found from an entity of this scene: `:root` is the scene file's root. the player is found
+// once (the room is ready by the time anything asks)
+let the_player = null;
+const player = () => (the_player ??= select_one(room.root, ":root Player"));
+const inside = () => (realm ??= component(player(), "InRealm"))[0] === 1;
+const named = (parent, name) => (get(parent, "Children") ?? []).filter((c) => get(c, "Name") === name);
+function sound(path, gain, at) {
+  spawn({ "AudioPlayer<AudioSource>": path, PlaybackSettings: { mode: "Despawn", volume: { Linear: gain }, spatial: true }, Transform: { translation: at } });
+}
+const world_at = (local) => {
+  const t = get(room.root, "Transform").translation;
+  return [t.x + local[0], t.y + local[1], t.z + local[2]];
+};
+
+// both doors (the visible one inside, the solid one outside) move together, and both doorways (portals)
+// with them: open as the doors start to open, shut once the doors have closed
+function doors(e, state) {
+  for (const d of select(e, ":root DoorState")) component(d, "DoorState").state = state;
+}
+function doorways(e, open) {
+  for (const p of select(e, ":root Portal")) component(p, "Portal").open = open;
+}
+function open_doors(e) {
+  doors(e, "Opening");
+  doorways(e, true);
+}
+function* close_doors(e) {
+  doors(e, "Closing");
+  const states = () => select(e, ":root DoorState").map((d) => component(d, "DoorState").state);
+  while (states().includes("Closing")) yield;
+  // (not opened again meanwhile). shut with you outside, the room goes to sleep
+  if (states().every((s) => s === "Closed")) {
+    doorways(e, false);
+    if (!inside()) sleep();
+  }
+}
+exports.open_doors = open_doors;
+exports.close_doors = close_doors;
+
+// how the room looks to the cameras that see it (portal.rs): dark until it wakes
+function light_room() {
+  component(room.root, "RealmAmbient")[0] = awake ? AMBIENT.lit : AMBIENT.dark;
+}
+// the room's lights are on while it's awake (their levels are the scene's)
+function room_lights(on) {
+  const lights = [...select(room.root, "SpotLight"), ...(room.ceiling ? [room.ceiling] : [])];
+  for (const l of lights) insert(l, "Visibility", on ? "Inherited" : "Hidden");
+}
+
+function sleep() {
+  awake = false;
+  dwelling = null;
+  if (room.windows) asset(get(room.windows, "MeshMaterial3d<ShaderMaterial>"), "ShaderMaterial").params.reveal.x = 1e9;
+  room_lights(false);
+  light_room();
+}
+
+function* wake() {
+  awake = true;
+  const start = now();
+  // the windows open over the reveal duration, each at its own moment (window.wesl)
+  asset(get(room.windows, "MeshMaterial3d<ShaderMaterial>"), "ShaderMaterial").params.reveal.x = start;
+  yield S.activationSoundCueOffset;
+  sound("sounds/thud.mp3", S.activationSoundGain, world_at([0, S.ceilingApexHeight - 0.28, 0]));
+  yield S.activationCueOffset - S.activationSoundCueOffset;
+  if (!awake) return;
+  room_lights(true);
+  light_room();
+}
+
+// the room sleeps once you've left and its doors have shut (close_doors), so walking in finds it asleep
+exports.enter_room = open_doors;
+exports.leave_room = close_doors;
+// stand in the room (away from the door) for a moment and it wakes
+exports.dwell = function* () {
+  if (awake) return;
+  const mine = {};
+  dwelling = mine;
+  yield S.activationDwell;
+  if (dwelling !== mine || awake) return;
+  dwelling = null;
+  yield* wake();
+};
+exports.leave_core = () => {
+  dwelling = null;
+};
+
+// every fixed step: the crystals turn and bob (their targets: interpolate.rs eases them between steps)
+exports.interior_effects = function* (e) {
+  room.root = e;
+  [room.windows] = named(e, "windows");
+  [room.ceiling] = named(e, "ceiling light");
+  room.crystals = named(e, "crystal").map((c, i) => {
+    const t = get(c, "Transform");
+    return { tr: component(c, "Target<Transform>")[0], i, y: t.translation.y, phase: Math.atan2(t.translation.x, t.translation.z) + i };
+  });
+  light_room();
+  while (true) {
+    // `now()` is the fixed clock here
+    yield FixedUpdate;
+    const t = now();
+    for (const c of room.crystals) {
+      c.tr.rotation = Quat.from_rotation_y(t * (0.42 + c.i * 0.015) + c.phase);
+      c.tr.translation.y = c.y + Math.sin(t * 1.7 + c.phase) * 0.055 * S.crystalAssemblyScale;
+    }
+  }
+};
+
+// a chirp at each chase lamp, played again each time the chase reaches it
+function chirp_lamps(e) {
+  const r = S.interiorRadius - 0.18, y = S.interiorPanelHeight + S.straightWallHeight / 2;
+  for (let i = 0; i < S.chaseLightCount; i++) {
+    spawn({ ChildOf: e, Name: "chirp", PlaybackSettings: { volume: { Linear: S.chaseSoundGain }, spatial: true }, Transform: placed(around((i / S.chaseLightCount) * TAU, r, y)) });
+  }
+}
+
+// ten times a second, while you're inside: each chirp whose lamp the chase reaches soon is set to play as
+// it lights. on the frame clock, the one the chase shader reads (`globals.time`): lamp i lights at
+// (i / lamps + k / passes) / speed. `PlayAt` starts it to the sample, given time to (LEAD: over an audio
+// block); AHEAD covers a tick and LEAD, so every pass is set in time (one later than that is skipped)
+exports.chase_chirps = function* (e) {
+  const LEAD = 0.08, AHEAD = 0.25;
+  const chirps = named(e, "chirp");
+  const period = 1 / (S.chaseSpeed * S.chasePassCount);
+  // when each is set to play
+  const at = chirps.map(() => -Infinity);
+  while (true) {
+    // first: interior_effects (the interior's Ready, after this one) has set room.root by then
+    yield 0.1;
+    const t = now();
+    if (!inside()) {
+      chirps.forEach((c, i) => {
+        if (at[i] > t) remove(c, "PlayAt");
+        at[i] = -Infinity;
+      });
+      continue;
+    }
+    chirps.forEach((c, i) => {
+      const offset = i / (S.chaseLightCount * S.chaseSpeed);
+      // its next pass after the one it's set for, LEAD ahead at least
+      const n = Math.max(Math.floor((at[i] - offset) / period) + 1, Math.ceil((t + LEAD - offset) / period));
+      const next = offset + n * period;
+      if (next > t + AHEAD) return;
+      insert(c, "PlayAt", { sound: "sounds/chirp.wav", at: next });
+      at[i] = next;
+    });
+  }
+};
+}
+
+// ---------------------------------------------------------------------------- the scene
+
+spawn player {
+  Player: default;
+  InRealm: 0;
+  Camera3d: default;
+  Camera: { clear_color: Custom(#9eb6b1); }
+  /* the corn is alpha-masked, which turns off early depth testing: without a depth prepass every
+     layer of corn behind a pixel is fully shaded. MSAA off: 4 samples a pixel at 4K, three views */
+  DepthPrepass: default;
+  Msaa: Off;
+  /* HDR as the portals' views are: the same kind of view, so the pipelines they compiled for what's
+     behind a doorway serve this camera too (else what you first walk up to goes undrawn for a frame
+     as its pipeline compiles), and what's seen through a portal is tonemapped once, here */
+  Hdr: default;
+  Projection: Perspective { fov: 1.187; near: 0.06; far: 175; }
+  Transform.translation: [0, 1.68, 10.5];
+  DistanceFog: { color: #b1c2af; falloff: ExponentialSquared { density: 0.012 }; }
+  AmbientLight: { color: #dce9df; brightness: 1200; }
+  SpatialListener: default;
+}
+
+/* the windows' view: the field from the pylon's centre, above the corn (the portals' views are made
+   with the portals, like the player's camera) */
+spawn window_view {
+  WindowView: { at: [0, 3.59, 0]; shows: 0; windows_in: 1; }
+  Camera: { order: -2; clear_color: Custom(#9eb6b1); }
+  DepthPrepass: default;
+  Msaa: Off;
+  DistanceFog: { color: #b1c2af; falloff: ExponentialSquared { density: 0.012 }; }
+  AmbientLight: { color: #dce9df; }
+}
+
+/* the field and the outside of the pylon. what's below a realm is in it: the sun lights only this */
+spawn outside {
+  Realm: ${ ({ id: 0, fog: srgb("#b1c2af", 1) }) }
+  RealmAmbient: ${ AMBIENT.day }
+
+  spawn sun {
+    DirectionalLight: { color: #ffedc2; illuminance: 9000; shadow_maps_enabled: true; }
+    Transform: ${ Transform.from_xyz(-18, 40, 26).looking_at(Vec3.ZERO, Vec3.Y) }
+  }
+
+  spawn field {
+    script { build_field(e); }
+    /* the warning sign's words, on its face toward the pylon */
+    spawn sign_text {
+      Text3d: "there is nothing in the cornfield yet,\nin the future there will be objects to collect";
+      /* the text's mesh, made by bevy_rich_text3d */
+      Mesh3d: default;
+      script { sign_text(e, [0, 0.95 + 0.725, 14.5 - 0.061]); }
+    }
+  }
+
+  spawn pylon {
+    script { build_shell(e); }
+    /* come near and the doors open */
+    spawn approach {
+      Transform.translation: ${ [0, 0, OUTER_DOOR[2]] }
+      /* the ranges are the settings for how near counts */
+      InteractionRange: Cylinder { radius: 3; half_height: 5; }
+      on RangeEnter: open_doors;
+      on RangeExit: close_doors;
+    }
+  }
+}
+
+/* the room, far away: no fog (the field's haze would fill the pit), dark until it wakes */
+spawn interior {
+  Realm: ${ ({ id: 1, fog: srgb("#b1c2af", 0) }) }
+  RealmAmbient: ${ AMBIENT.dark }
+  Transform.translation: ${ INTERIOR_AT }
+  script { build_interior(e); }
+  on Ready: interior_effects;
+  spawn chirps {
+    Transform: default;
+    script { chirp_lamps(e); }
+    on Ready: chase_chirps;
+  }
+  /* the whole room: being in it keeps the doors open */
+  spawn room {
+    InteractionRange: Cylinder { radius: 14.7; half_height: 5; }
+    on RangeEnter: enter_room;
+    on RangeExit: leave_room;
+  }
+  /* the room away from the door: dwell here to wake it */
+  spawn core {
+    InteractionRange: Cylinder { radius: 12.95; half_height: 5; }
+    on RangeEnter: dwell;
+    on RangeExit: leave_core;
+  }
+}

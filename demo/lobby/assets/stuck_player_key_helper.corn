@@ -1,0 +1,99 @@
+/* CODEX (GPT-6): small-key struggle hints. Loaded by lobby.corn; all policy and tuning live here.
+   InteractionFeedback supplies item-specific cursor proximity and unused E presses. SeenTracker
+   supplies actual on-screen visibility, including occlusion. Message.finished includes hold/fade. */
+use lobby;
+
+script {
+// CODEX: editable in the remote console via module("stuck_player_key_helper.corn").tuning.
+const tuning = exports.tuning = {
+  missedPresses: 2,
+  // CODEX TODO: playtest and tune the second (timed) helper's timing, cursor thresholds and text.
+  lookSeconds: 15,
+  lookawayGrace: 3,
+  // CODEX: once the timed helper fires, a shorter lookaway can start the next looking episode.
+  lookawayAfterHint: 0.5,
+  cursorSeconds: 3,
+  earlyCursorSeconds: 6,
+  // CODEX: seconds to hold helper text after typing completes, before the shared fade.
+  holdSeconds: 1.7,
+  missedText: [ "not quite", "just missed it", "not quite", "Look for when the cursor gets brighter, then press E" ],
+  lingeringText: [ "I know it's around here somewhere...", "I know it's around here. Somewhere, Somewhere...", "look for the cursor to light up white, the press E" ]
+};
+
+// CODEX: advance only when a line is shown; clamp at the last entry instead of cycling.
+function sayNext(lines, index) {
+  if (lines.length === 0) return index;
+  const current = Math.min(index, lines.length - 1);
+  trigger(null, "Say", { text: lines[current], hold_seconds: tuning.holdSeconds });
+  return Math.min(current + 1, lines.length - 1);
+}
+
+// CODEX: one coroutine per key; pickup/drop starts a new episode, without replacing door handlers.
+exports.watch = function* (key) {
+  // CODEX: each helper progresses independently across lookaways and pickups for this key's lifetime.
+  let missedIndex = 0;
+  let lingeringIndex = 0;
+  let misses = 0;
+  let lastPresses = 0;
+  let looking = false;
+  let elapsed = 0;
+  let away = 0;
+  let cursorTime = 0;
+  let earlyCursor = false;
+  let lingeringShown = false;
+  while (true) {
+    const dt = yield;
+    const feedback = get(key, "InteractionFeedback");
+    const tracker = get(key, "SeenTracker");
+    if (feedback == null || tracker == null) return;
+    const presses = Math.max(0, feedback.missed_presses - lastPresses);
+    lastPresses = feedback.missed_presses;
+    const pickedUp = get(key, "Held") != null || get(key, "Holdable") == null;
+    const seen = tracker.seen && !pickedUp;
+
+    // CODEX: ANY full disappearance resets presses; timed lookaway grace shortens after its hint fires.
+    if (!seen) {
+      misses = 0;
+      if (looking) { elapsed += dt; away += dt; }
+    } else {
+      if (!looking) { looking = true; elapsed = 0; }
+      away = 0;
+      const cursor = feedback.cursor_visible;
+      if (cursor) {
+        cursorTime += dt;
+        if (elapsed < tuning.earlyCursorSeconds) earlyCursor = true;
+      }
+      elapsed += dt;
+      misses += presses;
+    }
+    const lookawayLimit = lingeringShown ? tuning.lookawayAfterHint : tuning.lookawayGrace;
+    if (pickedUp || away > lookawayLimit) {
+      looking = false;
+      elapsed = 0;
+      away = 0;
+      cursorTime = 0;
+      earlyCursor = false;
+      lingeringShown = false;
+    }
+
+    // CODEX: never interrupt any existing dialogue; ignored busy presses are not queued for later.
+    const message = get_resource("Message");
+    const ready = message == null || message.text === "" || message.finished;
+    if (!seen || !feedback.cursor_visible || !ready) continue;
+    if (presses > 0 && !feedback.active && misses >= tuning.missedPresses) {
+      missedIndex = sayNext(tuning.missedText, missedIndex);
+    } else if (!lingeringShown && elapsed > tuning.lookSeconds
+        && cursorTime >= tuning.cursorSeconds && earlyCursor) {
+      lingeringShown = true;
+      lingeringIndex = sayNext(tuning.lingeringText, lingeringIndex);
+    }
+  }
+};
+}
+
+/* CODEX: Name crosses include ownership; #realkey would only match nodes authored by THIS file. */
+:root [Name="realkey"] {
+  SeenTracker: { unseen_delay: 0; }
+  InteractionFeedback: default;
+  on OnAdd(InteractionFeedback): watch;
+}
