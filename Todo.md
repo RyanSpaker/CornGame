@@ -144,3 +144,4 @@ need to refactor the lobby and pylon demos' seperate precompile code into someth
 I fixed the camera positioning at startup taking a frame to apply. BUT really we need to not render until startup is done. 
 
 We also should figure out whats with the blank screen we get when window first opens.
+

@@ -4,15 +4,28 @@
    station_band is five percent of the complete dial on EACH side of a station.
    Replace temporary sounds below and RadioSignal sounds in lobby.corn with recordings. */
 use lobby;
+script {
+// CODEX (GPT-6): Quick audio balance knobs; applied on scene load. Live edits use the reflected Radio fields.
+const RADIO_AUDIO = {
+  volume: 0.9,          // Master output, including speaker/distance attenuation.
+  broadcast_gain: 1.0, // All normal stations AND regional signals; individual source gains still apply.
+  static_gain: 0.62,   // Independent static/hiss level.
+};
+}
 Visibility: Hidden;
 Name: "radio";
 Radio: {
   on: true; tuning: 0.5;
-  volume: 0.65; static_gain: 0.55; station_band: 0.05; fade_seconds: 0.09;
+  /* CODEX (GPT-6): Fixed output headroom for additive broadcasts and hiss, including the hot station 2. */
+  volume: ${ RADIO_AUDIO.volume };
+  broadcast_gain: ${ RADIO_AUDIO.broadcast_gain }; static_gain: ${ RADIO_AUDIO.static_gain };
+  station_band: 0.05; fade_seconds: 0.09;
+  /* CODEX (GPT-6): Linear proximity thresholds: acquire early, then clear hiss over a clean center. */
+  acquisition_thresholds: [0.10, 0.45]; clarity_thresholds: [0.25, 0.75];
   knob_degrees: 150; viewport_sweep: 0.95;
   source_forward: [0, -1, 0]; rear_gain: 0.3; distance_reference: 3; audio_range: 25;
   /* CODEX: Correct only tipped-over pickups, with a smooth one-shot turn toward the player. */
-  pickup_tilt_degrees: 50; pickup_turn_seconds: 0.7;
+  pickup_tilt_degrees: 50; pickup_turn_seconds: 0.5;
   static_sound: "sounds/radio/static.ogg";
   stations: [
     { frequency: 0.1; sound: "sounds/radio/station_1.ogg"; gain: 1; },

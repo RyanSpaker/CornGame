@@ -176,3 +176,18 @@ QUOTE FROM DISCORD: Good lighting can mask the simplicity of models. **It's all 
 
 # Thu Nov  5 08:58:33 PM EST 2026
 Local point lights are nice. A 3000k 5(blender unit?) 1m range light beautifully illuminates the radio and barrel. 
+
+# Fri Nov  6 04:47:54 AM EST 2026
+lobby demo: radio, difficult to discover secret broadcasts on your own 
+
+1. [ ] there should be an arrow under the radio pointing to the center of the nearby broadcast
+2. [ ] there should be sticki-notes hinting at station and location of secret broadcasts
+3. [ ] nearby broadcast should be audible from the radio's default location.
+
+?: how to make it clear that you need to stay on station 0.9, and walk over?
+- dial sticky
+
+TODO: make stickies look nicer
+
+# Fri Nov  6 06:23:17 AM EST 2026
+I regenerated the numbers message to say "sry. no msg yet. good work."

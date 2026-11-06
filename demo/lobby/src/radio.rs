@@ -12,12 +12,15 @@ use crate::{computer::ComputerSession, controller::Player, hold::Held, interacti
 mod audio;
 #[path = "radio_placement.rs"]
 mod placement;
-// CODEX: Pickup-only orientation correction is separate from audio, tuning, and placement.
+// CODEX: Pickup and tuning orientation share one transition, separate from audio and placement.
 #[path = "radio_pickup.rs"]
 mod pickup;
 // CODEX — GPT-6: Independent marker geometry defines linear reception between offset ellipses.
 #[path = "radio_region.rs"]
 mod region;
+// CODEX: Optional regional attenuation overlay, with no additional UI framework.
+#[path = "radio_dev_ui.rs"]
+mod dev_ui;
 
 // CODEX: A normal broadcast is global; regional broadcasts use RadioSignal on Blender empties.
 #[derive(Reflect, Clone, Debug, Default)]
@@ -37,8 +40,14 @@ pub struct Radio {
     pub stations: Vec<RadioStation>,
     pub static_sound: String,
     pub volume: f32,
+    /// CODEX (GPT-6): Shared level for normal stations and regional broadcasts, separate from hiss.
+    pub broadcast_gain: f32,
     pub static_gain: f32,
     pub station_band: f32,
+    /// CODEX (GPT-6): Proximity thresholds [starts acquiring, full gain], independent of hiss.
+    pub acquisition_thresholds: Vec2,
+    /// CODEX (GPT-6): Proximity thresholds [starts clearing, fully clean]; wider clean plateau at lower Y.
+    pub clarity_thresholds: Vec2,
     pub fade_seconds: f32,
     pub knob_degrees: f32,
     pub viewport_sweep: f32,
@@ -49,7 +58,7 @@ pub struct Radio {
     pub audio_range: f32,
     /// CODEX: Only pickups tilted farther than this from world up are corrected (also upside down).
     pub pickup_tilt_degrees: f32,
-    /// CODEX: Duration of the deliberate upright-and-face-player rotation.
+    /// CODEX: Duration of the deliberate upright-and-face-player rotation on pickup or tuning.
     pub pickup_turn_seconds: f32,
 }
 
@@ -61,9 +70,13 @@ impl Default for Radio {
             tuning: 0.5,
             stations: Vec::new(),
             static_sound: "sounds/radio/static.ogg".into(),
-            volume: 0.65,
+            // CODEX (GPT-6): Fixed headroom for additive station/secret/hiss peaks; never duck by reception.
+            volume: 0.5,
+            broadcast_gain: 1.0,
             static_gain: 0.55,
             station_band: 0.05,
+            acquisition_thresholds: Vec2::new(0.10, 0.45),
+            clarity_thresholds: Vec2::new(0.25, 0.75),
             fade_seconds: 0.09,
             knob_degrees: 150.0,
             viewport_sweep: 0.95,
@@ -72,7 +85,7 @@ impl Default for Radio {
             distance_reference: 3.0,
             audio_range: 25.0,
             pickup_tilt_degrees: 50.0,
-            pickup_turn_seconds: 0.7,
+            pickup_turn_seconds: 0.5,
         }
     }
 }
@@ -116,7 +129,7 @@ pub fn plugin(app: &mut App) {
         .register_type::<Radio>()
         .register_type::<RadioSignal>()
         .register_type::<RadioFalloff>()
-        .add_plugins((audio::plugin, placement::plugin, pickup::plugin))
+        .add_plugins((audio::plugin, placement::plugin, pickup::plugin, dev_ui::plugin))
         .add_observer(randomize_hidden_knob)
         .add_systems(
             Update,
@@ -144,6 +157,7 @@ fn input(
     mut radios: Query<&mut Radio>,
     mut tuning: ResMut<RadioTuning>,
     mut window: Single<(&Window, &mut CursorOptions), With<PrimaryWindow>>,
+    mut commands: Commands,
 ) {
     let playing = crate::browser::captured()
         && computer.active.is_none()
@@ -167,6 +181,10 @@ fn input(
         };
     }
     if previous.is_none() && tuning.entity.is_some() {
+        // CODEX: Placed radios remain tunable, but only held radios turn to face the player.
+        if let Some(entity) = tuning.entity.filter(|e| held.contains(*e)) {
+            commands.trigger(pickup::FaceRadio { entity });
+        }
         tuning.previous_grab = Some(window.1.grab_mode);
         tuning.previous_visible = window.1.visible;
         window.1.grab_mode = CursorGrabMode::Locked;
@@ -185,9 +203,6 @@ fn input(
         if let Ok(mut radio) = radios.get_mut(entity) {
             if keys.just_pressed(KeyCode::KeyF) {
                 radio.on = !radio.on;
-                if radio.on {
-                    radio.tuning = 0.5;
-                }
             }
             if tuning.entity == Some(entity) {
                 radio.tuning = (radio.tuning
@@ -220,7 +235,7 @@ fn knobs(
             if name.as_str() == "KNOB" {
                 transform.rotation = base
                     * Quat::from_rotation_y(
-                        (radio.tuning * 2.0 - 1.0) * radio.knob_degrees.to_radians(),
+                        (1.0 - radio.tuning * 2.0) * radio.knob_degrees.to_radians(),
                     );
             }
         }
@@ -264,6 +279,7 @@ fn hints(
     paper: Res<crate::post_it::PostItSession>,
     radios: Query<&Radio>,
     held: Query<Entity, With<Held>>,
+    mut preload: ResMut<audio::RadioAudioPreload>,
     mut labels: Query<(&RadioHint, &mut Text, &mut Visibility)>,
     mut ordinary: Query<
         &mut Visibility,
@@ -292,8 +308,16 @@ fn hints(
         let font = FontSource::Handle(assets.load("fonts/Gelasio-Italic.ttf"));
         // CODEX: radio uses the same primary/secondary sizes and spacing as every other prop.
         for (line, size, bottom) in [
-            (0, crate::interaction::PRIMARY_HINT_SIZE, crate::interaction::PRIMARY_HINT_BOTTOM),
-            (1, crate::interaction::SECONDARY_HINT_SIZE, crate::interaction::SECONDARY_HINT_BOTTOM),
+            (
+                0,
+                crate::interaction::PRIMARY_HINT_SIZE,
+                crate::interaction::PRIMARY_HINT_BOTTOM,
+            ),
+            (
+                1,
+                crate::interaction::SECONDARY_HINT_SIZE,
+                crate::interaction::SECONDARY_HINT_BOTTOM,
+            ),
         ] {
             commands.spawn((
                 Name::new(format!("Radio controls {line}")),
@@ -330,6 +354,8 @@ fn hints(
             if hint.0 == 0 {
                 text.0 = format!("press F to turn {}", if radio.on { "off" } else { "on" });
             } else {
+                // CODEX (GPT-6): Latch only when the secondary tuning controls are shown to the player.
+                preload.unlocked = true;
                 text.0 = if tuning.entity.is_some() {
                     "move mouse to tune · press T to finish".into()
                 } else if held_radio.is_some() {
@@ -351,9 +377,33 @@ fn hints(
 #[cfg(test)]
 mod tests {
     use super::*;
-    // CODEX: Full-width motion covers the dial, limits clamp, F resets center, and T restores capture.
+    // CODEX: Viewed from the exported front (+Z), the marker moves clockwise as tuning increases.
     #[test]
-    fn tuning_owns_mouse_and_power_resets_center() {
+    fn dial_turns_clockwise_from_front_with_increasing_frequency() {
+        let mut app = App::new();
+        app.add_systems(Update, knobs);
+        let rest = Quat::from_rotation_x(std::f32::consts::FRAC_PI_2);
+        let knob = app
+            .world_mut()
+            .spawn((Name::new("KNOB"), Transform::from_rotation(rest)))
+            .id();
+        let radio = app.world_mut().spawn(Radio::default()).add_child(knob).id();
+        for tuning in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            app.world_mut().get_mut::<Radio>(radio).unwrap().tuning = tuning;
+            app.update();
+            let rotation = app.world().get::<Transform>(knob).unwrap().rotation;
+            // CODEX: At center a reference marker points right; clockwise turns move it downward.
+            let marker = rotation * Vec3::X;
+            let expected_angle = (tuning * 2.0 - 1.0) * 150.0_f32.to_radians();
+            assert!(
+                marker.distance(Vec3::new(expected_angle.cos(), -expected_angle.sin(), 0.0)) < 1e-5
+            );
+        }
+    }
+
+    // CODEX: Full-width motion covers the dial, limits clamp, F preserves tuning, and T restores capture.
+    #[test]
+    fn tuning_owns_mouse_and_power_preserves_frequency() {
         let mut app = App::new();
         app.init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<AccumulatedMouseMotion>()
@@ -361,6 +411,8 @@ mod tests {
             .init_resource::<ComputerSession>()
             .init_resource::<crate::post_it::PostItSession>()
             .init_resource::<RadioTuning>()
+            .init_resource::<Time>()
+            .add_plugins(pickup::plugin)
             .add_systems(Update, input);
         let window = app
             .world_mut()
@@ -377,13 +429,26 @@ mod tests {
                 },
             ))
             .id();
-        let radio = app.world_mut().spawn(Radio::default()).id();
+        app.world_mut().spawn((
+            Player::default(),
+            GlobalTransform::from_translation(Vec3::Z),
+        ));
+        let radio = app
+            .world_mut()
+            .spawn((Radio::default(), Transform::default()))
+            .id();
         app.world_mut().resource_mut::<InteractionPrompt>().target = Some(radio);
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::KeyT);
         app.update();
         assert_eq!(app.world().resource::<RadioTuning>().entity, Some(radio));
+        assert!(
+            app.world()
+                .get::<crate::hold::HeldRotation>(radio)
+                .is_none(),
+            "entering T tuning on a placed radio must preserve its orientation"
+        );
         assert_eq!(
             app.world().get::<CursorOptions>(window).unwrap().grab_mode,
             CursorGrabMode::Locked
@@ -418,7 +483,7 @@ mod tests {
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::KeyF);
         app.update();
-        assert_eq!(app.world().get::<Radio>(radio).unwrap().tuning, 0.5);
+        assert_eq!(app.world().get::<Radio>(radio).unwrap().tuning, 0.0);
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
             .reset_all();

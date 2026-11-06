@@ -2,8 +2,172 @@ CLAUDE: claude-sonnet-5-5 low — Thu Nov  5 07:56:49 PM EST 2026 — agent-main
 
 Format: one `#` entry per chat, headed `CLAUDE|CODEX: <model> <reasoning> <date+time>`.
 Each relevant turn is a `##` subheading with same format followed by a very short description.
-Each entry keeps a summary (scope + why + what) of at most 20 lines, immediately after the top level heading.
+Each entry keeps a summary (scope + why + what) of at most 20 lines, immediately after the top level heading. This must be kept accurate. Consider updating **after every turn.**
 
+NEW ENTRIES GO TO THE **END** OF THE FILE.
+
+# CODEX: GPT-6 high — Fri Nov 06 2026 07:00:06 AM EST
+Scope: lobby camera zoom and one-time post-it teaching tooltip.
+Why: make post-it clues easier to read and teach the right-click control.
+What: hold right click for true 1.5x magnification, interpolated linearly over 0.7s; release returns over the same duration. Computer focus, paper editing/carrying, radio tuning and pause block zoom. Visible stack, static Blender post-its and player-posted notes show the shared teletype-styled "right click to zoom" hint, hidden for the rest of the session after full zoom plus 0.25s continuously held. ZoomSettings exposes magnification, timing, hint size and placement to the dev console. Added isolated zoom module and four headless regression tests.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 07:00:06 AM EST — implementation and verification
+All 61 lobby tests and the native build passed. Regression checks cover linear projection magnification, transition/hold timing, partial-release reset, input ownership, authored/runtime note targeting, occlusion and permanent session dismissal. Formatting and whitespace checks passed. Visual launch could not run because XOpenDisplay failed in this environment.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 07:02:09 AM EST — right-click correction
+Changed the zoom button and teaching hint to right click per user correction; timing and completion behavior unchanged. All four focused zoom tests and formatting checks passed.
+
+# CODEX: GPT-6 high — Fri Nov 06 2026 06:23:12 AM EST
+Scope: lobby radio message audio and its isolated generator.
+Why: encode the requested clue as spoken decimal ASCII.
+What: set editable MESSAGE_TEXT to "sorry. no msg yet. good work." and derive all 29 ASCII codes, preserving spaces and punctuation. Regenerated only message.ogg with the existing filtered voice and two-second end pause; normalized to the existing -23 LUFS target.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 06:23:12 AM EST — ASCII message regeneration
+Verified ASCII round-trip, successful full decode, mono 22050 Hz Vorbis, 68.590s duration and 2.000s ending silence. Measured -22.94 LUFS and -2.15 dB true peak. No listening verification.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 06:26:11 AM EST — relocated generator and revised clue
+Moved the generator beside the radio sounds and adjusted its output directory. Swapped near/drone synthesis to match the user's asset swap, renamed drone controls, and updated the CODEX radio documentation. Removed generation for authored stations 1/2/3/5, retaining the original station_4 melody; added selective drone/station_4 generation. Verified all full/selective output routes with encoding mocked. Updated the clue to the final supplied "sry. no msg yet. good work" (26 decimal ASCII codes, no final period) and regenerated only message.ogg: mono 22050 Hz Vorbis, 61.565s, 2.000s ending silence, -22.94 LUFS, -2.06 dB true peak. Verified hashes of every other OGG were unchanged. No listening verification.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — correction: ASCII belongs in numbers.ogg
+Previous turns incorrectly overwrote the user's authored message.ogg (original observed size 1,300,277 bytes). Copied the verified latest ASCII recording into numbers.ogg and corrected the generator: NUMBERS_TEXT/CODES/PAUSE_SECONDS, --only numbers, and no message generation in any route. Updated RADIO.CODEX.md and verified full/selective routes with mocked encoding. The normalization backup contains an older synthesized 17.121s message, not the authored recording, so it was not used as a false restoration. Authored message restoration remains unresolved pending a source copy; asked user for its location. Other sound assets were not modified in this correction.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — authored message restored from ZFS snapshot
+Restored message.ogg from the user-specified /.zfs/snapshot/zfs-auto-snap_frequent-2026-11-06-06h15 copy. Verified exact byte equality: 1,300,277 bytes, SHA-256 0ac1693b28f726d1f4f7381e5329699a8cf9b58cd9799ce67490937e7a73626f. Verified hashes of all other OGG files unchanged, including the corrected ASCII numbers.ogg. Authored message restoration is complete.
+
+# CODEX: GPT-6 high — Fri Nov 06 2026 05:36:49 AM EST
+Scope: art/lobby.blend radio clues on the two freestanding barrels.
+Why: direct the player from radio_spawn toward barrel_near_region and illustrate the relevant tuning positions.
+What: added an exportable black lid arrow pointing toward barrel_near_region and a yellow post-it with a circle dial, eleven labeled ticks from 0.0 to 1.0, blue highlights at 0.1/0.2/0.3/0.5/0.8 and pink at 0.2/0.9. Pointer is at 0.9; geometry matches radio.corn's clockwise ±150-degree sweep and +X rest marker. Isolated additions in CODEX_radio_clues, parented them to their barrels, and embedded the annotated generator as CODEX_radio_clues.py. Note root exposes size/sweep/tuning provenance and supports whole-note transform adjustments.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 05:36:49 AM EST — Blender implementation and visual verification
+Inspected both additions in material preview; verified readable labels, dual-color 0.2, pointer alignment, and arrow placement. Counted eleven mesh labels and eleven ticks; all graphics are meshes for future export. Saved the open art/lobby.blend. No game export requested or performed.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — authored desk notes with image overlays
+User refined scope: create two new post-its on the lobby desk, touching no other notes. Added CODEX_desk_dial_postit and CODEX_desk_map_postit as exact geometry copies of postit1/postit2 at their original size, retaining the source paper material/atlas through independent material copies. Applied separate transparent 256×256 PNG overlays with dedicated UVs; packed both into lobby.blend and saved PNGs in art/CODEX_radio_{dial,regions}_256.png. Dial keeps the original calibration/highlights. Map uses current region affine transforms (including offset near falloff), four region labels/frequencies, solid clear/dashed falloff outlines, and the cabin wall footprint. Existing notes and barrel arrow were untouched. Visually inspected both curved notes in isolation, verified geometry matches the source meshes and both packed image dimensions, restored full lobby view, and saved lobby.blend. Isolated generators are embedded as CODEX text blocks and retained under .agents/tmp.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — corrected desk-note artwork
+Rotated dial artwork so midpoint 0.5 is straight up, preserving the clockwise 300-degree sweep and 0.9 pointer; removed all numeric dial labels per the follow-up, retaining eleven ticks and existing highlights. Changed the message region's upper semicircle to blue on both clear and falloff boundaries; lower semicircle remains pink. Regenerated the 256×256 PNGs, visually checked the artwork, reloaded/repacked both Blender images, updated embedded source scripts, and saved lobby.blend. Meshes, placements, and other notes were untouched.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — thicker strokes and simplified map
+Doubled all dial/map stroke widths, enlarged map center dots, and lengthened falloff dashes for readability at 256×256. Removed all four region-name/frequency labels; retained cabin, direction, title, and boundary legend. Preserved the upward dial midpoint, 0.9 pointer, highlights, and half-blue message outline. Visually inspected regenerated PNGs, refreshed packed Blender images and embedded generators, and saved lobby.blend without geometry or placement changes.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — ground-aligned map without annotations
+Removed all remaining map text, the cabin label leader, and the +Y direction arrow. Mapped actual ground mesh world XY bounds (-26.3251,-22.6622)–(24.9565,28.6194) directly to the full 256×256 overlay, so post-it edges correspond to ground edges; clipped regions outside those boundaries. Verified opposite corners map to (0,256)/(256,0), visually checked the PNG, refreshed the packed image/embedded generator, and saved lobby.blend. Preserved user-adjusted note transforms and all other scene objects.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — narrower dial highlights and heavier map
+Reduced colored dial bands from 14px to 7px while retaining thicker black pen strokes. Increased map outline widths another 50% (stroke scale 2→3), preserving the text-free, arrow-free ground alignment and half-blue message region. Visually checked both 256×256 PNGs, refreshed/repacked Blender images and embedded generators, and saved lobby.blend. No object or placement changes.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — third desk post-it with station list
+Added CODEX_desk_stations_postit beside the two current clues using an exact geometry copy of authored postit3, original paper atlas/material copy, and a separate packed 256×256 transparent image. Six lines reproduce the latest user text without a heading: 90.1 music; 90.2 news?; 90.3 broadcast; 90.5* easy listening; 90.8 CHKN; 90.9 ???. Preserved other note placements. Visually inspected the PNG and new note on the desk, verified source geometry and packed image dimensions, embedded isolated generators, and saved lobby.blend.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — padded ground border on map
+Inset ground bounds by 5% per side (12.8px on the 256×256 overlay), rescaled cabin/region artwork consistently, and added a 3px black ground-boundary rectangle. Regions clip to the border, leaving the paper margin clear. Visually verified PNG and corner mapping at 12.8/243.2px, repacked the map image, refreshed embedded source/metadata, and saved lobby.blend. Other artwork and scene transforms remain unchanged.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — filled regions, black cabin, starting-radio dot
+Filled all inner radio regions, preserving the half-blue/half-pink message disk; removed redundant center dots. Filled the cabin footprint pure black and added a small 2.5px-radius red dot at the current radio_spawn world XY position using the same ground-to-image mapping. Retained 5% padding, ground border, and dashed outer falloff boundaries. Visually inspected the 256×256 PNG, repacked it, refreshed the embedded generator, and saved lobby.blend without changing note transforms or other artwork.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — bold padded station list
+Increased station-list left padding from 20px to 32px and changed Adwaita Mono to bold (weight 700), preserving the six supplied lines and 256×256 size. Visually checked the PNG for clipping, refreshed the packed Blender image and embedded generator, and saved lobby.blend without scene placement changes.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — red radio X
+Replaced the map's starting-radio dot with a 6px red X using 2px rounded strokes at the same radio_spawn-derived coordinates. Visually checked the regenerated 256×256 PNG, refreshed the packed image/embedded generator, and saved lobby.blend.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — thicker dial highlights
+Increased dial color-band width from 7px to 10px, retaining black stroke widths, calibration, pointer, and blue/pink assignments. Visually checked the regenerated 256×256 PNG, refreshed the packed dial image and embedded generator, and saved lobby.blend.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — authored paper and separate ink meshes for glTF
+Investigated black runtime clues by comparing Blender graphs, authored tabletop_postit_custom_* objects, and both source/runtime glTF materials. The unsupported paper/transparent-ink mix exported only the ink image as an opaque paper base color. Following the user's correction, restored paper-only material copies from the existing postit1/2/3 assets and added separate child ink objects. Dial/map use curled overlay meshes with directly connected 256px RGBA textures and glTF BLEND materials; the station list uses a separate bold glyph mesh sharing the authored postit_handwritten_ink material. Kept user-adjusted note transforms and all other authored notes intact.
+Added demo/lobby/tools/make_postit_ink_meshes.py and an embedded copy with tunable ink offset/text metrics. Re-exported art/lobby.gltf with the saved authoring settings and refreshed only lobby runtime assets through prepare_assets.export. Verified the actual exported three opaque paper materials reference the authored paper atlas, each paper node owns its separate ink child, station glyphs share the authored ink material, and both graphic children export BLEND alpha. Runtime subset has 651 nodes; image references resolve. Removed the discarded composite bake utility/textures. Automatic review rejected a temporary Bevy camera/exposure check after the user rejected that approach; it was not performed. Stopped the verification instance. Saved lobby.blend; no claim of a final Bevy visual check.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — station lettering follows authored paper modifier
+Fixed only CODEX_desk_stations_postit_text: copied every writable setting of the authored lettering's Shrinkwrap modifier and retargeted it to the station-list paper. Uses PROJECT along negative local Z, ON_SURFACE, offset 0.00012m, matching tabletop_postit_custom_03_text exactly. Updated the isolated generator and embedded copy so new lettering gets this modifier. Checked all 7,565 evaluated vertices against the paper: maximum distance 0.000120007m. Verified exported glTF glyph surface heights are on the paper rather than 0.04m above it, refreshed runtime lobby assets, and saved lobby.blend. Dial/map unchanged.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 — corrected two-color map region
+Moved the blue/pink split from message to numbers for both filled inner disks and dashed outer boundaries; message is entirely pink. Visually checked the 256×256 PNG, refreshed the packed map image/embedded generator, updated the exact texture paths referenced by source/runtime glTF, and saved lobby.blend. Separate ink meshes, station shrinkwrap, and transforms remain unchanged.
+
+# CODEX: GPT-6 high — Fri Nov 06 2026 04:50:00 AM EST
+Scope: demo/lobby self-contained regional radio attenuation dev UI.
+Why: inspect region geometry and linear strength in-game with a temporary Ctrl-/ shortcut.
+What: added radio_dev_ui.rs using existing Bevy UI and isolated procedural map drawing, without a new framework. Bottom-left panel defaults to 20% window width, fits the authored ground mesh, draws inner/outer boundaries and centers, green spatially active/yellow inactive regions, shared affine falloff segments, player dot and radio square. Shows tuning, power and every active region's frequency, name, audio file and linear strength. RadioDevUi exposes live size, padding, font and marker controls through the dev console. Registers from the radio plugin; shares exact intersection math with radio_region.rs.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 04:50:00 AM EST — regional overlay implementation
+All 21 radio tests pass, including a new offset/sheared-boundary test verifying the dev segment endpoints against the audio strength. Native build and WebAssembly check pass. Focused real-scene smoke passes: Ctrl-/ open/close, active region name/audio path/strength and screenshot capture. Visually inspected /tmp/radio-ui/radio-dev-ui.png.
+
+# CODEX: GPT-6 high — Fri Nov 06 2026 04:38:16 AM EST
+Scope: demo/lobby radio audio assets and a reusable normalization utility.
+Why: user approved normalizing all ten unique radio recordings to -23 LUFS / -1 dBTP after the loudness survey.
+What: backed up originals and aliases under demo/lobby/.agents/tmp/radio-normalization-20261106-043628; applied constant gain and Vorbis quality-5 encoding. Preserved dynamics, exact durations, rates, channel counts and station_3/station_5 symlinks. Added tools/normalize_radio_audio.py (read-only by default; --apply requires prior user approval), staged verification and a before/after report with original/normalized hashes. Runtime volume knobs remain unchanged.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 04:38:16 AM EST — approved audio normalization
+All ten unique outputs fully decode and measure -23.09 to -22.95 LUFS; highest true peak -1.20 dBTP. Confirmed installed stream geometry/codec, original backup hashes and both symlinks. Static needed a corrective constant-gain pass after lossy encoding shifted loudness. No compression/limiting was needed, and the incomplete first staging attempt was discarded after verifying the final backups. No in-game listening review.
+
+# CODEX: GPT-6 high — Fri Nov 06 2026 04:28:23 AM EST
+Scope: demo/lobby radio broadcast/static balance controls and read-only audio loudness survey.
+Why: normal stations and regional signals need one shared volume knob independent of static; user requires prompting before audio-file changes.
+What: added reflected Radio.broadcast_gain (default 1), applied to both broadcast kinds while preserving individual gains. Grouped broadcast_gain, existing static_gain and master volume in RADIO_AUDIO in radio.corn. Audio files remain unchanged; normalization requires explicit approval after measurements.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 04:28:23 AM EST — separate broadcast and static controls
+All 20 radio tests pass. Extended the runtime mixer test to cover normal/regional source trims, live broadcast changes with unchanged hiss, live static changes with unchanged broadcasts, and the existing power fade. Documented scene-load variables versus live reflected fields. Measured all ten unique radio files with FFmpeg; proposed constant-gain normalization to -23 LUFS / -1 dBTP, pending approval.
+
+# CODEX: GPT-6 — Fri Nov 06 2026 04:15:06 EST
+Scope: demo/lobby radio audio assets.
+Why: Bevy rejected Opus audio stored in Ogg files.
+What: Converted chicken_on_a_raft.ogg and war_of_the_worlds_compressed.ogg to Vorbis quality 5. Preserved sample rates, channels, filenames, and station_3/station_5 symlinks; retained existing Vorbis assets.
+
+## CODEX: GPT-6 — Fri Nov 06 2026 04:15:06 EST — radio Opus conversion
+Both converted recordings passed a complete FFmpeg decode. All 12 radio paths, including linked stations, report Vorbis through ffprobe.
+
+# CODEX: GPT-6 high — Fri Nov 06 2026 03:55:47 AM EST
+Scope: demo/lobby first-pass radio reception, reflected tuning controls and radio documentation.
+Why: exact-center tuning and equal-power crossfading made stations fade instead of staying loud under interference.
+What: linear dial proximity feeds independent acquisition [0.10, 0.45] and clarity [0.25, 0.75] smoothsteps; removed mix normalization. Regional spatial strength feeds both curves before gain, preserving 0.85 normal suppression, interference hiss and layered secrets. Kept existing smoothing, controls, preload and recordings. Exposed threshold pairs in Radio/radio.corn. Fixed output volume is 0.5 for measured additive headroom; processing/compression remains a later milestone.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 03:55:47 AM EST — forgiving tuning and independent hiss
+Verified 55 lobby unit tests (20 radio tests), including flat clean center, full broadcast gain under hiss, continuous/symmetric tuning, independent controls, overlapping regions, spatial edges, mixer gains and power fade. WebAssembly check passes. Decoded station 2 peaks at 1.327394; a coefficient-aware 0.001-step sweep bounds station/message/static overlap at 1.834007 before output volume, or 0.917004 at the new fixed 0.5 volume. No in-game listening verification; filtering, crackle/dropouts and combined-bus compression deferred.
+
+# CODEX: GPT-6 high — Fri Nov 06 2026 02:44:36 AM EST
+Scope: demo/lobby radio controls, shared held-rotation timing, radio recordings/generator, and deferred audio requests.
+Why: correct dial direction and power behavior; face held radios toward the player; revise requested broadcasts; avoid downloading unused audio before tuning is introduced.
+What: clockwise dial motion increases tuning to 100%; F preserves frequency and knob position.
+T turns only held radios toward the player's full yaw/pitch direction, without roll; tipped pickup correction remains upright and yaw-only.
+Both use the shared quintic-eased quaternion transition: 0.2s delay followed by a 0.5s turn; retargeting preserves the current angle and carry-bounds basis.
+Regenerated near.ogg without random noise, using four pronounced 2.5s intensity swells per 10s loop; exposed synthesis controls and selective generation.
+Regenerated message.ogg with ten spoken numbers and exactly 2s ending silence; subsequent audio revisions are recorded in their respective chat entries.
+Joined ~/dump/nprcorn/1.mp3, 2.mp3 and 3.mp3 in order with 1s silence between clips, replacing station_2.ogg (11m 52s).
+Initially request only the default station (station 4 at 50%); the first visible tuning tooltip permanently unlocks remaining station, static and regional audio requests.
+Validation: radio regression tests passed after each code change (22 at the final pitch change); generated audio was decoded/measured. No live browser-network or final visual/listening verification.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 02:44:36 AM EST — radio controls and tuning orientation
+Verified all 50 lobby unit tests with `cargo test -p lobby --bin lobby --offline`, including clockwise model-space rotation, preserved frequency, T input, parented placed turns, and held retarget continuity. No live visual verification.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 02:46:57 AM EST — shared rotation timing
+Set radio correction/tuning turns to 0.5 seconds after a shared 0.2-second pause. Kept placed-turn cleanup aligned with delayed completion; updated carry and placed tests to check the pause. All 50 lobby unit tests pass (`cargo test -p lobby --bin lobby --offline`).
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 02:51:15 AM EST — face radio on tuning only while held
+Guarded T-facing input and its observer with Held; removed the placed-radio turn system. Kept placed tuning/mouse control and held 0.2s delay/0.5s rotation. All 14 radio tests pass (`cargo test -p lobby --bin lobby radio --offline`), including the placed-tuning orientation regression.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 02:56:54 AM EST — regenerate near-source audio
+Original make_radio_audio.py mixed filtered seeded random noise with a gently modulated 91 Hz sine. Replaced near.ogg with a noise-free 91 Hz harmonic drone, four deep 2.5s swells per 10s loop; exposed synthesis constants and added --only near. Other audio files untouched. Verified periodic synthesis, mono 22050 Hz Vorbis decode, 10s duration, 0.214 decoded peak, and 22.4 dB swell range. No listening verification.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 02:58:24 AM EST — ten-number message loop
+Regenerated only message.ogg as ten spoken numbers (4, 8, 15, 16, 23, 42, 7, 19, 31, 56), with the original radio-filtered espeak voice. Trimmed its TTS tail before padding exactly 2s; added --only message and editable content/pause constants. Verified ten entries, mono 22050 Hz Vorbis decode, 17.121s total duration and 2.000s ending silence via ffmpeg. No listening verification.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 03:26:47 AM EST — replace station 2 recording
+Joined ~/dump/nprcorn/1.mp3, 2.mp3, 3.mp3 in numeric order with exactly 1s generated silence between clips; replaced demo/lobby/assets/sounds/radio/station_2.ogg with mono 44100 Hz Vorbis (quality 4), preserving the existing station path.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 03:30:47 AM EST — defer optional radio audio until tuning hint
+Initially request only the normal broadcast nearest the startup dial (station 4 at 0.5). The first visible secondary radio/tuning hint permanently unlocks requests for all remaining stations, static and regional sources for the session. Added integration coverage using actual AssetServer handles and hint visibility: no optional voices before the hint or while the computer UI blocks it; all load afterward without duplication. All 15 radio tests pass (`cargo test -p lobby --bin lobby radio --offline`); browser network behavior not live-verified.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 05:25:21 AM EST — include pitch when tuning held radio
+T now captures a full player-facing yaw/pitch target with level horizontal edges. Tipped pickup correction remains upright and yaw-only; shared delay/easing unchanged. Added observer-level tests for elevated/lowered and directly overhead/underneath player positions, checking both pickup and T targets. All 22 current radio tests pass (`cargo test -p lobby --bin lobby radio --offline`); no live visual verification.
+
+# CODEX: GPT-6 — Fri Nov 06 2026 02:26:41 AM EST
+Scope: demo/lobby/assets/lobby.corn camera startup.
+Why: use the current running game's camera view at startup instead of the authored spawn.
+What: OVERRIDE_SPAWN_VIEW (default true) applies captured position/yaw/pitch while building the scene; false preserves the existing spawn values. Enabled Player.face_spawn_view for correct rotation on the first rendered frame.
+
+## CODEX: GPT-6 — Fri Nov 06 2026 02:26:41 AM EST — captured initial camera
+Verified both override settings using the exact scene JS on temporary entities in the running game's console; cleaned up immediately. Existing running player was left unchanged; startup rendering was not restarted or visually verified.
 
 # CLAUDE: claude-sonnet-5-5 low — Thu Nov  5 07:56:49 PM EST 2026
 Scope: demo/lobby (web build: demo/lobby/web/audio.js, launcher.js; src/voice_box.rs; assets/lobby.corn)

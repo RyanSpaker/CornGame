@@ -10,6 +10,14 @@ include "stuck_player_key_helper.corn";
    (Holdable/Held, R to drop), Say and the prompts are rust (hold.rs, interaction.rs). The door is locked:
    the big key on the hook is too big; the small one in the back corner goes in its key_slot, then turns. */
 script {
+// CODEX (GPT-6): toggle the captured running-game view; false keeps the authored spawn below.
+const OVERRIDE_SPAWN_VIEW = true;
+const INITIAL_CAMERA_VIEW = {
+  translation: [0.002513798885047436, 1.691999912261963, 3.6679527759552],
+  yaw: 0.021999247,
+  pitch: 0.039999895,
+};
+
 const one = (e, name) => select(e, `:root [Name="${name}"]`)[0] ?? null;
 const all = (e, name) => select(e, `:root [Name="${name}"]`);
 const holding = (e) => select_one(e, ":root Held");
@@ -161,8 +169,8 @@ include "lobby.gltf#Scene0" {
      Secret reception uses the RADIO position, not the listener; keep the outer shape around the inner. */
   #radio_signal_drone { RadioSignal: { frequency: 0.9; sound: "sounds/radio/drone.ogg"; gain: 1; } }
   #radio_signal_near { RadioSignal: { frequency: 0.9; sound: "sounds/radio/near.ogg"; gain: 1; } }
-  #radio_signal_numbers { RadioSignal: { frequency: 0.9; sound: "sounds/radio/numbers.ogg"; gain: 1; } }
-  #radio_signal_message { RadioSignal: { frequency: 0.2; sound: "sounds/radio/message.ogg"; gain: 1; } }
+  #radio_signal_numbers { RadioSignal: { frequency: 0.2; sound: "sounds/radio/numbers.ogg"; gain: 1; } }
+  #radio_signal_message { RadioSignal: { frequency: 0.9; sound: "sounds/radio/message.ogg"; gain: 1; } }
   #radio_signal_drone_falloff, #radio_signal_near_falloff,
   #radio_signal_numbers_falloff, #radio_signal_message_falloff { RadioFalloff: default; }
   /* Bevy's glTF animation player is on this animation's authored hierarchy root. */
@@ -196,7 +204,7 @@ include "lobby.gltf#Scene0" {
 
   /* The authored SpawnLocation is now the local camera, with no character/network bootstrap. */
   #spawn {
-    Player: { speed: 2.5; run_speed: 4; sensitivity: 0.002; yaw: -0.65; pitch: -0.08; radius: 0.25; eye_height: 1.68; step: 0.35; face_spawn_view: false; }
+    Player: { speed: 2.5; run_speed: 4; sensitivity: 0.002; yaw: -0.65; pitch: -0.08; radius: 0.25; eye_height: 1.68; step: 0.35; face_spawn_view: true; }
     Camera3d: default;
     Camera: { clear_color: Custom(#030408); }
     Msaa: Off;
@@ -204,6 +212,14 @@ include "lobby.gltf#Scene0" {
     Transform.translation.y: 1.68;
     Transform.translation.z: 1.6;
     SpatialListener: default;
+    // CODEX (GPT-6): apply before the scene spawns, so the body and first-frame fix use this pose.
+    script {
+      if (OVERRIDE_SPAWN_VIEW) {
+        component(e, "Transform").translation = Vec3.new(...INITIAL_CAMERA_VIEW.translation);
+        component(e, "Player").yaw = INITIAL_CAMERA_VIEW.yaw;
+        component(e, "Player").pitch = INITIAL_CAMERA_VIEW.pitch;
+      }
+    }
   }
 
   /* CLAUDE: colliders only where something can touch: the shell's curved walls as meshes (a hull would

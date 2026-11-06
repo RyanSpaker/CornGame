@@ -20,9 +20,34 @@ pub(super) fn strength(point: Vec3, inner: &GlobalTransform, outer: &GlobalTrans
         return 1.0;
     }
 
-    // CODEX: Parameterize center + t * (radio - center), so the radio itself is at t = 1.
+    let Some((inner_hit, outer_hit)) = ray_interval(point, inner, outer) else {
+        return 0.0;
+    };
+    ((outer_hit - 1.0) / (outer_hit - inner_hit)).clamp(0.0, 1.0)
+}
+
+// CODEX: The dev map and audio share exact affine ray intersections, including offset outer markers.
+pub(super) fn falloff_segment(
+    point: Vec3,
+    inner: &GlobalTransform,
+    outer: &GlobalTransform,
+) -> Option<(Vec3, Vec3)> {
+    let (near, far) = ray_interval(point, inner, outer)?;
     let center = inner.translation();
     let direction = point - center;
+    Some((center + direction * near, center + direction * far))
+}
+
+// CODEX: Parameterize center + t * (radio - center); the radio itself is at t = 1.
+fn ray_interval(point: Vec3, inner: &GlobalTransform, outer: &GlobalTransform) -> Option<(f32, f32)> {
+    let inner_inverse = inverse(inner)?;
+    let outer_inverse = inverse(outer)?;
+    let center = inner.translation();
+    let direction = point - center;
+    let inner_radius = inner_inverse.transform_vector3(direction).length();
+    if !inner_radius.is_finite() || inner_radius <= 0.0 {
+        return None; // At the exact center there is no unique falloff direction.
+    }
     let inner_hit = inner_radius.recip();
     let origin = outer_inverse.transform_point3(center);
     let ray = outer_inverse.transform_vector3(direction);
@@ -31,15 +56,10 @@ pub(super) fn strength(point: Vec3, inner: &GlobalTransform, outer: &GlobalTrans
     let c = origin.length_squared() - 1.0;
     let discriminant = b * b - a * c;
     if a <= 0.0 || discriminant < 0.0 {
-        return 0.0;
+        return None;
     }
-    // CODEX: The positive exit root is the far intersection, beyond the radio inside the outer shape.
     let outer_hit = (-b + discriminant.sqrt()) / a;
-    let interval = outer_hit - inner_hit;
-    if interval <= 0.0 {
-        return 0.0;
-    }
-    ((outer_hit - 1.0) / interval).clamp(0.0, 1.0)
+    (outer_hit.is_finite() && outer_hit > inner_hit).then_some((inner_hit, outer_hit))
 }
 
 // CODEX: Collapsed marker axes disable the region instead of generating NaNs in the audio mix.
@@ -74,6 +94,28 @@ mod tests {
         ] {
             assert!((strength(Vec3::X * distance, &inner, &outer) - expected).abs() < 1e-5);
         }
+    }
+
+    // CODEX: The overlay segment must share the actual audio interpolation endpoints.
+    #[test]
+    fn dev_segment_matches_strength_for_offset_affine_boundaries() {
+        let parent = GlobalTransform::from(
+            Transform::from_xyz(8.0, -2.0, 4.0)
+                .with_rotation(Quat::from_euler(EulerRot::YXZ, 0.7, 0.2, -0.4))
+                .with_scale(Vec3::new(2.0, 0.5, 3.0)),
+        );
+        let inner = parent.mul_transform(Transform::from_scale(Vec3::splat(2.0)));
+        let outer = parent.mul_transform(
+            Transform::from_xyz(1.0, 0.0, 0.0).with_scale(Vec3::splat(4.0)),
+        );
+        // Inside the inner shape still gives the complete boundary-to-boundary segment.
+        let point = parent.transform_point(Vec3::X);
+        let (a, b) = falloff_segment(point, &inner, &outer).unwrap();
+        assert!(a.distance(parent.transform_point(Vec3::X * 2.0)) < 1e-5);
+        assert!(b.distance(parent.transform_point(Vec3::X * 5.0)) < 1e-5);
+        assert!((strength(a.lerp(b, 0.25), &inner, &outer) - 0.75).abs() < 1e-5);
+        assert!((strength(a.lerp(b, 0.75), &inner, &outer) - 0.25).abs() < 1e-5);
+        assert!(falloff_segment(inner.translation(), &inner, &outer).is_none());
     }
 
     // CODEX: Offset outer circles give different fade widths on opposite sides of the inner circle.

@@ -90,9 +90,14 @@ pub struct Held {
     pub corners: Vec<Vec3>,
 }
 
+// CODEX: Shared pause before any held rotation correction begins; tune independently of duration.
+pub(crate) const ROTATION_DELAY_SECONDS: f32 = 0.2;
+
 // CODEX: A one-shot world-space correction; keep the target after finishing until Held is removed.
 #[derive(Component)]
 pub(crate) struct HeldRotation {
+    /// CODEX: Retargeting starts at the current pose while cached carry bounds keep their basis.
+    pub from: Option<Quat>,
     pub target: Quat,
     pub started_at: f64,
     pub seconds: f32,
@@ -102,10 +107,10 @@ pub(crate) struct HeldRotation {
 impl HeldRotation {
     // CODEX: Original pickup rotation remains the coordinate basis for the cached center and corners.
     pub(crate) fn sample(&self, from: Quat, now: f64) -> Quat {
-        let t = ((now - self.started_at) as f32 / self.seconds.max(0.001)).clamp(0.0, 1.0);
+        let t = (((now - self.started_at) as f32 - ROTATION_DELAY_SECONDS) / self.seconds.max(0.001)).clamp(0.0, 1.0);
         // CODEX: Quintic smootherstep has zero speed and acceleration at both ends.
         let eased = t * t * t * (t * (6.0 * t - 15.0) + 10.0);
-        from.slerp(self.target, eased)
+        self.from.unwrap_or(from).slerp(self.target, eased)
     }
 }
 
@@ -414,7 +419,7 @@ mod tests {
         let local_center = Vec3::new(0.15, -0.03, 0.06);
         let held = Held { rotation: original, scale: Vec3::ONE,
             center: original * local_center, radius: 0.2, ..default() };
-        let correction = HeldRotation { target: Quat::from_rotation_y(0.7), started_at: 1.0, seconds: 0.7 };
+        let correction = HeldRotation { from: None, target: Quat::from_rotation_y(0.7), started_at: 1.0, seconds: 0.7 };
         let camera = Camera { computed: ComputedCameraValues {
             clip_from_view: PerspectiveProjection::default().get_clip_from_view(), ..default()
         }, ..default() };
@@ -423,7 +428,7 @@ mod tests {
         let total_angle = original.angle_between(correction.target);
         let mut previous_angle = 0.0;
         for t in [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0, 2.0] {
-            let pose = held_pose(&held, &holdable, &camera, &eye, Some(&correction), 1.0 + t * 0.7);
+            let pose = held_pose(&held, &holdable, &camera, &eye, Some(&correction), 1.0 + ROTATION_DELAY_SECONDS as f64 + t * 0.7);
             let (position, direction, tan_half_fov) = view(&camera, &eye, holdable.below);
             let distance = held.radius / (holdable.screen_height * tan_half_fov) * holdable.depth_scale;
             assert!(pose.transform_point(local_center).distance(position + direction * distance) < 1e-5,

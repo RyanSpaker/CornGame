@@ -9,6 +9,8 @@ mod kick;
 mod hold;
 mod physics;
 mod interaction;
+// CODEX (GPT-6): independent lens zoom and one-time post-it teaching hint.
+mod zoom;
 mod monitor_material;
 mod moon_shader;
 mod voice_box;
@@ -90,7 +92,7 @@ fn main() {
         hold::plugin,
         post_it::plugin,
     ))
-    .add_plugins((fitted_hull::plugin, seen::plugin, radio::plugin, precompile::plugin, post_it_warmup::plugin, pipeline_watch::plugin, pipeline_watch_arm::plugin))
+    .add_plugins((fitted_hull::plugin, seen::plugin, radio::plugin, precompile::plugin, post_it_warmup::plugin, pipeline_watch::plugin, pipeline_watch_arm::plugin, zoom::plugin))
     // CLAUDE: after DefaultPlugins: its png/jpg/ktx2 loader must be registered after Bevy's
     .add_plugins(textures)
     .add_systems(Startup, load);

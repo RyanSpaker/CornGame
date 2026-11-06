@@ -23,8 +23,8 @@ use crate::{
 pub const INTERACT_KEY: KeyCode = KeyCode::KeyE;
 
 // CLAUDE: three_corn/demo/flowers `knownNameDelay` and `knownTextLettersPerSecond` defaults.
-const NAME_DELAY: f32 = 0.6;
-const NAME_LETTERS_PER_SECOND: f32 = 18.0;
+pub(crate) const NAME_DELAY: f32 = 0.6;
+pub(crate) const NAME_LETTERS_PER_SECOND: f32 = 18.0;
 // CODEX (GPT-6): viewport-height limits for label placement; keep tuning beside teletype timing.
 const NAME_CENTER_LIMIT: f32 = 0.20;
 const NAME_LARGE_OBJECT_HEIGHT: f32 = 0.50;
@@ -282,7 +282,7 @@ pub fn plugin(app: &mut App) {
 }
 
 // CLAUDE
-fn font(assets: &AssetServer, size: f32) -> TextFont {
+pub(crate) fn font(assets: &AssetServer, size: f32) -> TextFont {
     TextFont {
         font: FontSource::Handle(assets.load(FONT)),
         font_size: FontSize::Px(size),
@@ -291,7 +291,7 @@ fn font(assets: &AssetServer, size: f32) -> TextFont {
 }
 
 // CLAUDE
-fn shadow() -> TextShadow {
+pub(crate) fn shadow() -> TextShadow {
     TextShadow {
         offset: Vec2::new(0.0, 2.0),
         color: Color::BLACK.with_alpha(0.8),
