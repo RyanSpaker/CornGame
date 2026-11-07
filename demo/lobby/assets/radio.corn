@@ -38,6 +38,8 @@ Radio: {
 Body: Static;
 /* CODEX: plastic cabinet knock with a loose internal rattle, distinct from the metal props. */
 KickSound: { sound: "sounds/kicks/radio.ogg"; gain: 0.9; }
+/* CLAUDE: F's on/off click (radio.rs; other players' too, network.corn) */
+SwitchSound: { on: "sounds/interact/radio_click.ogg"; off: "sounds/interact/radio_click.ogg"; gain: 0.8; }
 FittedHull: { exclude_names: ["antenna"]; }
 Restitution: { coefficient: 0.1; }
 Holdable: { droppable: true; screen_height: 0.28; below: 0.16; depth_scale: 0.7; }

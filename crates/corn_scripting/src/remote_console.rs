@@ -19,7 +19,14 @@
 //!
 //! Requests run once a frame, in [`ScriptSystems`] after the script driver. `crates/corn_dev` is a
 //! command line client.
+//!
+//! **The web** (CLAUDE, claude-opus-5-5, 2026-11-07): no socket; the page gets `corn(code, generator?)`,
+//! a promise of the request's value (rejected with its error), for the browser's devtools console. Debug
+//! builds always have it, others when the page's URL has `corn_dev` (`?corn_dev`). Requests run as above;
+//! `console.log` goes to the browser's console. No `screenshot()`/`record()`/`exit()`: devtools takes
+//! screenshots.
 
+#[cfg(not(target_family = "wasm"))]
 use std::{
     collections::{HashSet, VecDeque},
     io::{BufRead, BufReader, Write},
@@ -28,19 +35,27 @@ use std::{
     sync::{mpsc, Mutex},
 };
 
-use bevy::{
-    prelude::*,
-    render::view::screenshot::{save_to_disk, Capturing, Screenshot, ScreenshotCaptured},
-};
+use bevy::prelude::*;
+#[cfg(not(target_family = "wasm"))]
+use bevy::render::view::screenshot::{save_to_disk, Capturing, Screenshot, ScreenshotCaptured};
 
-use super::{as_module, capture_logs, drive_scripts, with_host_world, with_world_scope, Engine, ScriptEngine, ScriptSystems, Thread, Threads, Waiter, RESULT};
+#[cfg(not(target_family = "wasm"))]
+use super::with_host_world;
+use super::{as_module, capture_logs, drive_scripts, with_world_scope, Engine, ScriptEngine, ScriptSystems, Thread, Threads, Waiter, RESULT};
+#[cfg(target_family = "wasm")]
+use web::{answer, incoming, Reply};
 
+#[cfg(not(target_family = "wasm"))]
 const DEFAULT_PORT: u16 = 7777;
 
 pub fn plugin(app: &mut App) {
-    app.init_resource::<Shots>()
-        .add_systems(PostUpdate, (serve.in_set(ScriptSystems).after(drive_scripts), take_shots.after(ScriptSystems)));
+    app.add_systems(PostUpdate, serve.in_set(ScriptSystems).after(drive_scripts));
+    #[cfg(target_family = "wasm")]
+    web::install();
+    #[cfg(not(target_family = "wasm"))]
+    app.init_resource::<Shots>().add_systems(PostUpdate, take_shots.after(ScriptSystems));
     // CODEX: enable local inspection by default in debug builds, preserving explicit release opt-in.
+    #[cfg(not(target_family = "wasm"))]
     if let Some(port) = std::env::var("CORN_DEV").ok()
         .or_else(|| cfg!(debug_assertions).then(|| DEFAULT_PORT.to_string())) {
         let port = if port.trim().is_empty() { DEFAULT_PORT } else { port.trim().parse().expect("CORN_DEV is a port") };
@@ -55,12 +70,29 @@ pub fn plugin(app: &mut App) {
 struct Request {
     code: String,
     generator: bool,
-    reply: mpsc::Sender<String>,
+    reply: Reply,
 }
 
+/// where a request's answer goes (the web's is in `web`)
+#[cfg(not(target_family = "wasm"))]
+type Reply = mpsc::Sender<String>;
+
+#[cfg(not(target_family = "wasm"))]
+fn answer(reply: Reply, result: Result<String, String>, logs: Vec<String>) {
+    let _ = reply.send(reply_json(result, logs));
+}
+
+#[cfg(not(target_family = "wasm"))]
 #[derive(Resource)]
 struct Requests(Mutex<mpsc::Receiver<Request>>);
 
+/// the requests that came in since last frame
+#[cfg(not(target_family = "wasm"))]
+fn incoming(world: &World) -> Vec<Request> {
+    world.get_resource::<Requests>().map(|r| r.0.lock().unwrap().try_iter().collect()).unwrap_or_default()
+}
+
+#[cfg(not(target_family = "wasm"))]
 fn listen(port: u16, requests: mpsc::Sender<Request>) {
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(listener) => listener,
@@ -74,6 +106,7 @@ fn listen(port: u16, requests: mpsc::Sender<Request>) {
 }
 
 /// answers a connection's requests in turn
+#[cfg(not(target_family = "wasm"))]
 fn connection(stream: TcpStream, requests: mpsc::Sender<Request>) {
     let Ok(mut out) = stream.try_clone() else { return };
     for line in BufReader::new(stream).lines() {
@@ -100,6 +133,7 @@ fn connection(stream: TcpStream, requests: mpsc::Sender<Request>) {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn reply_json(result: Result<String, String>, logs: Vec<String>) -> String {
     let mut reply = serde_json::json!({ "ok": result.is_ok(), "logs": logs });
     match result {
@@ -112,8 +146,7 @@ fn reply_json(result: Result<String, String>, logs: Vec<String>) -> String {
 
 /// runs the requests that came in since last frame
 fn serve(world: &mut World) {
-    let Some(requests) = world.get_resource::<Requests>() else { return };
-    let requests: Vec<Request> = requests.0.lock().unwrap().try_iter().collect();
+    let requests = incoming(world);
     if requests.is_empty() {
         return;
     }
@@ -146,9 +179,9 @@ fn run(world: &mut World, engine: &super::js::Js, request: Request) {
     let logs = logs.unwrap_or_default();
     let reply = request.reply;
     match result {
-        Ok(None) => drop(reply.send(reply_json(Ok(RESULT.take().unwrap_or_default()), logs))),
+        Ok(None) => answer(reply, Ok(RESULT.take().unwrap_or_default()), logs),
         Ok(Some(wait)) => {
-            let done = Box::new(move |result, logs| drop(reply.send(reply_json(result, logs))));
+            let done = Box::new(move |result, logs| answer(reply, result, logs));
             let thread = Thread {
                 id,
                 owner: None,
@@ -160,12 +193,83 @@ fn run(world: &mut World, engine: &super::js::Js, request: Request) {
             };
             world.resource_mut::<Threads>().running.push(thread);
         }
-        Err(e) => drop(reply.send(reply_json(Err(e), logs))),
+        Err(e) => answer(reply, Err(e), logs),
+    }
+}
+
+// CLAUDE: the web's transport: `corn(code, generator?)` on the page queues a request; its promise waits
+// here, by id (script threads' callbacks must be Send, js values aren't), until the request is answered.
+#[cfg(target_family = "wasm")]
+mod web {
+    use std::cell::{Cell, RefCell};
+    use std::collections::HashMap;
+
+    use bevy::prelude::*;
+    use js_sys::{Function, Promise, Reflect};
+    use wasm_bindgen::prelude::*;
+
+    use super::Request;
+
+    pub struct Reply(u32);
+
+    thread_local! {
+        static QUEUE: RefCell<Vec<Request>> = const { RefCell::new(Vec::new()) };
+        /// each waiting promise's resolve and reject
+        static PENDING: RefCell<HashMap<u32, (Function, Function)>> = RefCell::new(HashMap::new());
+        static NEXT: Cell<u32> = const { Cell::new(0) };
+    }
+
+    pub fn incoming(_: &World) -> Vec<Request> {
+        QUEUE.take()
+    }
+
+    /// resolves with the value (undefined if none), or rejects with an Error of the error
+    pub fn answer(reply: Reply, result: Result<String, String>, _logs: Vec<String>) {
+        let Some((resolve, reject)) = PENDING.with_borrow_mut(|p| p.remove(&reply.0)) else { return };
+        let _ = match result {
+            Ok(json) if json.is_empty() => resolve.call0(&JsValue::NULL),
+            Ok(json) => resolve.call1(&JsValue::NULL, &js_sys::JSON::parse(&json).unwrap_or_else(|_| json.into())),
+            Err(e) => reject.call1(&JsValue::NULL, &js_sys::Error::new(&e)),
+        };
+    }
+
+    /// debug builds, or `corn_dev` in the URL's query
+    fn enabled() -> bool {
+        let search = Reflect::get(&js_sys::global(), &"location".into())
+            .and_then(|location| Reflect::get(&location, &"search".into()))
+            .ok()
+            .and_then(|search| search.as_string())
+            .unwrap_or_default();
+        cfg!(debug_assertions)
+            || search.trim_start_matches('?').split('&').any(|p| p == "corn_dev" || p.starts_with("corn_dev="))
+    }
+
+    pub fn install() {
+        if !enabled() {
+            return;
+        }
+        let corn = Closure::<dyn Fn(JsValue, JsValue) -> Promise>::new(|code: JsValue, generator: JsValue| {
+            Promise::new(&mut |resolve, reject| {
+                let Some(code) = code.as_string() else {
+                    let _ = reject.call1(&JsValue::NULL, &js_sys::Error::new("corn(code, generator?): code is a string"));
+                    return;
+                };
+                let id = NEXT.with(|next| {
+                    next.set(next.get().wrapping_add(1));
+                    next.get()
+                });
+                PENDING.with_borrow_mut(|p| p.insert(id, (resolve, reject)));
+                QUEUE.with_borrow_mut(|q| q.push(Request { code, generator: generator.is_truthy(), reply: Reply(id) }));
+            })
+        });
+        let _ = Reflect::set(&js_sys::global(), &"corn".into(), &corn.into_js_value());
+        info!("remote console: corn(code, generator?) in the page");
     }
 }
 
 // screenshots
 
+#[cfg(not(target_family = "wasm"))]
 #[derive(Resource, Default)]
 struct Shots {
     next: u32,
@@ -177,11 +281,13 @@ struct Shots {
     exit: bool,
 }
 
+#[cfg(not(target_family = "wasm"))]
 enum Job {
     Shot { id: u32, path: PathBuf },
     Record { id: u32, prefix: PathBuf, done: u32, frames: u32 },
 }
 
+#[cfg(not(target_family = "wasm"))]
 /// relative to the working directory, its folder made
 fn absolute(path: impl AsRef<Path>) -> Result<PathBuf, String> {
     let path = std::path::absolute(path).map_err(|e| e.to_string())?;
@@ -191,10 +297,12 @@ fn absolute(path: impl AsRef<Path>) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn with_shots<R>(f: impl FnOnce(&mut Shots) -> Result<R, String>) -> Result<R, String> {
     with_host_world(|world| f(&mut *world.get_resource_mut::<Shots>().ok_or("no screenshots while a scene builds")?))
 }
 
+#[cfg(not(target_family = "wasm"))]
 /// `[id, absolute path]` as JSON
 pub fn host_screenshot(path: &str) -> Result<String, String> {
     with_shots(|shots| {
@@ -215,6 +323,7 @@ pub fn host_screenshot(path: &str) -> Result<String, String> {
     })
 }
 
+#[cfg(not(target_family = "wasm"))]
 pub fn host_record(prefix: &str, frames: u32) -> Result<u32, String> {
     let prefix = absolute(prefix)?;
     with_shots(|shots| {
@@ -228,10 +337,12 @@ pub fn host_record(prefix: &str, frames: u32) -> Result<u32, String> {
     })
 }
 
+#[cfg(not(target_family = "wasm"))]
 pub fn host_shot_done(id: u32) -> Result<bool, String> {
     with_shots(|shots| Ok(!shots.pending.contains(&id)))
 }
 
+#[cfg(not(target_family = "wasm"))]
 pub fn host_exit() -> Result<(), String> {
     with_shots(|shots| {
         shots.exit = true;
@@ -239,6 +350,7 @@ pub fn host_exit() -> Result<(), String> {
     })
 }
 
+#[cfg(not(target_family = "wasm"))]
 /// works through the queue, one screenshot a frame: bevy takes one of a window a frame, and drops a
 /// second asked for before the first starts
 fn take_shots(
@@ -287,7 +399,7 @@ fn take_shots(
 }
 
 // CLAUDE
-#[cfg(test)]
+#[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
     use super::*;
 

@@ -5,6 +5,45 @@ use corn_scripting::ScriptEventsExt;
 use crate::{controller::{Player, PlayerBody}, hold::{Held, Holdable}, interaction::Interact, post_it_text};
 use crate::post_it_editor::PaperStyle;
 use crate::post_it_material::{PaperMaterial, PaperGlow, ink_mask};
+use aho_corasick::AhoCorasick;
+use std::{collections::HashSet, sync::LazyLock};
+
+// CLAUDE (claude-sonnet-5-5): note word filter from BurntRouter/filtered-word-lists (src/word_lists/).
+// blanket.txt: rejected anywhere; runs of 3+ single letters are joined first (both lists see the joined text) so "f u c k" is caught.
+// standalone.txt: rejected only as a whole word (split on spaces/punctuation/line breaks).
+// Words present in both lists count as standalone only (blanket.txt's "nig" would reject "night").
+fn list_words(list: &'static str) -> impl Iterator<Item = String> {
+    list.lines().map(|w| w.trim().to_lowercase()).filter(|w| !w.is_empty())
+}
+static STANDALONE_WORDS: LazyLock<HashSet<String>> =
+    LazyLock::new(|| list_words(include_str!("word_lists/standalone.txt")).collect());
+static BLANKET_WORDS: LazyLock<AhoCorasick> = LazyLock::new(|| {
+    // CLAUDE: multi-word entries ("blow job") also match joined ("blowjob").
+    AhoCorasick::new(list_words(include_str!("word_lists/blanket.txt")).filter(|w| !STANDALONE_WORDS.contains(w))
+        .flat_map(|w| { let joined = w.split_whitespace().collect::<String>(); [w, joined] }))
+        .expect("blanket word list")
+});
+// CLAUDE: "f u c k" -> "fuck": drop the spaces between 3+ consecutive one-character words, nothing else.
+fn join_spaced_letters(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let single = |w: &str| w.chars().count() == 1;
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < words.len() {
+        let run = words[i..].iter().take_while(|w| single(w)).count();
+        let take = if run >= 3 { run } else { 1 };
+        if !out.is_empty() { out.push(' '); }
+        words[i..i + take].iter().for_each(|w| out.push_str(w));
+        i += take;
+    }
+    out
+}
+// CLAUDE: one automaton pass plus one hash lookup per word.
+pub(crate) fn hurtful(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let joined = join_spaced_letters(&lower);
+    BLANKET_WORDS.is_match(&joined) || joined.split(|c: char| !c.is_alphanumeric()).any(|w| STANDALONE_WORDS.contains(w))
+}
 
 // CODEX: marker used by corn to find the stack, without treating the whole stack as Holdable.
 #[derive(Component, Reflect, Default)]
@@ -72,6 +111,10 @@ pub struct PostItSession {
     pub editing: Option<Entity>,
 }
 
+// CLAUDE: the font index of the post-it the local player most recently edited; networked to peers for their label.
+#[derive(Resource, Default)]
+pub struct LastFont(pub usize);
+
 // CODEX: retain the chosen path for regression tests and read-only inspection of live placements.
 #[derive(Component, Reflect, Default, Debug)]
 #[reflect(Component, Default)]
@@ -97,7 +140,15 @@ mod tests;
 pub struct CopyPaper {
     pub entity: Entity,
     pub source: Entity,
+    // CODEX (GPT-6): display copies share rendering without entering the local carry/edit session.
+    #[reflect(default)]
+    pub visual_only: bool,
 }
+
+// CODEX: retain the authored template for serialization without storing rendered image data.
+#[derive(Component, Reflect)]
+#[reflect(Component)]
+pub struct PaperOrigin { pub source: Entity }
 
 // CODEX: image cache belongs to each paper; redraw only on typing, blinking, or tuning changes.
 #[derive(Component)]
@@ -129,10 +180,12 @@ pub fn plugin(app: &mut App) {
         .register_type::<PaperText>()
         .register_type::<PaperStyle>()
         .register_type::<PaperPlacement>()
+        .register_type::<PaperOrigin>()
         .register_type::<PaperSettings>()
         .register_type::<PostItSession>()
         .init_resource::<PaperSettings>()
         .init_resource::<PostItSession>()
+        .init_resource::<LastFont>()
         .register_script_event::<CopyPaper>()
         .add_observer(copy_paper)
         .add_observer(place)
@@ -179,13 +232,18 @@ fn copy_paper(
     let center = rotation * (scale * (min + max) * 0.5);
     commands.entity(on.entity).insert((
         Paper { min, max },
-        Transform { translation: camera.translation, rotation, scale },
+        PaperOrigin { source: on.source },
         Visibility::Inherited,
-        Held { rotation, scale, center, radius: (scale * (max - min) * 0.5).length(), ..default() },
     )).with_children(|parent| {
         for part in parts { parent.spawn(part); }
     });
-    session.held = Some(on.entity);
+    if !on.visual_only {
+        commands.entity(on.entity).insert((
+            Transform { translation: camera.translation, rotation, scale },
+            Held { rotation, scale, center, radius: (scale * (max - min) * 0.5).length(), ..default() },
+        ));
+        session.held = Some(on.entity);
+    }
 }
 
 // CODEX: keep the paper's top edge near camera-up for both point placement and square fallback.
@@ -298,6 +356,7 @@ fn place(
 fn keyboard(
     mut input: MessageReader<KeyboardInput>, keys: Res<ButtonInput<KeyCode>>, settings: Res<PaperSettings>,
     mut session: ResMut<PostItSession>, mut notes: Query<(Entity, &mut PaperText, &mut PaperStyle)>,
+    mut last_font: ResMut<LastFont>,
 ) {
     session.editing = notes.iter().find(|(_, text, _)| text.editing).map(|(e, _, _)| e);
     if !crate::browser::captured() { input.clear(); return; }
@@ -313,7 +372,10 @@ fn keyboard(
     }
     if keys.just_pressed(KeyCode::Delete) { note.action = "discard".into(); }
     else if !ctrl && (keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::NumpadEnter)) { note.action = "finish".into(); }
+    if last_font.0 != style.font_index { last_font.0 = style.font_index; }
     for key in input.read() { post_it_text::edit_key(&mut note, key, settings.max_chars, ctrl); }
+    // CLAUDE: corn only sees "reject" for hurtful text, so it never has to know the word lists.
+    if note.action == "finish" && hurtful(&note.text) { note.action = "reject".into(); }
 }
 
 // CODEX (GPT-6): send live tuning to the paper shader; authored material properties stay untouched.
@@ -387,6 +449,7 @@ fn setup_editor_hint(mut commands: Commands, assets: Res<AssetServer>, hints: Qu
     let Some(camera) = players.iter().next() else { return };
     commands.spawn((Name::new("Post-it editor controls"), PaperEditorHint, UiTargetCamera(camera), Text::new(""),
         TextFont { font: assets.load("fonts/Gelasio-Italic.ttf").into(), font_size: crate::interaction::SECONDARY_HINT_SIZE.into(), ..default() },
+        crate::interaction::HudSize { font: crate::interaction::SECONDARY_HINT_SIZE, bottom: None },
         TextColor(crate::interaction::INK), TextShadow::default(), TextLayout::justify(Justify::Center),
         Node { position_type: PositionType::Absolute, width: Val::Percent(100.0), bottom: Val::Percent(24.0), ..default() },
         Visibility::Hidden, Pickable::IGNORE));

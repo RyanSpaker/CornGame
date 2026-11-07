@@ -46,8 +46,16 @@ const REQUESTED: u8 = 1;
 const GRANTED: u8 = 2;
 const DENIED: u8 = 3;
 
+// CODEX (GPT-6): an optional real capture backend replaces the offline permission-only probe.
+#[derive(Resource, Default)]
+pub struct MicrophoneBackend { pub external: bool }
+
+// CODEX: the consuming adapter starts media only after the local box's sound has finished.
+pub fn microphone_active() -> bool { MIC.load(Relaxed) == GRANTED }
+
 pub fn plugin(app: &mut App) {
-    app.register_type::<VoiceBox>()
+    app.init_resource::<MicrophoneBackend>()
+        .register_type::<VoiceBox>()
         .register_script_event::<MicLost>()
         .add_observer(interact)
         .add_observer(request_after_sound)
@@ -84,7 +92,8 @@ fn interact(
 }
 
 // CLAUDE: the sound has finished: now the browser's prompt may pause the page
-fn request_after_sound(_: On<Remove<MicAfterSound>>) {
+fn request_after_sound(_: On<Remove<MicAfterSound>>, backend: Res<MicrophoneBackend>) {
+    if backend.external { MIC.store(GRANTED, Relaxed); return; }
     #[cfg(target_arch = "wasm32")]
     request_microphone();
 }

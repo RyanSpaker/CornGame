@@ -19,6 +19,9 @@ pub(crate) struct Speaker {
     pub fraction: f64,
     pub playing: bool,
     pub gain: [f32; 2],
+    // CODEX (GPT-6): optional caller diagnostics measure decoded remote speech, never local/radio audio.
+    pub rms: f32,
+    pub received_at: Option<std::time::Instant>,
 }
 
 // CODEX: one short-lived buffer lock bridges audio callbacks and asynchronous transport tasks.
@@ -28,6 +31,10 @@ pub(crate) struct State {
     pub status: VoiceStatus,
     pub capture: VecDeque<f32>,
     pub speakers: HashMap<String, Speaker>,
+    /// CLAUDE: peers whose WebRTC connection is up (status.connected is its size)
+    pub connected: std::collections::HashSet<String>,
+    /// CLAUDE: the caller wants capture; the worker opens/releases the input device to match
+    pub microphone: bool,
 }
 
 // CODEX: all queue limits are in samples at the internal 48 kHz rate.
@@ -35,7 +42,6 @@ impl State {
     // CODEX: Create isolated service or mixer state without opening any network listener.
     pub fn new(config: VoiceConfig) -> Self {
         Self {
-            config,
             pose: Pose::default(),
             status: VoiceStatus {
                 state: "starting".into(),
@@ -43,6 +49,9 @@ impl State {
             },
             capture: VecDeque::new(),
             speakers: HashMap::new(),
+            connected: Default::default(),
+            microphone: config.microphone,
+            config,
         }
     }
     // CODEX: Preserve an actionable asynchronous failure for the caller.
@@ -53,6 +62,9 @@ impl State {
     // CODEX: Bound decoded speech latency instead of accumulating stale samples.
     pub fn push_pcm(&mut self, id: &str, pcm: &[f32]) {
         let speaker = self.speakers.entry(id.into()).or_default();
+        // CODEX: freshness prevents a disconnected speaker's last loud packet staying active forever.
+        speaker.rms = (pcm.iter().map(|x| x * x).sum::<f32>() / pcm.len().max(1) as f32).sqrt();
+        speaker.received_at = Some(std::time::Instant::now());
         speaker.pcm.extend(pcm.iter().copied());
         // CODEX: prefer current speech to an ever-growing backlog during CPU stalls.
         if speaker.pcm.len() > MAX_QUEUE {
@@ -142,38 +154,18 @@ impl CaptureResampler {
 pub(crate) struct Devices {
     _input: Option<cpal::Stream>,
     _output: Option<cpal::Stream>,
+    /// CLAUDE: capture is live (a real input stream, or the test tone that replaces it)
+    pub capturing: bool,
 }
 // CODEX: native probes can bypass either device independently without altering the media path.
 impl Devices {
     // CODEX: Open physical devices only when the selected test configuration needs them.
     pub fn open(state: Arc<Mutex<State>>) -> anyhow::Result<Self> {
-        let (tone, headless, input_device, output_device) = {
+        let (microphone, headless, output_device) = {
             let s = state.lock().unwrap();
-            (
-                s.config.test_tone_hz.is_some(),
-                s.config.headless,
-                s.config.input_device.clone(),
-                s.config.output_device.clone(),
-            )
+            (s.microphone, s.config.headless, s.config.output_device.clone())
         };
         let host = cpal::default_host();
-        let input = if tone {
-            None
-        } else {
-            let device = device::select(&host, input_device.as_deref(), Direction::Input)?;
-            Some(device::open_stream(
-                &device,
-                Direction::Input,
-                |format, config| match format {
-                    cpal::SampleFormat::F32 => input_stream::<f32>(&device, config, state.clone()),
-                    cpal::SampleFormat::I16 => input_stream::<i16>(&device, config, state.clone()),
-                    cpal::SampleFormat::U16 => input_stream::<u16>(&device, config, state.clone()),
-                    cpal::SampleFormat::I32 => input_stream::<i32>(&device, config, state.clone()),
-                    cpal::SampleFormat::F64 => input_stream::<f64>(&device, config, state.clone()),
-                    format => anyhow::bail!("Unsupported microphone sample format {format:?}"),
-                },
-            )?)
-        };
         let output = if headless {
             None
         } else {
@@ -191,10 +183,45 @@ impl Devices {
                 },
             )?)
         };
-        Ok(Self {
-            _input: input,
+        let mut devices = Self {
+            _input: None,
             _output: output,
-        })
+            capturing: false,
+        };
+        devices.set_input(&state, microphone)?;
+        Ok(devices)
+    }
+
+    // CLAUDE: open or release the microphone while playback (and the connection) continues
+    pub fn set_input(&mut self, state: &Arc<Mutex<State>>, on: bool) -> anyhow::Result<()> {
+        if on == self.capturing {
+            return Ok(());
+        }
+        let (tone, input_device) = {
+            let s = state.lock().unwrap();
+            (s.config.test_tone_hz.is_some(), s.config.input_device.clone())
+        };
+        self._input = None;
+        state.lock().unwrap().capture.clear();
+        if on && !tone {
+            let host = cpal::default_host();
+            let device = device::select(&host, input_device.as_deref(), Direction::Input)?;
+            self._input = Some(device::open_stream(
+                &device,
+                Direction::Input,
+                |format, config| match format {
+                    cpal::SampleFormat::F32 => input_stream::<f32>(&device, config, state.clone()),
+                    cpal::SampleFormat::I16 => input_stream::<i16>(&device, config, state.clone()),
+                    cpal::SampleFormat::U16 => input_stream::<u16>(&device, config, state.clone()),
+                    cpal::SampleFormat::I32 => input_stream::<i32>(&device, config, state.clone()),
+                    cpal::SampleFormat::F64 => input_stream::<f64>(&device, config, state.clone()),
+                    format => anyhow::bail!("Unsupported microphone sample format {format:?}"),
+                },
+            )?);
+        }
+        self.capturing = on;
+        state.lock().unwrap().status.microphone = on;
+        Ok(())
     }
 }
 
@@ -228,9 +255,11 @@ where
                 );
             }
         },
+        // CLAUDE: a lost microphone stops capture only; the worker releases the stream, receiving continues
         move |e| {
             if let Ok(mut s) = errors.lock() {
-                s.error(e);
+                s.microphone = false;
+                s.status.microphone_error = Some(e.to_string());
             }
         },
         None,

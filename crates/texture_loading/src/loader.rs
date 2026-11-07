@@ -8,8 +8,10 @@ use std::sync::Arc;
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
     image::{CompressedImageFormats, Image, ImageLoaderSettings, TextureError},
+    log::warn,
     platform::time::Instant,
     reflect::TypePath,
+    render::render_resource::TextureFormat,
 };
 
 use crate::{
@@ -66,6 +68,13 @@ impl AssetLoader for TextureLoader {
                 return Err(TextureLoadError::Decode { path: served.to_string(), error });
             }
         };
+        if to_8_bit(&mut image, settings.is_srgb) {
+            warn!(
+                "texture_loading: {served} is 16 bits per channel; converted to 8 at load. \
+                 Re-save it as 8-bit: 16-bit formats need TEXTURE_FORMAT_16BIT_NORM, which WebGL2 \
+                 often lacks (Firefox), and a missing format kills the renderer"
+            );
+        }
         let role = entry.as_ref().map_or(Role::Color, |e| e.role);
         mips::generate(&mut image, role);
         if let Some(format) = settings.texture_format {
@@ -87,6 +96,27 @@ impl AssetLoader for TextureLoader {
     fn extensions(&self) -> &[&str] {
         &["png", "jpg", "jpeg", "ktx2"]
     }
+}
+
+// CLAUDE (claude-opus-5-5): 16-bit PNGs decode to R/Rg/Rgba16Unorm, which WebGL2 needs EXT_texture_norm16
+// for (Chromium has it, Firefox doesn't). PNG encodes 16-bit samples like 8-bit ones, so sRGB still applies.
+/// narrow a 16-bit-unorm `image` to 8 bits per channel. Returns whether it did
+fn to_8_bit(image: &mut Image, is_srgb: bool) -> bool {
+    let format = match image.texture_descriptor.format {
+        TextureFormat::R16Unorm => TextureFormat::R8Unorm,
+        TextureFormat::Rg16Unorm => TextureFormat::Rg8Unorm,
+        TextureFormat::Rgba16Unorm if is_srgb => TextureFormat::Rgba8UnormSrgb,
+        TextureFormat::Rgba16Unorm => TextureFormat::Rgba8Unorm,
+        _ => return false,
+    };
+    let Some(data) = image.data.as_mut() else { return false };
+    // samples are native-endian u16 (Bevy casts the decoded buffer)
+    *data = data
+        .chunks_exact(2)
+        .map(|b| ((u16::from_ne_bytes([b[0], b[1]]) as u32 * 255 + 32767) / 65535) as u8)
+        .collect();
+    image.texture_descriptor.format = format;
+    true
 }
 
 impl TextureLoader {

@@ -11,6 +11,7 @@ use bevy::{
     prelude::*,
     text::{FontSize, FontSource},
     ui::UiSystems,
+    window::PrimaryWindow,
 };
 use avian3d::prelude::{Collider, ShapeCastConfig, SpatialQuery, SpatialQueryFilter};
 use corn_scripting::ScriptEventsExt;
@@ -35,6 +36,57 @@ pub(crate) const INK: Color = Color::srgba(250.0 / 255.0, 246.0 / 255.0, 230.0 /
 // CODEX (GPT-6): shared two-level typography for every bottom control hint, including other modules.
 pub(crate) const PRIMARY_HINT_SIZE: f32 = 48.0;
 pub(crate) const SECONDARY_HINT_SIZE: f32 = 26.0;
+// CLAUDE: HUD sizes above are authored in logical pixels for a 1706px-tall window (the dev's 4K
+// monitor: 2132 physical px at OS scale 1.25). The browser reports
+// a logical window height of physical/devicePixelRatio (e.g. 864 for a 3840x2160 screen at 2.5x), so the
+// same pixel sizes covered 2.5x more of the screen than native. HudScale rescales every HUD size and
+// anchor by logical window height / HUD_REFERENCE_HEIGHT on every platform, so the HUD covers the same
+// share of the screen at any resolution and is exactly 1.0 (unchanged) in a 1706px-tall logical window.
+// Not UiScale: that would also rescale the in-world monitor desktop.
+pub(crate) const HUD_REFERENCE_HEIGHT: f32 = 1706.0;
+const HUD_SCALE_MIN: f32 = 0.25;
+
+// CLAUDE
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct HudScale(pub f32);
+
+impl Default for HudScale {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
+// CLAUDE: base (unscaled) font size and optional pixel bottom anchor; apply_hud_sizes multiplies by HudScale.
+#[derive(Component, Clone, Copy, Debug)]
+pub(crate) struct HudSize {
+    pub font: f32,
+    pub bottom: Option<f32>,
+}
+
+// CLAUDE
+fn update_hud_scale(windows: Query<&Window, With<PrimaryWindow>>, mut scale: ResMut<HudScale>) {
+    let target = windows.single().map_or(1.0, |w| (w.height() / HUD_REFERENCE_HEIGHT).max(HUD_SCALE_MIN));
+    if scale.0 != target {
+        scale.0 = target;
+    }
+}
+
+// CLAUDE
+fn apply_hud_sizes(scale: Res<HudScale>, mut sized: Query<(&HudSize, &mut TextFont, Option<&mut Node>)>) {
+    for (size, mut font, node) in &mut sized {
+        let px = FontSize::Px(size.font * scale.0);
+        if font.font_size != px {
+            font.font_size = px;
+        }
+        if let (Some(bottom), Some(mut node)) = (size.bottom, node) {
+            let bottom = Val::Px(bottom * scale.0);
+            if node.bottom != bottom {
+                node.bottom = bottom;
+            }
+        }
+    }
+}
+
 // CODEX: pixel anchors keep a six-pixel gap between the two text rows at any window height.
 pub(crate) const SECONDARY_HINT_BOTTOM: f32 = 40.0;
 pub(crate) const PRIMARY_HINT_BOTTOM: f32 = SECONDARY_HINT_BOTTOM + SECONDARY_HINT_SIZE * 1.2 + 6.0;
@@ -237,6 +289,7 @@ pub fn plugin(app: &mut App) {
         // CLAUDE: for scripts (dev.rs)
         .register_type::<(MessageLabel, Crosshair, InteractionTooltip, ActionPrompt, ActionVerb, DropHint)>()
         .init_resource::<InteractionPrompt>()
+        .init_resource::<HudScale>()
         .init_resource::<Message>()
         .init_resource::<crate::post_it::PostItSession>()
         // CLAUDE: one-off reactions (the door, the keys) are script handlers in lobby.corn
@@ -262,6 +315,7 @@ pub fn plugin(app: &mut App) {
                 .before(crate::computer::update_session),
         )
         .add_systems(Update, present_message)
+        .add_systems(PostUpdate, (update_hud_scale, apply_hud_sizes).chain().before(UiSystems::Prepare))
         // CODEX: project the final camera pose before UI measurement/layout and visibility consume it.
         .add_systems(
             PostUpdate,
@@ -334,6 +388,7 @@ fn setup_tooltip(
         UiTargetCamera(camera),
         Text::new("press "),
         font(&assets, PROMPT_SIZE),
+        HudSize { font: PROMPT_SIZE, bottom: Some(PRIMARY_HINT_BOTTOM) },
         TextColor(INK),
         shadow(),
         TextLayout::justify(Justify::Center),
@@ -346,8 +401,8 @@ fn setup_tooltip(
         Visibility::Hidden,
         Pickable::IGNORE,
         children![
-            (ActionKey, TextSpan::new("E"), font(&assets, KEY_SIZE), TextColor(INK), shadow()),
-            (ActionVerb, TextSpan::new(""), font(&assets, PROMPT_SIZE), TextColor(INK), shadow()),
+            (ActionKey, TextSpan::new("E"), font(&assets, KEY_SIZE), HudSize { font: KEY_SIZE, bottom: None }, TextColor(INK), shadow()),
+            (ActionVerb, TextSpan::new(""), font(&assets, PROMPT_SIZE), HudSize { font: PROMPT_SIZE, bottom: None }, TextColor(INK), shadow()),
         ],
     ));
     // CLAUDE: "press R to drop", small, under the action prompt while holding something droppable
@@ -357,6 +412,7 @@ fn setup_tooltip(
         UiTargetCamera(camera),
         Text::new("press R to drop"),
         font(&assets, DROP_HINT_SIZE),
+        HudSize { font: DROP_HINT_SIZE, bottom: Some(SECONDARY_HINT_BOTTOM) },
         TextColor(INK),
         shadow(),
         TextLayout::justify(Justify::Center),
@@ -376,6 +432,7 @@ fn setup_tooltip(
         UiTargetCamera(camera),
         Text::new(""),
         font(&assets, PROMPT_SIZE),
+        HudSize { font: PROMPT_SIZE, bottom: None },
         TextColor(INK.with_alpha(0.0)),
         TextShadow { color: Color::NONE, ..shadow() },
         TextLayout::justify(Justify::Center),
@@ -530,6 +587,7 @@ pub(crate) fn update_prompt(
 
 // CODEX: input stays in Update so activation retains its timing; presentation uses final globals.
 pub(crate) fn present_tooltip(
+    scale: Res<HudScale>,
     session: Res<ComputerSession>,
     prompt: Res<InteractionPrompt>,
     cameras: Query<(&GlobalTransform, &Camera), With<Player>>,
@@ -609,7 +667,7 @@ pub(crate) fn present_tooltip(
         let (Some(bounds), Some(size)) = (bounds, camera.logical_viewport_size()) else {
             continue;
         };
-        let Some(placement) = tooltip_position(bounds, size, text.name_gap, text.font_size) else {
+        let Some(placement) = tooltip_position(bounds, size, text.name_gap * scale.0, text.font_size * scale.0) else {
             continue;
         };
         // CODEX: record the actual result rather than recomputing placement rules for debug output.
@@ -623,7 +681,7 @@ pub(crate) fn present_tooltip(
         // CLAUDE: first letter at the delay, as in the flower demo
         let letters = ((prompt.since - NAME_DELAY) * NAME_LETTERS_PER_SECOND) as usize + 1;
         label.0 = text.name.chars().take(letters).collect();
-        font.font_size = FontSize::Px(text.font_size);
+        font.font_size = FontSize::Px(text.font_size * scale.0);
         *visibility = Visibility::Visible;
     }
 }

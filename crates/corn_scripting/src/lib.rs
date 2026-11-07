@@ -47,8 +47,8 @@
 //!   `insert(e, "Mesh3d", Cuboid.new(1, 2, 1).mesh().build())`
 //!
 //! - `console.log(..)` (and `info`, `warn`, `error`, `debug`) to bevy's log, on native too
-//! - with the `remote_console` feature (native): `screenshot(path?)`, `record(prefix, frames)`, `exit()`, and the
-//!   remote console agents connect to. see remote_console.rs
+//! - with the `remote_console` feature: the remote console agents connect to (native: a socket, plus
+//!   `screenshot(path?)`, `record(prefix, frames)`, `exit()`; web: `corn(code)` in the page). see remote_console.rs
 //!
 //! "Type" is a full type path, or a short one if unambiguous. `Handle` fields are asset paths (see
 //! [`values`]), entities are their id strings ([`entity_key`]).
@@ -88,7 +88,7 @@ mod math;
 mod mesh;
 pub mod profile;
 pub mod values;
-#[cfg(all(feature = "remote_console", not(target_family = "wasm")))]
+#[cfg(feature = "remote_console")]
 mod remote_console;
 #[cfg(test)]
 mod bench;
@@ -127,7 +127,7 @@ pub fn plugin(app: &mut App) {
     events::register_lifecycle::<bevy::ecs::lifecycle::AddEvent>(app, "OnAdd", true);
     events::register_lifecycle::<bevy::ecs::lifecycle::InsertEvent>(app, "OnInsert", true);
     events::register_lifecycle::<bevy::ecs::lifecycle::RemoveEvent>(app, "OnRemove", false);
-    #[cfg(all(feature = "remote_console", not(target_family = "wasm")))]
+    #[cfg(feature = "remote_console")]
     remote_console::plugin(app);
 }
 

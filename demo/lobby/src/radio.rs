@@ -190,10 +190,14 @@ fn input(
         window.1.grab_mode = CursorGrabMode::Locked;
         window.1.visible = false;
     } else if previous.is_some() && tuning.entity.is_none() {
-        window.1.grab_mode = tuning
-            .previous_grab
-            .take()
-            .unwrap_or(CursorGrabMode::Locked);
+        // CLAUDE: on web the DOM owns pointer lock and the window flag may read None while locked;
+        // restoring None would exit the lock and raise the pause menu, so keep Locked there.
+        let previous_grab = tuning.previous_grab.take();
+        window.1.grab_mode = if cfg!(target_arch = "wasm32") && crate::browser::captured() {
+            CursorGrabMode::Locked
+        } else {
+            previous_grab.unwrap_or(CursorGrabMode::Locked)
+        };
         window.1.visible = tuning.previous_visible;
     }
     if !playing {
@@ -203,6 +207,7 @@ fn input(
         if let Ok(mut radio) = radios.get_mut(entity) {
             if keys.just_pressed(KeyCode::KeyF) {
                 radio.on = !radio.on;
+                commands.trigger(crate::foley::Switched { entity, on: radio.on });
             }
             if tuning.entity == Some(entity) {
                 radio.tuning = (radio.tuning
@@ -322,6 +327,7 @@ fn hints(
             commands.spawn((
                 Name::new(format!("Radio controls {line}")),
                 RadioHint(line),
+                crate::interaction::HudSize { font: size, bottom: Some(bottom) },
                 UiTargetCamera(camera),
                 Text::new(""),
                 TextFont {

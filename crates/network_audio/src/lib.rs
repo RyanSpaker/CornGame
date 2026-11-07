@@ -48,6 +48,9 @@ pub struct VoiceConfig {
     pub input_device: Option<String>,
     /// CODEX: e.g. pipewire:NODE=<sink name>; browser capture/playback ignores native overrides.
     pub output_device: Option<String>,
+    /// CLAUDE: capture from the start. false listens only until `VoiceClient::set_microphone(true)`,
+    /// which swaps the microphone in without reconnecting (incoming speech keeps playing).
+    pub microphone: bool,
 }
 
 // CODEX: local/LAN works without a third-party service; internet hosts supply STUN/TURN explicitly.
@@ -64,6 +67,7 @@ impl Default for VoiceConfig {
             headless: false,
             input_device: None,
             output_device: None,
+            microphone: true,
         }
     }
 }
@@ -131,12 +135,18 @@ pub struct VoiceStatus {
     pub state: String,
     pub error: Option<String>,
     pub peers: usize,
+    /// CLAUDE: WebRTC connections currently up (P2P: one per peer; server mode: 1 for the relay)
+    pub connected: usize,
     pub received_packets: u64,
     pub sent_packets: u64,
     pub input_level: f32,
     pub output_left: f32,
     pub output_right: f32,
     pub muted: bool,
+    /// CLAUDE: the microphone is capturing (a test tone counts)
+    pub microphone: bool,
+    /// CLAUDE: the microphone failed to open or was lost; receiving is unaffected. Cleared by set_microphone.
+    pub microphone_error: Option<String>,
 }
 
 /// CODEX: small JSON signaling protocol shared with web/voice.js and the optional relay binary.

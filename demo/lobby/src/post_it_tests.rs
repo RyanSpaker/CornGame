@@ -6,7 +6,7 @@ use bevy::{camera::{CameraProjection, ComputedCameraValues}, time::TimeUpdateStr
 #[test]
 fn lobby_editor_controls_apply_to_one_note_and_survive_finishing() {
     let mut app = App::new();
-    app.add_plugins(MinimalPlugins).init_resource::<PaperSettings>().init_resource::<PostItSession>()
+    app.add_plugins(MinimalPlugins).init_resource::<PaperSettings>().init_resource::<PostItSession>().init_resource::<LastFont>()
         .init_resource::<ButtonInput<KeyCode>>().add_message::<KeyboardInput>().add_systems(Update, keyboard);
     let note = app.world_mut().spawn((Paper::default(), PaperText {
         text: "one two three four five six seven eight nine ten".into(), editing: true, ..default()
@@ -422,4 +422,31 @@ fn editing_glow_preserves_authored_material_and_disables_on_finish() {
     let paper = app.world().resource::<Assets<PaperMaterial>>().get(&material).unwrap();
     assert_eq!(paper.extension.glow.w, 0.0);
     assert_eq!(paper.base.emissive, authored);
+}
+
+// CLAUDE: both lists catch what they should, and ~100 ordinary notes pass (false-positive check).
+#[test]
+fn word_filter_catches_lists_and_passes_ordinary_notes() {
+    for bad in ["blow job", "blowjob", "so n i g g e r", "n\ni\ng", "n i g", "P O R N", "N I G G A", "hey\nnig", "Nig.", "so porn-ish", "you nigg3r"] { assert!(hurtful(bad), "missed {bad:?}"); }
+    let fine = [
+        "hello", "the night is young", "grape soda", "meet me at the barn", "the key is under the mat", "don't forget the milk",
+        "class dismissed", "assignment due friday", "classic car", "passport renewal", "assistant manager", "Scunthorpe", "bass guitar",
+        "cocktail hour", "Hancock street", "a b night", "I am", "i am ok", "n i", "go to a b", "peacock feathers", "mass transit", "glass of water", "grass is green", "pass the salt",
+        "analysis complete", "Dickens novel", "Essex county", "cumulus clouds", "document the process", "circumstance", "cucumber salad",
+        "shitake mushrooms", "therapist", "button", "Sussex", "arsenal", "title nine", "knight to e4", "the nightly news", "nightmare fuel",
+        "ignite the fire", "signal the radio", "signature required", "benign tumor", "design the poster", "dignity", "cognitive science",
+        "magnificent", "assign seats", "tuna sandwich", "pineapple pizza", "water the corn", "the radio is broken", "door code is 1234",
+        "back in five minutes", "gone fishing", "happy birthday", "good luck", "see you soon", "call mom", "buy eggs and bread",
+        "feed the cat", "dentist at 3pm", "love you", "thank you", "remember to breathe", "check the basement", "lights out at ten",
+        "wash the dishes", "take out the trash", "water the plants", "return library books", "pick up dry cleaning", "pay the rent",
+        "book club thursday", "yoga at six", "the moon looks nice", "bring snacks", "lost: one blue glove", "free kittens",
+        "garage sale saturday", "meeting moved to noon", "the cabin smells like pine", "crickets are loud tonight", "who left the door open",
+        "nobody here but us", "turn the radio down", "voice box is cracked", "kick the can", "stay awake", "whisper quietly",
+        "careful on the stairs", "the corn is high", "harvest moon tonight", "count the stars", "write a letter", "sing a song",
+        "dance in the kitchen", "paint the fence", "plant tomatoes", "my job is fine", "great jobs report", "Japan trip", "jam session",
+        "Hello, world!", "a b c d e f g", "i am here", "what time is it", "ok",
+    ];
+    let flagged: Vec<_> = fine.iter().filter(|m| hurtful(m)).collect();
+    println!("{} messages, flagged: {flagged:?}", fine.len());
+    assert!(flagged.is_empty(), "false positives: {flagged:?}");
 }

@@ -6,6 +6,7 @@
 //! `trigger(null, "Press", { key: "KeyE" })` (down one frame), `trigger(null, "Hold", { key: "KeyW", down: true })`,
 //! `trigger(null, "Click", { button: "Left", down: true })`. `resource("NoMouse").on = true` leaves the real
 //! mouse alone: no cursor grabbing, no mouse look.
+//! CODEX (GPT-6): relative pointer/text injection supports the isolated dummy walkthrough script.
 use bevy::{
     input::{mouse::AccumulatedMouseMotion, InputSystems},
     prelude::*,
@@ -34,6 +35,14 @@ pub struct Click {
     pub down: bool,
 }
 
+// CODEX (GPT-6): one-frame relative pointer motion, consumed by the existing computer/radio controls.
+#[derive(Event, Reflect, Clone, Debug)]
+pub struct MoveMouse { pub delta: Vec2 }
+
+// CODEX (GPT-6): text goes through the real paper editor, including its word filter and length limit.
+#[derive(Event, Reflect, Clone, Debug)]
+pub struct TypeText { pub text: String }
+
 /// CLAUDE: a smoke check failed: exit with an error
 #[derive(Event, Reflect, Clone, Debug, Default)]
 pub struct SmokeFailed {
@@ -49,6 +58,8 @@ struct Scripted {
     /// `Hold`
     keys: Vec<(KeyCode, bool)>,
     buttons: Vec<(MouseButton, bool)>,
+    // CODEX: reset each frame after applying, including when physical mouse input is suppressed.
+    motion: Vec2,
 }
 
 pub fn plugin(app: &mut App) {
@@ -60,10 +71,23 @@ pub fn plugin(app: &mut App) {
         .register_script_event::<Press>()
         .register_script_event::<Hold>()
         .register_script_event::<Click>()
+        .register_script_event::<MoveMouse>()
+        .register_script_event::<TypeText>()
         .register_script_event::<SmokeFailed>()
         .add_observer(|on: On<Press>, mut input: ResMut<Scripted>| input.press.push(on.event().key))
         .add_observer(|on: On<Hold>, mut input: ResMut<Scripted>| input.keys.push((on.event().key, on.event().down)))
         .add_observer(|on: On<Click>, mut input: ResMut<Scripted>| input.buttons.push((on.event().button, on.event().down)))
+        // CODEX: input adapters only; the dummy's behavior lives entirely in tools/dummy_player.py.
+        .add_observer(|on: On<MoveMouse>, mut input: ResMut<Scripted>| input.motion += on.event().delta)
+        .add_observer(|on: On<TypeText>, mut text: MessageWriter<bevy::input::keyboard::KeyboardInput>, window: Single<Entity, With<bevy::window::PrimaryWindow>>| {
+            use bevy::input::{keyboard::{Key, KeyboardInput, NativeKeyCode}, ButtonState};
+            for character in on.event().text.chars() {
+                let value = character.to_string();
+                text.write(KeyboardInput { key_code: KeyCode::Unidentified(NativeKeyCode::Unidentified),
+                    logical_key: Key::Character(value.clone().into()), text: Some(value.into()),
+                    state: ButtonState::Pressed, repeat: false, window: *window });
+            }
+        })
         .add_observer(|on: On<SmokeFailed>, mut exit: MessageWriter<AppExit>| {
             error!("LOBBY_SMOKE failed: {}", on.event().message);
             exit.write(AppExit::error());
@@ -95,7 +119,9 @@ fn apply(
     if no_mouse.on {
         motion.delta = Vec2::ZERO;
     }
-    let Scripted { press, release, keys: held, buttons: clicks } = &mut *input;
+    let Scripted { press, release, keys: held, buttons: clicks, motion: scripted_motion } = &mut *input;
+    // CODEX: scripted motion is applied once after NoMouse clears physical input.
+    motion.delta += std::mem::take(scripted_motion);
     for key in release.drain(..) {
         keys.release(key);
     }

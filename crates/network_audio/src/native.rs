@@ -80,9 +80,23 @@ impl VoiceClient {
     pub fn set_muted(&self, muted: bool) {
         self.shared.lock().unwrap().status.muted = muted;
     }
+    // CLAUDE: start or stop capture on the live connection; also clears `status.microphone_error`
+    pub fn set_microphone(&self, on: bool) {
+        let mut s = self.shared.lock().unwrap();
+        s.microphone = on;
+        s.status.microphone_error = None;
+    }
     // CODEX: Return a snapshot suitable for UI and acoustic verification.
     pub fn status(&self) -> VoiceStatus {
         self.shared.lock().unwrap().status.clone()
+    }
+    // CODEX (GPT-6): read-only per-peer diagnostics for external scripted listeners; no reply policy here.
+    pub fn remote_levels(&self) -> Vec<serde_json::Value> {
+        self.shared.lock().unwrap().speakers.iter().filter_map(|(id, speaker)| {
+            let received = speaker.received_at?;
+            Some(serde_json::json!({"id": id, "position": speaker.position,
+                "rms": speaker.rms, "age_ms": received.elapsed().as_millis() as u64}))
+        }).collect()
     }
     // CODEX: Match the cross-platform API; browser audio may require a fresh input gesture.
     pub fn resume(&self) {}
@@ -90,7 +104,9 @@ impl VoiceClient {
     pub fn set_mode(&mut self, mode: VoiceMode) -> Result<(), String> {
         let (mut config, pose, muted) = {
             let s = self.shared.lock().unwrap();
-            (s.config.clone(), s.pose, s.status.muted)
+            let mut config = s.config.clone();
+            config.microphone = s.microphone;
+            (config, s.pose, s.status.muted)
         };
         if config.mode == mode {
             return Ok(());
@@ -130,7 +146,7 @@ struct Peer {
 async fn run(state: Arc<Mutex<State>>, mut shutdown: oneshot::Receiver<()>) -> anyhow::Result<()> {
     let config = state.lock().unwrap().config.clone();
     // CODEX: opening devices before signaling ensures unusable clients never appear ready in a room.
-    let _devices = Devices::open(state.clone())?;
+    let mut devices = Devices::open(state.clone())?;
     let (socket, _) = tokio::select! {
         result = tokio_tungstenite::connect_async(&config.signaling_url) => result?,
         _ = &mut shutdown => return Ok(()),
@@ -169,13 +185,20 @@ async fn run(state: Arc<Mutex<State>>, mut shutdown: oneshot::Receiver<()>) -> a
             tokio::select! {
                 _ = &mut shutdown => break,
                 _ = tick.tick() => {
+                    // CLAUDE: follow set_microphone; a device that won't open is reported, not fatal
+                    let wanted = state.lock().unwrap().microphone;
+                    if let Err(e) = devices.set_input(&state, wanted) {
+                        let mut s = state.lock().unwrap();
+                        s.microphone = false;
+                        s.status.microphone_error = Some(format!("{e:#}"));
+                    }
                     let (frame, pose) = {
                         let mut s = state.lock().unwrap();
                         if let Some(error) = &s.status.error { anyhow::bail!(error.clone()); }
                         let mut frame = [0f32; FRAME];
-                        if let Some(hz) = config.test_tone_hz {
+                        if let Some(hz) = config.test_tone_hz.filter(|_| devices.capturing) {
                             for x in &mut frame { *x = phase.sin()*0.15; phase = (phase+std::f32::consts::TAU*hz/RATE as f32) % std::f32::consts::TAU; }
-                        } else {
+                        } else if config.test_tone_hz.is_none() {
                             let available = FRAME.min(s.capture.len());
                             for (sample, value) in frame.iter_mut().zip(s.capture.drain(..available)) { *sample = value; }
                         }
@@ -237,7 +260,10 @@ async fn run(state: Arc<Mutex<State>>, mut shutdown: oneshot::Receiver<()>) -> a
                         },
                         Signal::Left { id } => {
                             if let Some(peer) = peers.remove(&id) { peer.pc.close().await?; }
-                            orphan_candidates.remove(&id); state.lock().unwrap().speakers.remove(&id);
+                            orphan_candidates.remove(&id);
+                            let mut s = state.lock().unwrap();
+                            s.speakers.remove(&id);
+                            s.connected.remove(&id); s.status.connected = s.connected.len();
                         },
                         Signal::Error { message } => anyhow::bail!(message),
                         _ => {},
@@ -256,6 +282,8 @@ async fn run(state: Arc<Mutex<State>>, mut shutdown: oneshot::Receiver<()>) -> a
         let mut s = state.lock().unwrap();
         s.speakers.clear();
         s.status.peers = 0;
+        s.connected.clear();
+        s.status.connected = 0;
         if result.is_ok() {
             s.status.state = "stopped".into();
         }
@@ -293,6 +321,18 @@ async fn make_peer(
                 }
             }
         })
+    }));
+    // CLAUDE: count live connections for status.connected
+    let (link_state, link_id) = (state.clone(), id.to_string());
+    pc.on_peer_connection_state_change(Box::new(move |connection| {
+        let mut s = link_state.lock().unwrap();
+        if connection == webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState::Connected {
+            s.connected.insert(link_id.clone());
+        } else {
+            s.connected.remove(&link_id);
+        }
+        s.status.connected = s.connected.len();
+        Box::pin(async {})
     }));
     let remote_id = id.to_string();
     let server = config.mode == VoiceMode::Server;

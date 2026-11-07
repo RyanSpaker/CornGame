@@ -5,6 +5,8 @@ use lobby;
 
 /* CODEX (GPT-6): isolated small-key struggle hints; thresholds and copy live in this include. */
 include "stuck_player_key_helper.corn";
+/* CODEX (GPT-6): remove this include and network::plugin to remove networking. */
+include "network.corn";
 
 /* CLAUDE (claude-opus-5-5): the door, the keys and the hook are one-offs, so their logic is here. Carrying
    (Holdable/Held, R to drop), Say and the prompts are rust (hold.rs, interaction.rs). The door is locked:
@@ -27,6 +29,21 @@ const prompt = (x, text) => insert(x, "InteractionText", { prompt: text });
 function sound(path, at, gain = 1) {
   spawn({ "AudioPlayer<AudioSource>": path, PlaybackSettings: { mode: "Despawn", volume: { Linear: gain }, spatial: true }, Transform: { translation: at } });
 }
+// CLAUDE: a sound that follows `e` (gone with it). Switch clicks are SwitchSound + Switched; drops are KickSound (foley.rs).
+const SOUNDS = {
+  key_pickup: "sounds/interact/key_pickup.ogg",
+  key_hang: "sounds/interact/key_hang.ogg",
+  note_peel: "sounds/interact/note_peel.ogg",
+  note_stick: "sounds/interact/note_stick.ogg",
+};
+function sound_on(e, path, gain = 1) {
+  spawn({ ChildOf: e, Name: "sound", "AudioPlayer<AudioSource>": path, PlaybackSettings: { mode: "Despawn", volume: { Linear: gain }, spatial: true }, Transform: {} });
+}
+// CLAUDE: for network.corn, so other players' doors and notes sound the same
+exports.SOUNDS = SOUNDS;
+exports.sound = sound;
+exports.sound_on = sound_on;
+exports.at_handle = at_handle;
 // by the handle: the door's origin is its hinge, the key slot about a metre along it
 function at_handle(door) {
   const t = get(door, "Transform").translation;
@@ -36,17 +53,22 @@ function at_handle(door) {
 const KEY_IN_SLOT = { translation: [0, 0, -0.024], rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2], scale: [2.476, 2.476, 2.476] };
 
 // "locked" -> "key in" (the realkey is in its slot) -> "open"
-let door = "locked";
+// CODEX (GPT-6): gameplay state lives on the door; scripts contain interaction rules only.
+const door_state = (e) => get(one(e, "door"), "Door");
 
 // what the door and the hook offer follows the door and what's carried
 function refresh(e) {
   const held = name(holding(e));
-  const offer = door === "locked" ? (held === "realkey" ? "unlock" : held === "key" ? "unlock door" : "open") : door === "key in" ? "unlock" : "";
+  const state = door_state(e);
+  const offer = !state.unlocked ? (held === "realkey" ? "unlock" : held === "key" ? "unlock door" : "open") : !state.open ? "unlock" : "";
   for (const d of all(e, "door")) prompt(d, offer);
   for (const h of all(e, "hook")) prompt(h, held === "key" ? "put back" : "");
 }
+// CODEX (GPT-6): shared state adapters can refresh presentation without duplicating interaction rules.
+exports.refresh = refresh;
 // a key was picked up (hold.rs has made it Held by now)
 exports.picked_up = function (e) {
+  if (name(e) === "key") sound_on(e, SOUNDS.key_pickup, 0.8);
   refresh(e);
 };
 // CODEX (GPT-6): E only picks up. The independent held F action owns the switch.
@@ -61,6 +83,7 @@ exports.toggle_flashlight = function (e) {
   if (beam == null) return;
   const off = get(beam, "Visibility") === "Hidden";
   insert(beam, "Visibility", off ? "Inherited" : "Hidden");
+  trigger(null, "Switched", { entity: e, on: off });
 };
 // CODEX: dropping restores pickup, preserving the switch state and authored light intensity/color.
 exports.release_flashlight = function (e) {
@@ -69,7 +92,8 @@ exports.release_flashlight = function (e) {
 };
 exports.use_door = function (e) {
   const held = holding(e);
-  if (door === "locked" && name(held) === "realkey") {
+  const state = get(e, "Door");
+  if (!state.unlocked && name(held) === "realkey") {
     remove(held, "Held");
     remove(held, "Holdable");
     remove(held, "InteractionText");
@@ -78,18 +102,31 @@ exports.use_door = function (e) {
     remove(held, "RigidBody");
     insert(held, "ChildOf", one(e, "key_slot"));
     insert(held, "Transform", KEY_IN_SLOT);
+    // CODEX: slot state, parent and local pose travel separately from Door.open.
+    insert(held, "KeyState", { placement: "slot" });
     sound("sounds/unlock.ogg", at_handle(e));
-    door = "key in";
-  } else if (door === "locked" && name(held) === "key") {
+    insert(e, "Door", { unlocked: true });
+  } else if (!state.unlocked && name(held) === "key") {
     say("it's too big, obviously");
-  } else if (door === "locked") {
+  } else if (!state.unlocked) {
     sound("sounds/jostle.ogg", at_handle(e), 0.8);
     say("it's locked");
-  } else if (door === "key in") {
-    insert(e, "AutoPlay", { clip: "lobby.gltf#Animation1" });
-    sound("sounds/doorcreak.ogg", at_handle(e), 0.9);
-    door = "open";
+  } else if (!state.open) {
+    // CLAUDE: the creak comes with the swing, from door_opened (door.rs triggers DoorOpened)
+    insert(e, "Door", { open: true });
   }
+  refresh(e);
+};
+// CLAUDE: the door's opening animation started (opened here or by someone else): its creak, in time with it
+// CLAUDE: seconds into dooropen (lobby.gltf#Animation1) before the door moves (still until its 1.08 s key);
+// doorcreak.ogg starts sounding at once, so it waits this long to begin with the swing
+const DOOR_CREAK_DELAY = 0.7;
+exports.door_opened = function* (e) {
+  yield DOOR_CREAK_DELAY;
+  sound("sounds/doorcreak.ogg", at_handle(e), 0.9);
+};
+// CLAUDE: the opening animation never loaded and the door closed again (door.rs): offer opening it again
+exports.door_stuck = function (e) {
   refresh(e);
 };
 // the big key goes back on its hook, where it was authored
@@ -101,27 +138,38 @@ exports.hang_key = function (e) {
   insert(held, "Transform", home);
   // it hangs there, not falling (it's dynamic if it was dropped)
   insert(held, "Body", "Static");
+  insert(held, "KeyState", { placement: "hook" });
+  sound_on(held, SOUNDS.key_hang, 0.9);
   refresh(e);
 };
 
+// CLAUDE: Rust (word_filter.rs) turns finish into "reject" for hurtful text.
 // CODEX (GPT-6): note lifecycle, following the keys above. Rust only copies/carries/places paper and
 // edits/rasterizes PaperText. Tune the carry size here; resource("PaperSettings") tunes fit and reach.
-const BAD_WORDS = new Set([
-  "ass", "asshole", "assholes", "bastard", "bastards", "bitch", "bitches", "bullshit",
-  "cock", "cocks", "cocksucker", "crap", "cunt", "cunts", "dick", "dickhead", "dumbass",
-  "fuck", "fucked", "fucker", "fuckers", "fucking", "motherfucker", "motherfuckers",
-  "piss", "pissed", "prick", "pussy", "shit", "shitty", "slut", "sluts", "twat", "whore", "whores"
-]);
-const NOTE_REJECTION_SECONDS = 1.5;
+const NOTE_REJECTION_SECONDS = 1;
 let noteBusy = false;
 let noteTaken = false;
-// CODEX: exact words avoid rejecting harmless words like "class" or "hello".
-const hurtful = (text) => (text.toLowerCase().match(/[a-z]+/g) ?? []).some(word => BAD_WORDS.has(word));
+// CLAUDE: bumped by reset_notes; a note state machine that sees it change stops without touching its (despawned) note.
+let noteGeneration = 0;
+// CLAUDE: the sheet each stack shows when untouched, for reset_notes.
+const stackSheet = new Map();
 const sheets = (stack) => [1, 2, 3, 4].map(i => select(stack, `[Name="postit${i}"]`)[0]).filter(x => x != null);
 exports.setup_notes = function (stack) {
   const notes = sheets(stack);
   const visible = notes.find(n => get(n, "Visibility") !== "Hidden") ?? notes[0];
+  stackSheet.set(stack, visible);
   for (const n of notes) insert(n, "Visibility", n === visible ? "Inherited" : "Hidden");
+};
+// CLAUDE: the computer's reset (network.corn): paper in the hand is gone, the stacks are as first seen.
+// Notes already placed are the network's to keep or drop.
+exports.reset_notes = function () {
+  noteGeneration++;
+  noteBusy = false;
+  noteTaken = false;
+  for (const paper of find("Paper")) if (get(paper, "Held") != null) despawn(paper);
+  for (const [stack, visible] of stackSheet) {
+    for (const n of sheets(stack)) insert(n, "Visibility", n === visible ? "Inherited" : "Hidden");
+  }
 };
 // CODEX: a coroutine keeps this one-off state machine beside the door/hook logic. One sheet at a time.
 exports.take_note = function* (stack) {
@@ -132,22 +180,29 @@ exports.take_note = function* (stack) {
   if (source == null) return;
   noteBusy = true;
   noteTaken = true;
+  const generation = noteGeneration;
   const note = spawn({ Name: "post-it", Transform: {}, Paper: {},
     Holdable: { screen_height: 0.16, below: 0.05, face_camera: true } });
   trigger(null, "CopyPaper", { entity: note, source });
   insert(source, "Visibility", "Hidden");
+  sound_on(source, SOUNDS.note_peel, 0.7);
   yield;
   // The carry mechanic removes Held when E posts the paper, then supplies an editor.
-  while (get(note, "Held") != null) yield;
-  while (get(note, "PaperText")?.action === "") yield;
+  // CLAUDE: a reset despawns the note wherever it is, so check before every touch of it.
+  while (generation === noteGeneration && get(note, "Held") != null) yield;
+  // CLAUDE: notes can't be dropped: no longer held is stuck on something
+  if (generation === noteGeneration) sound_on(note, SOUNDS.note_stick, 0.8);
+  while (generation === noteGeneration && get(note, "PaperText")?.action === "") yield;
+  if (generation !== noteGeneration) return;
   const message = get(note, "PaperText");
   if (message == null) { noteBusy = false; return; }
   insert(note, "PaperText", { editing: false });
   noteBusy = false;
-  if (message.action === "discard" || hurtful(message.text)) {
+  if (message.action === "discard" || message.action === "reject") {
     if (message.action !== "discard") yield NOTE_REJECTION_SECONDS;
-    // Non-spatial: paper can be on any side of the player; its sound outlives the despawn.
-    spawn({ "AudioPlayer<AudioSource>": "sounds/paper_crumple.ogg", PlaybackSettings: { mode: "Despawn" } });
+    if (generation !== noteGeneration) return;
+    // Spatial at the paper; the sound entity outlives the despawn.
+    sound("sounds/paper_crumple.ogg", get(note, "Transform").translation);
     despawn(note);
     if (message.action !== "discard") trigger(null, "SayCentered", { text: "better not, might hurt someones feelings" });
   }
@@ -199,7 +254,7 @@ include "lobby.gltf#Scene0" {
   /* Scene entry replaces SoundTrackOnEnter: this standalone lobby starts immediately. */
   #sound {
     AudioPlayer<AudioSource>: "sounds/crickets.ogg";
-    PlaybackSettings: { mode: Loop; volume: Linear(0.35); }
+    PlaybackSettings: { mode: Loop; volume: Linear(0.25); }
   }
 
   /* The authored SpawnLocation is now the local camera, with no character/network bootstrap. */
@@ -253,14 +308,18 @@ include "lobby.gltf#Scene0" {
   /* CLAUDE: dooropen (Animation1) swings it: a kinematic body of its own, so its hulls (and the key in its
      slot) go with it; the scene's static body doesn't follow animated children */
   #door {
+    Door: default;
     Body: Kinematic;
     ColliderConstructorHierarchy: { default_constructor: ConvexHullFromMesh; }
     InteractionText: { prompt: "open"; range: 2.5; }
     on Interact: use_door;
+    on DoorOpened: door_opened;
+    on DoorStuck: door_stuck;
   }
   /* CLAUDE: the big key, on its hook by the door. Taken, the hook offers putting it back. Static on the hook,
      dynamic once dropped, its collider a box fitted to its mesh. */
   #key {
+    KeyState: { placement: "hook"; }
     /* CODEX: large key: lower, heavier metallic clank than the tiny real key. */
     KickSound: { sound: "sounds/kicks/large_key.ogg"; gain: 0.9; }
     Body: Static;
@@ -282,6 +341,8 @@ include "lobby.gltf#Scene0" {
   :root > #flashlight {
     /* CODEX: hollow metal tube with a short lens/switch rattle. */
     KickSound: { sound: "sounds/kicks/flashlight.ogg"; gain: 0.85; }
+    /* CLAUDE: F's click, played by toggle_flashlight */
+    SwitchSound: { on: "sounds/interact/flashlight_on.ogg"; off: "sounds/interact/flashlight_off.ogg"; gain: 0.7; }
     Body: Static;
     FittedBox: default;
     /* CODEX: flashlight-only tuning: 18% below center, closer carry, and 60% camera pitch. */
@@ -310,6 +371,7 @@ include "lobby.gltf#Scene0" {
      A dynamic body on the floor (kinematic once carried, none in the key slot), its collider a box fitted
      to its mesh (physics.rs). */
   #realkey {
+    KeyState: default;
     /* CODEX: tiny key: bright, light metallic tick and jingle. */
     KickSound: { sound: "sounds/kicks/small_key.ogg"; gain: 0.65; }
     Body: Dynamic;
@@ -324,6 +386,8 @@ include "lobby.gltf#Scene0" {
   #pc [Name=screen] > Mesh3d {
     Monitor: { texture_size: 512; cursor_speed: 0.4; transition_seconds: 0.4; }
     InteractionText: { prompt: "use the computer"; active_prompt: "stop using the computer"; range: 2.5; }
+    /* CLAUDE: the mouse's button clicks while using the computer: on is the press, off the release (computer.rs) */
+    SwitchSound: { on: "sounds/interact/mouse_down.ogg"; off: "sounds/interact/mouse_up.ogg"; gain: 0.5; }
     spawn focus {
       MonitorView: default;
       Transform: ${ Transform.from_xyz(0, 4.5, 0.3).looking_at(Vec3.Z.mul(0.4), Vec3.NEG_Z) }

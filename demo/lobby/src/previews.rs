@@ -6,6 +6,8 @@ use super::*;
 #[reflect(Component, Default)]
 pub struct PreviewSettings {
     pub players: usize,
+    // CODEX (GPT-6): display consumers can own the count without depending on a networking type.
+    pub editable: bool,
     pub ortho_height: f32,
     pub view_center: Vec3,
     pub camera_distance: f32,
@@ -19,6 +21,7 @@ impl Default for PreviewSettings {
     fn default() -> Self {
         Self {
             players: 1,
+            editable: true,
             ortho_height: 2.0,
             view_center: Vec3::ZERO,
             camera_distance: 1.0,
@@ -133,10 +136,10 @@ fn update_players(
     let Some(mut settings) = settings.iter_mut().next() else {
         return;
     };
-    if keys.just_pressed(KeyCode::PageUp) {
+    if settings.editable && keys.just_pressed(KeyCode::PageUp) {
         settings.players = (settings.players + 1).min(4);
     }
-    if keys.just_pressed(KeyCode::PageDown) {
+    if settings.editable && keys.just_pressed(KeyCode::PageDown) {
         settings.players = settings.players.saturating_sub(1);
     }
     for (model, mut visibility) in &mut models {

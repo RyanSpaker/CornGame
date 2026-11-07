@@ -1,14 +1,20 @@
 //! CODEX (GPT-6): browser start/pause menu handshake; native input keeps its existing behavior.
 use bevy::prelude::*;
 
+// CLAUDE: `NoMouse` (scripts driving the game, e.g. from the page's `corn()` console) as of this frame:
+// it counts as captured, as native always is, so scripted input isn't cleared and nobody's mouse is locked.
+#[cfg(target_arch = "wasm32")]
+static SCRIPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 // CODEX: a cursor flag can outlive browser Escape, so web input trusts the DOM's actual lock.
 pub fn captured() -> bool {
     #[cfg(target_arch = "wasm32")]
     {
-        web_sys::window()
-            .and_then(|window| window.document())
-            .and_then(|document| document.pointer_lock_element())
-            .is_some_and(|element| element.id() == "lobby-canvas")
+        SCRIPTED.load(std::sync::atomic::Ordering::Relaxed)
+            || web_sys::window()
+                .and_then(|window| window.document())
+                .and_then(|document| document.pointer_lock_element())
+                .is_some_and(|element| element.id() == "lobby-canvas")
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -20,9 +26,38 @@ pub fn captured() -> bool {
 pub fn plugin(app: &mut App) {
     #[cfg(target_arch = "wasm32")]
     app.add_systems(Last, (ready, computer_state, texture_progress))
-        .add_systems(PreUpdate, clear_paused_input.after(bevy::input::InputSystems));
+        .add_systems(PreUpdate, render_scale)
+        .add_systems(
+            PreUpdate,
+            (scripted, clear_paused_input).chain().after(bevy::input::InputSystems),
+        );
     #[cfg(not(target_arch = "wasm32"))]
     let _ = app;
+}
+
+// CLAUDE: see SCRIPTED
+#[cfg(target_arch = "wasm32")]
+fn scripted(no_mouse: Option<Res<crate::controller::NoMouse>>) {
+    SCRIPTED.store(no_mouse.is_some_and(|n| n.on), std::sync::atomic::Ordering::Relaxed);
+}
+
+// CLAUDE (claude-opus-5-5) 2026-11-07: the launcher's render resolution (data-render-scale: 1, 0.666667 or 0.5)
+// shrinks the canvas box, and with it the buffer (see launcher.js). Overriding the scale factor with
+// devicePixelRatio * scale keeps the logical size at the full canvas size, so UI sizes and HudScale are unaffected.
+#[cfg(target_arch = "wasm32")]
+fn render_scale(mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>) {
+    let Some(browser) = web_sys::window() else { return };
+    let scale = browser
+        .document()
+        .and_then(|document| document.get_element_by_id("lobby-canvas"))
+        .and_then(|canvas| canvas.get_attribute("data-render-scale"))
+        .and_then(|value| value.parse::<f32>().ok())
+        .filter(|scale| *scale > 0.0 && *scale < 1.0);
+    let wanted = scale.map(|scale| browser.device_pixel_ratio() as f32 * scale);
+    let Ok(mut window) = windows.single_mut() else { return };
+    if window.resolution.scale_factor_override() != wanted {
+        window.resolution.set_scale_factor_override(wanted);
+    }
 }
 
 // CODEX: publish computer focus for the browser's unobtrusive E-to-return hint.

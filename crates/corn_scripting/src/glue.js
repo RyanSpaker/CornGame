@@ -339,7 +339,16 @@
     repl(source, thread) {
       if (!replGlobals) {
         replGlobals = true;
-        for (const [name, value] of Object.entries({ ...api, ...types })) if (!(name in globalThis)) globalThis[name] = value;
+        for (const [name, value] of Object.entries({ ...api, ...types })) {
+          if (!(name in globalThis)) {
+            globalThis[name] = value;
+            continue;
+          }
+          // CLAUDE: a name the global object already has (a browser's `window.find`) becomes the host api's
+          const own = Object.getOwnPropertyDescriptor(globalThis, name);
+          if (!own || own.configurable) Object.defineProperty(globalThis, name, { value, writable: true, configurable: true });
+          else console.warn(`remote console: \`${name}\` is the global object's own, not the host api's`);
+        }
       }
       source = `${source}\n//# sourceURL=dev`;
       let value;

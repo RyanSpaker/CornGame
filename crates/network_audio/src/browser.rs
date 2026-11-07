@@ -18,6 +18,9 @@ extern "C" {
     #[wasm_bindgen(method, js_name = setMuted)]
     // CODEX: Keep the connection alive while replacing outgoing speech with silence.
     fn set_muted(this: &BrowserVoice, muted: bool);
+    #[wasm_bindgen(method, js_name = setMicrophone)]
+    // CLAUDE: start or stop capture on the live connection (async in JS; result lands in status)
+    fn set_microphone(this: &BrowserVoice, on: bool);
     #[wasm_bindgen(method)]
     // CODEX: Read browser status without exposing media objects to the game engine.
     fn snapshot(this: &BrowserVoice) -> String;
@@ -58,6 +61,10 @@ impl VoiceClient {
     // CODEX: Keep the connection alive while replacing outgoing speech with silence.
     pub fn set_muted(&self, muted: bool) {
         self.0.set_muted(muted);
+    }
+    // CLAUDE: start or stop capture on the live connection; also clears `status.microphone_error`
+    pub fn set_microphone(&self, on: bool) {
+        self.0.set_microphone(on);
     }
     // CODEX: Return a snapshot suitable for UI and acoustic verification.
     pub fn status(&self) -> VoiceStatus {

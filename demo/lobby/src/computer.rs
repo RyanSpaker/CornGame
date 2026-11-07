@@ -72,17 +72,17 @@ pub struct MouseBounds;
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub(crate) struct ComputerCanvas {
-    image: Handle<Image>,
-    pointer: PointerId,
-    cursor: Entity,
-    position: Vec2,
+    pub(crate) image: Handle<Image>,
+    pub(crate) pointer: PointerId,
+    pub(crate) cursor: Entity,
+    pub(crate) position: Vec2,
 }
 
 // CODEX: capture the authored rest position once, so mouse motion never accumulates or hardcodes it.
 #[derive(Component)]
 pub(crate) struct PhysicalMouse {
-    rest: Vec3,
-    bounds: Rect,
+    pub(crate) rest: Vec3,
+    pub(crate) bounds: Rect,
 }
 
 // CODEX: one local computer session; the original camera pose is restored on Escape.
@@ -92,11 +92,19 @@ pub(crate) struct PhysicalMouse {
 pub struct ComputerSession {
     pub active: Option<Entity>,
     pub returning: bool,
-    original: Option<Transform>,
+    pub(crate) original: Option<Transform>,
     from: Transform,
     elapsed: f32,
     duration: f32,
     release_on_return: bool,
+}
+
+// CODEX (GPT-6): neutral focus cancellation hook; presentation/input adapters need no private fields.
+impl ComputerSession {
+    // CODEX: preserve the normal camera return path when an external input owner releases focus.
+    pub(crate) fn return_to_player(&mut self, from: Transform) {
+        self.active=None;self.returning=true;self.from=from;self.elapsed=0.0;self.release_on_return=false;
+    }
 }
 
 // CODEX: process the synthetic pointer before Bevy picking, after actual input has arrived.
@@ -274,10 +282,13 @@ pub(crate) fn pointer_input(
     buttons: Res<ButtonInput<MouseButton>>,
     mut canvases: Query<(&Monitor, &mut ComputerCanvas)>,
     mut nodes: Query<&mut Node, With<ui::DesktopCursor>>,
-    mut mice: Query<(&PhysicalMouse, &mut Transform)>,
+    mut mice: Query<(Entity, &PhysicalMouse, &mut Transform)>,
     mut inputs: MessageWriter<PointerInput>,
     mut pointers: Query<(&PointerId, &mut PointerLocation, &mut PointerPressState)>,
     mut previous: Local<Option<Entity>>,
+    clicks: Query<&crate::foley::SwitchSound>,
+    assets: Option<Res<AssetServer>>,
+    mut commands: Commands,
 ) {
     // CODEX: losing capture cancels picking before the menu consumes any pointer input.
     let Some(entity) = session.active.filter(|_| crate::browser::captured()) else {
@@ -314,7 +325,7 @@ pub(crate) fn pointer_input(
         node.left = Val::Px(canvas.position.x);
         node.top = Val::Px(canvas.position.y);
     }
-    for (physical, mut mouse) in &mut mice {
+    for (_, physical, mut mouse) in &mut mice {
         let p = physical.bounds.min + canvas.position / size * physical.bounds.size();
         mouse.translation = physical.rest + Vec3::new(p.x, 0.0, p.y);
     }
@@ -333,7 +344,14 @@ pub(crate) fn pointer_input(
         (MouseButton::Left, PointerButton::Primary),
         (MouseButton::Right, PointerButton::Secondary),
     ] {
+        // CLAUDE: the monitor's SwitchSound is the mouse's: on is the press, off the release, at the mouse
+        let click = |on: bool, commands: &mut Commands| {
+            if let (Ok(sound), Some(assets), Some((mouse, _, _))) = (clicks.get(entity), assets.as_ref(), mice.iter().next()) {
+                crate::foley::click(commands, assets, sound, on, mouse);
+            }
+        };
         if buttons.just_pressed(button) {
+            click(true, &mut commands);
             inputs.write(PointerInput::new(
                 canvas.pointer,
                 location.clone(),
@@ -341,6 +359,7 @@ pub(crate) fn pointer_input(
             ));
         }
         if buttons.just_released(button) {
+            click(false, &mut commands);
             inputs.write(PointerInput::new(
                 canvas.pointer,
                 location.clone(),

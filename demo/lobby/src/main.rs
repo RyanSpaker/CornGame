@@ -2,10 +2,15 @@
 use bevy::{prelude::*, world_serialization::WorldAssetRoot};
 
 mod computer;
+// CODEX (GPT-6): door state is gameplay; the network plugin can be removed independently.
+mod door;
+mod network;
 mod browser;
 mod controller;
 // CODEX: loose props have independent movement filtering and material impact audio.
 mod kick;
+// CLAUDE: switch clicks and props' impact sounds on any hard collision.
+mod foley;
 mod hold;
 mod physics;
 mod interaction;
@@ -92,9 +97,11 @@ fn main() {
         hold::plugin,
         post_it::plugin,
     ))
-    .add_plugins((fitted_hull::plugin, seen::plugin, radio::plugin, precompile::plugin, post_it_warmup::plugin, pipeline_watch::plugin, pipeline_watch_arm::plugin, zoom::plugin))
+    .add_plugins((fitted_hull::plugin, seen::plugin, radio::plugin, precompile::plugin, post_it_warmup::plugin, pipeline_watch::plugin, pipeline_watch_arm::plugin, zoom::plugin, foley::plugin))
     // CLAUDE: after DefaultPlugins: its png/jpg/ktx2 loader must be registered after Bevy's
     .add_plugins(textures)
+    .add_plugins(door::plugin)
+    .add_plugins(network::plugin)
     .add_systems(Startup, load);
     corn_assets::register::<Image>(&mut app);
     corn_assets::register::<AudioSource>(&mut app);

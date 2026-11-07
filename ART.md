@@ -181,13 +181,19 @@ Local point lights are nice. A 3000k 5(blender unit?) 1m range light beautifully
 lobby demo: radio, difficult to discover secret broadcasts on your own 
 
 1. [ ] there should be an arrow under the radio pointing to the center of the nearby broadcast
-2. [ ] there should be sticki-notes hinting at station and location of secret broadcasts
-3. [ ] nearby broadcast should be audible from the radio's default location.
+2. [x] there should be sticki-notes hinting at station and location of secret broadcasts
+3. [x] nearby broadcast should be audible from the radio's default location.
 
 ?: how to make it clear that you need to stay on station 0.9, and walk over?
 - dial sticky
 
 TODO: make stickies look nicer
 
+TODO: ma
+
 # Fri Nov  6 06:23:17 AM EST 2026
 I regenerated the numbers message to say "sry. no msg yet. good work."
+
+
+# Fri Nov  6 10:41:49 PM EST 2026
+"headphones recommended" teletype

@@ -190,6 +190,8 @@ fn describe(error: JsValue) -> String {
     let message = error
         .dyn_ref::<js_sys::Error>()
         .map(|e| String::from(e.message()))
+        // CLAUDE: glue.js rethrows a script's error as its stack, a string
+        .or_else(|| error.as_string())
         .unwrap_or_else(|| format!("{error:?}"));
     let stack = Reflect::get(&error, &"stack".into()).ok().and_then(|s| s.as_string());
     format!("{message}\n{}", stack.unwrap_or_default())

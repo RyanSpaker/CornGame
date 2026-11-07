@@ -322,3 +322,154 @@ use a black global GPU fallback while the scene camera loads. Isolated from web 
 Documentation: .agents/doc/startup-window.md explains setup, limits, tuning, and why delaying creation is insufficient.
 Validation: native check/build and module rustfmt passed; Xvfb/i3 first-map probe found all 1600x1000 pixels black.
 Later GPU presentation under Xvfb was unavailable (no DRI3/supported present modes).
+
+# CODEX: GPT-6 high — Fri Nov 06 2026 17:20:13 EST
+Scope: demo/lobby client networking, ordinary Door/KeyState, scratch Python server and agent-owned usage documentation.
+Why: network the lobby at 10 Hz while keeping gameplay client-side, voice independent, and offline removal/disable simple.
+What: added network.corn plus isolated std::net/browser WebSocket, physics, media and orb/label adapters; no game networking crate.
+One Python stdlib process serves /lobby state and /voice P2P signaling, durable notes/radio/reconnect records, cached IP-town lookup and a 15s empty reset.
+Shared state covers eye-height orbs/count, placed note text/style/selectors, radio holding/power/tuning, both keys/door, held flashlight beams and computer cursor/mouse/click/UI.
+Awake dynamic bodies neither send nor apply poses. Buffered interpolation handles eligible poses; sleeping corrections use Avian tick bookkeeping without forcing sleep.
+Door/key state is ordinary ECS. Initial open snapshots seek to the clip end; live opening animates. Key-slot parent/local pose is separate.
+Paper visuals reuse CopyPaper with a default-false visual_only flag, preserving local carry/editor ownership. unique_selector is isolated in network.corn.
+Reconnect tokens are stored locally; the server restores saved logical player poses. Welcome state is retained through asset loading and consumed explicitly because reflection list patches do not truncate.
+Networking defaults off without LOBBY_SERVER / browser server=, and NetworkSettings.enabled disables it live. Added NETWORK.CODEX.md and focused protocol/audio/scene tests.
+
+## CODEX: GPT-6 high — Fri Nov 06 2026 17:20:13 EST — implementation and verification
+Final full lobby suite: 68 tests pass, including six focused networking tests. A transient concurrent word-filter test failure was resolved by its separate work; networking did not alter that code.
+Six Python server tests pass, including real TCP voice/state routes, identity replacement/persistence, terminal duplicate-window replacement, ownership, reset boundaries and mocked town caching.
+Real native/Chromium Opus test passed: bidirectional audio, stereo direction, distance attenuation and mute through the Python /voice route (generated tones; no physical microphone).
+Two full native clients passed door initial/live playback, exact slot key, live note/style/attachment/deletion, local-only carried paper, radio handoff/power/tuning, held-only flashlight beam, computer UI/click/cursor, reconnect identity/pose and live offline disable.
+Native build and WebAssembly check passed. Xvfb lacked Vulkan presentation; scene verification used the existing display with isolated server/ports/identities and cleaned up its processes.
+Geolocation lookup logic was mocked in tests; no real visitor IP lookup or internet/NAT media traversal was exercised. Browser game rendering was compile-checked; browser voice was exercised acoustically.
+
+# CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026
+Scope: lobby post-it rejection, crumple sound.
+Why: replace the hand-made bad-word list with BurntRouter/filtered-word-lists; crumple should be positional.
+What: post_it.rs filters on Enter ("finish" becomes "reject") using src/word_lists/{blanket,standalone}.txt: blanket words match as substrings after removing whitespace (spaced-out slurs caught), standalone words only as whole words, words in both lists are standalone only (upstream blanket has "nig", which matched "night"). Aho-Corasick + hash set. lobby.corn drops BAD_WORDS, treats "reject" like a bad note; crumple sound is spatial at the note, rejection delay 1s. Test: 104 ordinary messages, 0 flagged. Known: removing spaces makes "Hancock street" match "cocks".
+
+# CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026
+Scope: lobby HUD text sizing (tooltips, bottom hints, radio/post-it/zoom hints).
+Why: HUD was too large on web (logical window 864px tall at DPR 2.5) and would be on any screen below 4K.
+What: added HudScale (logical window height / 1706 (the dev's 4K monitor is 2132px physical at OS scale 1.25), exactly 1.0 there so native is unchanged) and HudSize, applied in PostUpdate before UI prepare; tooltip placement and zoom hint use the scale too. Reasoning in .agents/doc/hud_scale.md. Lobby tests pass (68+10); wasm check compiles. Not visually verified.
+
+# CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 06:15 PM EST
+Scope: lobby server deployment (server.py socket activation, build_web.py, host nix module).
+Why: run server.py on sonoran.xyz with no per-app systemd/nginx config; deploy = build_web + sync.sh.
+What: server.py serves the systemd-inherited socket (LISTEN_FDS, fd 3) when offered, and treats unix-socket peers as the trusted proxy (X-Forwarded-For). build_web.py copies server.py into target/web/lobby/. Host side (outside this repo, ~/files/projects/web/nix/pyapp.nix, imported by flake.nix): pyapp@ socket/service/path template units, one nginx regex location /<app>/_srv/ -> /run/pyapp/<app>.sock, `pyapp.apps` list. Verified: 6 server tests pass; real unix-socket upgrade with inherited fd 3; nix module evaluates (units + nginx location). Not deployed or tested on the host.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 06:30 PM EST — web default server, .py no longer blocked
+network.rs (wasm): default server is `<location.host><page dir>_srv`; `?noserver` disables, `?server=` overrides. Removed pyapp.nix's `.py`/`.sqlite` 404 rule (state is outside /srv; source should be downloadable). DEPLOY.CODEX.md updated. wasm check compiles; not run in a browser.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 06:45 PM EST — runtime app discovery
+Removed the `pyapp.apps` list from web/nix/pyapp.nix: the app set isn't known at config time. New pyapp-scan.service + 15s timer (script web/nix/pyapp-scan.sh) starts pyapp@<dir>.socket/.path for each /srv/<dir>/server.py and stops units whose file is gone. Scanner verified with a mock systemctl (valid, invalid-name, no-server.py, vanished cases); module evaluates. Not deployed.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 07:00 PM EST — app logs endpoint
+web/nix/pyapp.nix: journald gateway on 127.0.0.1:19531 (socket rebound from all interfaces), nginx `/<app>/_logs` (basic auth via /etc/pyapp.htpasswd, fixed unit filter, last 200 lines, `?follow` streams), PYTHONUNBUFFERED=1 on pyapp@. Module evaluates; gatewayd socket, proxy URL and maps checked in the evaluated output. Not deployed, so gatewayd's Range handling and the live stream are untested.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 07:15 PM EST — X-Forwarded-For spoofing fix
+pyapp.nix `_srv` location: disabled recommendedProxySettings and send `X-Forwarded-For $remote_addr`; the stock `$proxy_add_x_forwarded_for` appends to a client-supplied header and server.py trusts the first entry, so clients could choose their own IP/town. Module evaluates; not deployed.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 07:40 PM EST — watchdog and SIGTERM save
+server.py: sd_notify `WATCHDOG=1` from the tick loop (only when WATCHDOG_USEC is set); SIGTERM now cancels main so the final save runs. Fixed a latent shutdown hang: `async with listener`/`serve_forever()` await wait_closed(), which blocks until every client disconnects (so a stop with players connected would have timed out and skipped the save); main now saves, then `listening.close()` without waiting. pyapp.nix: WatchdogSec=30, NotifyAccess=main. 4 new tests (ping, no ping without watchdog, blocked loop stops pings, SIGTERM saves + exits 0 with a client connected); all server tests pass. Not run under real systemd.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 08:00 PM EST — server connection icon in the web menu
+network.rs (wasm): `publish_status` emits a `corn-lobby-network` event (state off/connecting/joining/connected/stalled/replaced, url, room, id, players, reconnects, message) when it changes; Runtime gained last_message/closes ("stalled" = open socket silent >3s). web/: wifi-style icon on the menu's top line (green/amber/red/grey), hover or keyboard focus shows server, room, id, players, connected-for, reconnects, message. Wasm and native test builds compile; icon checked in headless Chromium with a mocked event; not yet against a live server.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 08:20 PM EST — surface connection errors
+network.rs: a `transport_closed` carrying a failure reason now logs `warn!("Connection error: …")` once per distinct error (Runtime.last_error, cleared on welcome) and sets NetworkBridge.status to "Connection error: …" (shown in the web icon's Message row; cleared on welcome). Motivation: native's ws://-only transport silently retried a wss:// URL forever. Native and wasm builds compile; not run against a failing connect.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 08:30 PM EST — log connection success and player count
+network.rs: first snapshot after a welcome logs `info!("Connected to <url>, room <room>, as <id>: N player(s) in the room")`, later count changes log `Players in room <room>: N` (Runtime.logged_players, reset on welcome/close). Native and wasm builds compile; not run against a live server.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 09:00 PM EST — native wss://
+demo/lobby/src/network/websocket.rs: `address()` accepts wss:// (443 default, returns TLS server name); `tls_stream()` wraps the socket with rustls (ring provider named explicitly because aws-lc-rs is also linked; system roots via rustls-native-certs; handshake retried past the 50 ms read timeout). run() is generic over a boxed Read+Write. Cargo.toml: rustls + rustls-native-certs for non-wasm (both already in the lock). Unit tests cover ws/wss/IPv6 addresses; ignored live test `wss_live` connected to wss://sonoran.xyz/lobby/_srv over TLS and received a welcome. Full native game not launched against it.
+
+# CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 07:40 PM EST
+Scope: lobby remote-player orb and town label (demo/lobby network visuals, server relay).
+Why: smaller, unobtrusive labels that show through-wall state and carry each player's sticky-note typeface; a fainter orb.
+What: label_size default 18→9; orb_radius 0.12→0.09 and orb_color alpha 0.2 (material uses AlphaMode::Blend). Labels dim to 50% alpha when a physics ray from the camera to the label anchor hits collision (UI has no depth test, so this is a per-frame raycast, not a depth buffer test). New `post_it::LastFont` resource tracks the font index of the note being edited; network.corn sends it as `font`, server.py validates (int 0..63) and relays it in player snapshots, visuals.rs builds a Font from the embedded FONTS bytes per index and applies it to the peer's label (missing/old-server value → Gelasio, index 0).
+Verification: cargo check --tests, lobby network tests, and server tests pass. Not run live (no visual check).
+
+# CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 PM EST
+Scope: lobby remote-player orb and town-name label lag when looking around.
+Why: `network/visuals.rs::update` ran in `Last`, after transform propagation and UI layout, so the label's screen position and the orb's GlobalTransform applied one frame late.
+What: `update` now runs in `PostUpdate` after `TransformSystems::Propagate` and `CameraUpdateSystems`, before `UiSystems::Prepare` (same ordering as zoom.rs); the orb also gets its `GlobalTransform` set directly. TODO(audit) comments mark this as a workaround to reevaluate (GlobalTransform one-frame delay, here and in general). Builds; network tests pass; not run visually.
+
+# CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 PM EST
+Scope: lobby network server-reset handling (network.corn, network.rs).
+Why: a server reset restored doors/props but left players where they were, so a re-closed door could lock them outside.
+What: setup captures the player's scene-load pose (`capture_spawn`); `reset(true)` now fires `reset_player`, which teleports the player to that spawn (no obstruction test) on a server epoch change and on a reconnect welcome. A saved-pose restore from the welcome still applies afterward and keeps its own obstruction fallback. Split `place_player` out of `restore_player`. Compiles; not run live.
+
+# CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 PM EST
+Scope: lobby server (demo/lobby/server/server.py) daily reset.
+Why: sticky notes persisted forever; wanted a daily clean slate without disturbing players.
+What: `daily_reset` wipes notes, objects and owners (placed radio kept, as in `expire_empty`) and issues a new epoch once per day after 4am America/New_York, only while the room has no connected players; a busy room waits until empty. Last handled boundary is stored per room (`daily:<room>`), so restarts neither repeat nor skip it; first run only starts the schedule. Runs on room load and every tick. Clients then reset and move players to spawn via the epoch change. New `wall_clock` ctor param; `reset_objects` factored out of `expire_empty`. Added a unit test; all 11 server tests pass.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 PM EST — daily reset is now total
+The 4am reset also clears the radio placement and deletes the room's saved player records (identity, pose) via new `Store.delete_prefix`; returning players get a fresh identity and spawn. Test extended; 11 server tests pass.
+
+# CLAUDE: claude-sonnet-5-5 → claude-opus-5-5 low — Fri Nov 06 2026 07:55 PM EST
+Scope: lobby computer Reset (ui.rs, network.rs, network.corn, lobby.corn, server.py) + tests, NETWORK.CODEX.md.
+Why: let a player reset the whole lobby for everyone from the computer.
+What: desktop gets a Reset button above Start and a full-window Yes/No dialog (blocks clicks beneath; mirrored to observers). Yes, only from the player actually at the computer, triggers `ResetLobby`; network.rs sets `NetworkBridge.reset_requested` (offline: status says a server is needed). network.corn sends `reset: true` on updates until a new epoch answers. Server `reset_all`: new epoch + snapshot `reset` id, objects/owners cleared (radio placement too), every player pose (live and stored, via `Store.clear_poses`) forgotten, each note survives with NOTE_SURVIVAL=0.1; RESET_COOLDOWN 3s. Clients seeing the id change: `reset(false)` for door/keys/radio/computer, `resetProps` for local flashlights (dropped, off, authored pose), lobby.corn `reset_notes` (carried paper despawned, stacks restored, note coroutine bails via `noteGeneration`), own non-surviving notes despawned, then `scatter_player`: first of 32 random cabin spots the capsule fits (spawn fallback). Outgoing is skipped on the reset frame (stale sample). `player_obstructed` factored out of `restore_player`. Voice box intentionally untouched. Fixed stale `spawn` field in network tests. New: 2 server tests, 1 Rust test.
+
+# CLAUDE: claude-opus-5-5 → claude-sonnet-5-5 low — Fri Nov 06 2026 08:14 PM EST
+Scope: lobby computer Start readout (demo/lobby/src/ui.rs).
+Why: show lobby state on the monitor when Start is clicked.
+What: Start now lists the server address (or N/A when offline), the count of posted sticky notes (with how many are remote), the door state (open/closed, unlocked/locked) and radio on/off, after "Demo started.". Network resources are optional so the desktop still works without the network plugin. Builds; the first version was checked live (offline and against a scratch server), the final address-only version was built but not run, at the user's request.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 PM EST — live two-client test fixes
+Ran the reset live with two native clients (temp server, NoMouse) and fixed two bugs it exposed: `wipe` read `cabin_min.x` but `get_resource` gives Vec3 as arrays, so every teleport candidate was NaN and players fell back to spawn (now `vec(...)`); a mirrored observer's Reset dialog stayed open after the reset (new `ui::close_reset_dialog`, called by `scatter_player`). Re-run passes: No keeps everything; Yes gives a new epoch on both clients, door closed, key loose, radio default, flashlight dropped and off, 30 notes -> 2, players at different random cabin spots, dialog closed. Also fixed the post-it editor test's missing `LastFont`.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 PM EST — radio "inside" check
+`outgoing()` read `settings.cabin_min.x`, but a resource's nested Vec3 reaches scripts as an array (only a whole Vec3 value has .x), so `inside` was always false and the server never kept the radio's placement across resets. Now `vec(...)` + index. Checked live: a raw spectator socket sees `inside: true` once the radio settles in the cabin. Audited the other .corn scripts for the same pattern: none (lobby.corn's `t.x` is on a whole Transform value, which is fine; network.corn's `pose()` already used `vec`).
+
+# CLAUDE: claude-opus-5-5 medium — Fri Nov 06 2026 10:45 PM EST
+Scope: lobby interaction sounds (new foley.rs, tools/make_interaction_audio.py, assets/sounds/interact/, lobby.corn, radio.corn, network.corn, radio.rs, computer.rs, main.rs).
+Why: no feedback sound for picking up/hanging the big key, taking/sticking post-its, drops, the flashlight and radio switches or the computer's mouse; a remote player's unlock was silent.
+What: 9 generated mono Ogg one-shots (key pickup/hang, note peel/stick, flashlight on/off, radio click, mouse down/up). `SwitchSound {on, off, gain}` + script-triggerable `Switched {entity, on}` event (flashlight via toggle_flashlight, radio via radio.rs, the Monitor's for mouse press/release at the physical mouse). Drops: every prop's existing `KickSound` now also plays when a dynamic prop touching something loses >= 0.3 m/s in one physics step (`ImpactSettings`, volume 40-100% scaled to 2.5 m/s); not "contact started", since R's speculative contact starts at rest. Key/note sounds are lobby.corn children of the item (`sound_on`). Remote (spatial): network.corn plays unlock (new) and the door creak (now at the handle, 0.9, as locally) via lobby.corn's exported `sound`/`at_handle`, the radio click on a remote on/off change, and note_stick for notes posted after joining. User chose: generated sounds; remote for unlock/creak, radio and notes (not key pickup/hang); no small-key pickup sound.
+Verified: 4 new foley tests, all 73 lobby tests pass. Live (native, CORN_DEV, temp server + a stdlib fake second player): every sound fires once on the right entity; remote unlock/radio/note/open each heard once; no echo click for local radio toggles. Not listened to by a human; web build not run.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 PM EST — forget positions on server restart
+A restarted server restored players to their old saved position. Player records now carry a per-process `boot` id (`Server.record`); `join` drops the saved pose of a known player whose record is from another process (legacy records without `boot` count too), so returning players spawn fresh with the same identity. A reconnect to the same process still restores the pose. Server test updated; 13 server tests and the network Rust tests pass. Not run live.
+
+## CLAUDE: claude-opus-5-5 medium — Fri Nov 06 2026 11:20 PM EST — "sound effects are temporary" hint
+New reflected `SoundHint { sounds, text, shown }` resource (foley.rs): the first time this session any listed sound starts (observer on `Add<AudioPlayer>`, matched by asset path, so script- and Rust-spawned sounds alike), it triggers `SayCentered` "sound effects are temporary" once. Default list: big key pickup/hang/drop (kicks/large_key.ogg), flashlight on/off/drop (kicks/flashlight.ogg). New test (listed vs unlisted, once); 74 lobby tests pass; checked live by picking up the big key (screenshot).
+
+# CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 10:58:00 PM EST
+Scope: web lobby render resolution setting (launcher card, launcher.css, browser.rs).
+Why: render fewer pixels on high-DPI displays; live switching, and no render-to-image.
+What: a Full / 2/3 / 1/2 select on the launcher card (also the Escape menu), saved in localStorage and applied live. Fractions are of the display's physical pixels (1 = every device pixel). winit sizes the buffer from the canvas CSS box times devicePixelRatio, so launcher.css shrinks the box to the fraction and stretches it back with a transform, keyed on the canvas's data-render-scale (set by launcher.js); the buffer shrinks through the normal resize path. The rules are !important stylesheet rules because winit writes inline width/height at startup. browser.rs render_scale sets the window's scale factor override to devicePixelRatio * scale, so the logical size, and all UI, is the same as at Full. Window scale_factor_override alone and setting canvas width/height directly don't change the buffer (override: unchanged; direct: cropped). Native is unaffected.
+
+## CLAUDE: claude-sonnet-5-5 low — Fri Nov 06 2026 — implementation
+Launcher select + inline canvas styles; an initial HudScale divide-by-scale compensation made the HUD 1/f too big and was removed.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 — startup and fixed-size UI fixes
+Starting at a saved 1/2 was zoomed/offset: winit's inline width/height replaced the script's, leaving only the transform. Moved the sizing to !important stylesheet rules. Fixed-size UI (player name labels) grew by 1/scale: added the scale factor override. Verified in Brave through devtools (dpr 1.667): startup at 1/2 and live Full/2/3/1/2 give buffers 3360x1930 / 2240x1287 / 1680x965 with a constant 2016x1158 logical window; the view is centered. HUD not checked in-game (needs mouse capture).
+
+## CLAUDE: claude-opus-5-5 medium — Sat Nov 07 2026 05:47 PM EST — web remote console
+corn_scripting remote_console now builds on web: `corn(code, generator?)` on the page (promise of the value / the
+error) feeds the same per-frame request path as the native socket; debug builds, or `?corn_dev` in release. Screenshots
+stay native. glue.js repl defines host api names the global object already has (window.find) instead of skipping them;
+js_web describe() keeps a thrown string as is. Lobby: NoMouse counts as captured on web (browser.rs), so scripted input
+works without pointer lock; smoke.js shot() is a no-op without screenshot(). Verified in Brave via chrome-devtools MCP
+(dev build, own port/server): find/vars/generators/errors, smoke take-key + unlock, door open (creak on the frame the
+animation starts). Native corn_scripting tests pass (21). Note: dooropen's first 1.12 s are still (key turn?).
+
+# CLAUDE: claude-opus-5-5 low — Sat Nov 7 05:54:58 PM EST 2026
+Scope: texture_loading loader; lobby radio station-list texture.
+Why: Firefox web build quit at texture load. 16-bit PNGs (CODEX_radio_dial/regions_256) decode to Rgba16Unorm, which
+WebGL2 only allows with EXT_texture_norm16 (Chromium yes, Firefox no); the invalid texture is a fatal render error.
+What: loader.rs `to_8_bit` narrows R/Rg/Rgba16Unorm to 8-bit (Rgba8UnormSrgb when glTF says sRGB) before mips, and
+warns with the path asking for an 8-bit re-save. Converted CODEX_radio_stations_256.png (art/, demo/lobby/assets) to
+8-bit; dial and regions left 16-bit because art/lobby.blend packs them.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 7 05:54:58 PM EST 2026 — 16-bit texture fix
+cargo check -p texture_loading passes; not run in Firefox. The two radio textures now sample as sRGB (before: linear
+Rgba16Unorm in Chromium), so they may look darker than in previous Brave runs. Stations PSNR vs 16-bit original 76 dB.
+
+## CLAUDE: claude-opus-5-5 medium — Sat Nov 07 2026 05:57 PM EST — creak delay
+lobby.corn door_opened is a generator: waits DOOR_CREAK_DELAY (1.08 s, where dooropen's still lead-in ends; doorcreak.ogg
+has no leading silence) before the creak. Native check: the door starts moving ~1.08 s after opening; creak spawned at
+1.14 s with the earlier 1.12 value.
