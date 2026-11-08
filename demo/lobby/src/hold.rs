@@ -60,6 +60,12 @@ pub struct Holdable {
     pub aim_forward: Vec3,
     /// CODEX: camera pitch multiplier for aimed props, e.g. 0.5 gives 45 degrees at a 90-degree look.
     pub aim_pitch: f32,
+    /// CLAUDE: aim_pitch while looking up (pitch > 0); none: aim_pitch both ways. 1.0 follows the view
+    pub aim_pitch_up: Option<f32>,
+    /// CLAUDE: extra `below` per radian of camera pitch (up or down), linear; level view is unaffected
+    pub pitch_below: f32,
+    /// CLAUDE: pitch_below while looking up (pitch > 0); none: pitch_below both ways
+    pub pitch_below_up: Option<f32>,
 }
 
 impl Default for Holdable {
@@ -67,7 +73,7 @@ impl Default for Holdable {
         Self {
             screen_height: 0.2, below: 0.05, droppable: false, use_prompt: String::new(), toggle_prompt: String::new(), home: None,
             face_camera: false, depth_scale: 0.5, center_on_collider: true, center_offset: None,
-            aim_forward: Vec3::ZERO, aim_pitch: 0.5,
+            aim_forward: Vec3::ZERO, aim_pitch: 0.5, aim_pitch_up: None, pitch_below: 0.0, pitch_below_up: None,
         }
     }
 }
@@ -263,14 +269,19 @@ fn view(camera: &Camera, global: &GlobalTransform, below: f32) -> (Vec3, Dir3, f
 
 // CODEX: one pose calculation for carrying and dropping, so aimed props do not snap back on R.
 fn held_pose(held: &Held, holdable: &Holdable, camera: &Camera, global: &GlobalTransform, correction: Option<&HeldRotation>, now: f64) -> Transform {
-    let (eye, direction, tan_half_fov) = view(camera, global, holdable.below);
+    // CLAUDE: lower on screen the further up or down the view is pitched
+    let (_, view_pitch, _) = global.rotation().to_euler(EulerRot::YXZ);
+    let per_radian = if view_pitch > 0.0 { holdable.pitch_below_up.unwrap_or(holdable.pitch_below) } else { holdable.pitch_below };
+    let below = holdable.below + per_radian * view_pitch.abs();
+    let (eye, direction, tan_half_fov) = view(camera, global, below);
     let distance = held.radius / (holdable.screen_height * tan_half_fov).max(1e-3) * holdable.depth_scale.max(0.01);
     let rotation = if holdable.face_camera {
         // CODEX: local +Y is the authored paper front, local -Z its top edge.
         global.rotation() * Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)
     } else if let Some(forward) = holdable.aim_forward.try_normalize() {
         let (yaw, pitch, _) = global.rotation().to_euler(EulerRot::YXZ);
-        Quat::from_euler(EulerRot::YXZ, yaw, pitch * holdable.aim_pitch, 0.0)
+        let scale = if pitch > 0.0 { holdable.aim_pitch_up.unwrap_or(holdable.aim_pitch) } else { holdable.aim_pitch };
+        Quat::from_euler(EulerRot::YXZ, yaw, pitch * scale, 0.0)
             * Quat::from_rotation_arc(forward, Vec3::NEG_Z)
     } else {
         correction.map_or(held.rotation, |tween| tween.sample(held.rotation, now))

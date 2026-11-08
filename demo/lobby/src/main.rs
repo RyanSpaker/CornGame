@@ -11,6 +11,8 @@ mod controller;
 mod kick;
 // CLAUDE: switch clicks and props' impact sounds on any hard collision.
 mod foley;
+// CLAUDE: crickets louder by the windows and out the door.
+mod cricket_volume;
 mod hold;
 mod physics;
 mod interaction;
@@ -45,7 +47,7 @@ mod pipeline_watch_arm;
 mod startup_window;
 
 // CODEX: native launches resolve from any working directory; browsers fetch assets beside the page.
-fn main() {
+fn main() -> AppExit {
     let mut app = App::new();
     let asset_dir = if cfg!(target_arch = "wasm32") { "assets" } else { concat!(env!("CARGO_MANIFEST_DIR"), "/assets") };
     // CLAUDE: textures load small first (assets/texture_sets, from tools/ktx2_convert), then sharp; its reader
@@ -101,6 +103,7 @@ fn main() {
     // CLAUDE: after DefaultPlugins: its png/jpg/ktx2 loader must be registered after Bevy's
     .add_plugins(textures)
     .add_plugins(door::plugin)
+    .add_plugins(cricket_volume::plugin)
     .add_plugins(network::plugin)
     .add_systems(Startup, load);
     corn_assets::register::<Image>(&mut app);
@@ -113,7 +116,7 @@ fn main() {
     // CODEX: install after the primary Window entity exists, before winit starts.
     #[cfg(target_os = "linux")]
     app.add_plugins(startup_window::plugin);
-    app.run();
+    app.run()
 }
 
 // CODEX: the cornfile is the only scene entry point; no Skein plugin or extras interpretation.

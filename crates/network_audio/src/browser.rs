@@ -25,6 +25,9 @@ extern "C" {
     // CODEX: Read browser status without exposing media objects to the game engine.
     fn snapshot(this: &BrowserVoice) -> String;
     #[wasm_bindgen(method)]
+    // CLAUDE: JSON object of remote speaker id -> speech RMS before spatial gains.
+    fn levels(this: &BrowserVoice) -> String;
+    #[wasm_bindgen(method)]
     // CODEX: Match the cross-platform API; browser audio may require a fresh input gesture.
     fn resume(this: &BrowserVoice);
     #[wasm_bindgen(method, js_name = switchMode)]
@@ -69,6 +72,10 @@ impl VoiceClient {
     // CODEX: Return a snapshot suitable for UI and acoustic verification.
     pub fn status(&self) -> VoiceStatus {
         serde_json::from_str(&self.0.snapshot()).unwrap_or_default()
+    }
+    // CLAUDE: speech loudness (RMS, before spatial gains) per remote speaker id, sampled every 50 ms.
+    pub fn levels(&self) -> std::collections::HashMap<String, f32> {
+        serde_json::from_str(&self.0.levels()).unwrap_or_default()
     }
     // CODEX: Restart transport in the selected topology while retaining pose and mute.
     pub fn set_mode(&mut self, mode: VoiceMode) -> Result<(), String> {

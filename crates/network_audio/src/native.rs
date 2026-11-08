@@ -98,6 +98,13 @@ impl VoiceClient {
                 "rms": speaker.rms, "age_ms": received.elapsed().as_millis() as u64}))
         }).collect()
     }
+    // CLAUDE: speech loudness (RMS, before spatial gains) per remote speaker id; silent once packets stop.
+    pub fn levels(&self) -> HashMap<String, f32> {
+        self.shared.lock().unwrap().speakers.iter().map(|(id, speaker)| {
+            let fresh = speaker.received_at.is_some_and(|t| t.elapsed() < Duration::from_millis(150));
+            (id.clone(), if fresh { speaker.rms } else { 0.0 })
+        }).collect()
+    }
     // CODEX: Match the cross-platform API; browser audio may require a fresh input gesture.
     pub fn resume(&self) {}
     // CODEX: switching closes the old transport/devices first and preserves pose, mute and live tuning.

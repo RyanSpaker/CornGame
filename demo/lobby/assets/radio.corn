@@ -7,7 +7,7 @@ use lobby;
 script {
 // CODEX (GPT-6): Quick audio balance knobs; applied on scene load. Live edits use the reflected Radio fields.
 const RADIO_AUDIO = {
-  volume: 0.9,          // Master output, including speaker/distance attenuation.
+  volume: 1.0,          // Master output, including speaker/distance attenuation.
   broadcast_gain: 1.0, // All normal stations AND regional signals; individual source gains still apply.
   static_gain: 0.62,   // Independent static/hiss level.
 };

@@ -466,10 +466,119 @@ warns with the path asking for an 8-bit re-save. Converted CODEX_radio_stations_
 8-bit; dial and regions left 16-bit because art/lobby.blend packs them.
 
 ## CLAUDE: claude-opus-5-5 low — Sat Nov 7 05:54:58 PM EST 2026 — 16-bit texture fix
-cargo check -p texture_loading passes; not run in Firefox. The two radio textures now sample as sRGB (before: linear
+cargo check -p texture_loading passes; user confirmed the rebuilt web lobby (build_web.py) works in Firefox. The two radio textures now sample as sRGB (before: linear
 Rgba16Unorm in Chromium), so they may look darker than in previous Brave runs. Stations PSNR vs 16-bit original 76 dB.
 
 ## CLAUDE: claude-opus-5-5 medium — Sat Nov 07 2026 05:57 PM EST — creak delay
 lobby.corn door_opened is a generator: waits DOOR_CREAK_DELAY (1.08 s, where dooropen's still lead-in ends; doorcreak.ogg
 has no leading silence) before the creak. Native check: the door starts moving ~1.08 s after opening; creak spawned at
 1.14 s with the earlier 1.12 value.
+
+# CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 06:24 PM EST
+Scope: lobby cricket ambience volume (new demo/lobby/src/cricket_volume.rs, #sound in lobby.corn, main.rs registration).
+Why: crickets should be louder by the windows and outside, and swell as the door opens. The user dropped the spatial
+emitters + Ctrl-/ audio map idea for now ("not worth doing this way, right now").
+What: `CricketVolume` on #sound (all tuning in lobby.corn) sets its AudioSink volume each frame from the listener's
+[x, z]: 0.2 inside, 0.35 outside the cabin footprint; linear ramps of 1.5 m from each window's center and 1.5 m
+centered on the door's plane, whose inner edge moves 1 m further in over 3 s (dooropen's length) while the door is open.
+Window centers measured by ray-scanning the shell's openings: back (-0.05, -4.0), left (-2.3, -1.65), right (2.3, 1.7).
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 06:24 PM EST — cricket volume by windows and door
+Native build passes; live run read the parsed component back and a screenshot confirmed the right window. Unit test
+added but not run: the lobby test build fails on network/tests.rs (missing `voice_error`, unrelated in-progress work).
+Not listened to.
+
+# CLAUDE: claude-opus-5-5 low — Sat Nov  7 06:25:28 PM EST 2026
+Scope: lobby remote player (town) labels.
+Why: labels should read as world-space objects, shrinking with distance, but stay legible far away.
+What: NetworkSettings.label_size replaced by label_world_size (font em height in metres, default 0.04) and label_min_size (logical px floor, default 12). visuals.rs projects a label_world_size segment along camera-up at the label anchor to get its on-screen height (so FOV and right-click zoom apply), floors it at label_min_size and rounds to whole px so the glyph atlas doesn't fill with fractional sizes.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov  7 06:25:28 PM EST 2026 — implementation
+Native lobby build passes. Lobby tests don't compile because of a pre-existing error (network/tests.rs Runtime missing voice_error), not this change. Not tested visually.
+
+# CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 06:32:15 PM EST
+Scope: lobby remote player orbs (demo/lobby/src/network/visuals.rs, network.rs) and network_audio speaker levels.
+Why: make orbs look nicer and show who is talking.
+What: original orb look kept (core+glow-shell version was tried and reverted at user request), now with a per-peer material. Idle orbs breathe (orb_pulse) and bob, phase-offset per peer. A speaking peer's orb swells (orb_speaking_swell, default 0.4) and gains opacity/emissive with their voice RMS (orb_speaking_rms = full), fast attack / slow release. network_audio gained VoiceClient::levels() (id -> pre-spatial RMS) on native (fresh within 150 ms) and web (AnalyserNode per remote speaker in voice.js); Runtime.voice_levels carries it to visuals.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 06:32:15 PM EST — implementation
+Native + wasm32 check pass; lobby tests pass (75 + 10). Not tested visually.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 — revert orb look
+Back to the single translucent emissive uv sphere; pulsing/bob and speaking swell+brightness kept on it. Tests pass; web release rebuilt.
+
+# CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026
+Scope: lobby remote player orbs (demo/lobby/src/network/visuals.rs).
+Why: tell players apart by orb colour.
+What: each peer's orb hue is derived from its server id (FNV-1a hash -> 0..360 degrees), applied over NetworkSettings.orb_color's saturation/lightness/alpha, so orb_color still tunes brightness and opacity live. Ids persist per player token on the server, so a player keeps their hue across reconnects with nothing extra stored. Hash collisions are possible (two players can land on similar hues).
+
+## CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026 — implementation
+Two unit tests added (stable/in-range/distinct hue; tint changes only hue) and pass. Not tested visually or with live peers.
+
+# CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026 07:20 PM EST
+Scope: lobby networking startup (demo/lobby/src/network.rs, main.rs).
+Why: a mistyped LOBBY_SERVER (127.0.0.8799) left the game offline and silently blocked using the computer.
+What: removed gate_computer (E on the computer always works). Native: a malformed LOBBY_SERVER (bad host/IPv4/port) panics at startup; a valid but unreachable server logs an error and exits with code 1 (main returns AppExit). Web unchanged.
+
+## CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026 07:20 PM EST — verification
+Native build passes; bad address panics, unreachable address exits 1, 127.0.0.1:8799 connects. Lobby tests not run (pre-existing compile error in network/tests.rs).
+
+# CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026 07:48 PM EST
+Scope: art/lobby.blend, live session only (not saved): black-and-white radio region map on barrel_freestanding's lid.
+Why: user asked for a monochrome copy of the radio map drawn on the barrel, using the sticky-note technique.
+What: added CLAUDE_barrel_map_bw, a 0.17 m world-aligned quad (4x4 grid) parented to barrel_freestanding, in the same collection as the lid arrow, offset 0.2 m toward -Y from the barrel centre and 0.0095 m above the lid like the arrow. Own UV map `CODEX_overlay_uv`, packed 256px texture (art/CLAUDE_barrel_map_bw_256.png) wired directly to a BLENDED copy of postit_handwritten_ink. Map is the same ground-aligned data as the desk note, monochrome: pink regions and the cabin black, the upper half of "numbers" white with a black outline, radio X black, on opaque white.
+No Shrinkwrap on the quad: the lid is flat and the barrel is a collection instance whose source meshes sit elsewhere, so a shrinkwrap would do nothing. Checked in a temporary-camera EEVEE render (camera removed, scene camera restored). No glTF export or game run.
+
+## CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026 07:48 PM EST — scripts
+.agents/tmp/barrel_map_bw_svg_CLAUDE.py (SVG generator, derived from map_texture_CODEX.py) and .agents/tmp/barrel_map_overlay_CLAUDE.py (builds the mesh/material).
+
+# CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 07:52 PM EST
+Scope: lobby radio, network.corn, lobby server.
+Why: #radio_near_light should only come on once the radio has stayed tuned to 0.9 (±0.038) for 5 consecutive seconds (in tuning mode or not), shared by all players and reset with the radio.
+What: Radio gains networked `near_light`, latched by near_light_unlock (each client times the networked dial). New `RadioNearLight { frequency, tolerance, seconds }` (0.9/0.038/5) on #radio_near_light in lobby.corn; its Visibility follows any radio's `near_light`. network.corn sends/applies/baselines it with on/tuning (`radioFields`), so local reset() clears it; the server drops it on empty/computer/daily resets and on durable restore. Server test asserts near_light is cleared by the empty reset.
+Note: lobby.gltf has no node named radio_near_light yet (only "radio light", "radio light.001").
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 07:52 PM EST — implementation
+22 lobby radio tests pass; server tests pass except an unrelated geo-name test (test_geo_local_cache_and_failure: 'localhost' != 'Local'). Not run in-game.
+
+## CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026 08:00 PM EST — transparent map with white X
+User moved CLAUDE_barrel_map_bw onto barrel_near_region (scale ~3.09, collection `barrels`) and kept that transform. Regenerated its texture: transparent background (no white paper) and a white X centred on the near circle (radio_signal_near centre, same ground mapping). The upper "numbers" half stays white ink and the radio-start X stays black. Replaced art/CLAUDE_barrel_map_bw_256.png, reloaded and repacked the Blender image (alpha 0 at corners), verified with a temporary-camera render (camera removed, scene camera restored). Generator .agents/tmp/barrel_map_bw_svg_CLAUDE.py updated. lobby.blend not saved.
+
+## CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026 08:10 PM EST — no white anywhere on the barrel map
+The near-circle X is now a true cut-out (transparent, lid wood shows through) and the upper half of the "numbers" disk is unfilled with a black outline arc. The texture is pure black on transparent (verified: max RGB of visible pixels = 0). Replaced art/CLAUDE_barrel_map_bw_256.png and repacked the Blender image; generator now writes a second X-cut SVG that is subtracted with ImageMagick DstOut. lobby.blend not saved.
+
+## CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026 08:20 PM EST — red smudge replaces radio-start X
+Removed the black radio-start X from the barrel map and painted a blurred, slightly translucent red smudge (#b3191a, drag tail pointing away from the cabin) at the same radio_spawn-derived position. Texture is otherwise unchanged (black on transparent, clear X cut-out, clear upper "numbers" half). Replaced art/CLAUDE_barrel_map_bw_256.png and repacked the Blender image. Generator writes the smudge position to OUT.radio.txt; .agents/tmp/barrel_map_smudge_CLAUDE.sh paints it. lobby.blend not saved.
+
+# CLAUDE: claude-sonnet-5-5 low — Sat Nov 07 2026 08:30 PM EST
+Scope: demo/lobby/assets/lobby.corn, collider rule for barrel_near_region.
+Why: user asked for the near barrel to use the same collider setup as the radio-start barrel.
+What: added #barrel_near_region and #barrel_near_region #Cylinder to the existing `#tabletop, #barrel_freestanding, #barrel_freestanding #Cylinder` rule (Body: Static, TrimeshFromMesh), so the near barrel's nested Cylinder is no longer caught by the shared `#Cylinder` convex-hull rule. Not built or run; no in-game check of dropped props settling on it.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 08:20 PM EST — undid an accidental `cargo fmt -p lobby`
+It reformatted ~33 lobby files. Safety stash: `stash@{0}` "CLAUDE: before reverting cargo fmt" (tracked files only). Restored tracked files from HEAD, main.rs as HEAD + its uncommitted cricket_volume/AppExit edits, and the 8 reformatted untracked files (cricket_volume, door, foley, network, network/{tests,visuals,websocket}, zoom) from VS Code/Claude file history, a git blob and a transcript replay. Each restore was checked as rustfmt(restored) == the reformatted file byte for byte; 77+10 lobby tests pass.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 08:35 PM EST — simpler rule
+Dropped the pickup requirement and `picked_up`; light now latches after 5 s in a row within 0.038 of 0.9, no need to leave tuning. Unit test near_light_needs_five_consecutive_seconds_in_band; 78+10 lobby tests pass.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 08:40 PM EST — TODO
+TODO above near_light_unlock (radio.rs): networking should give one authority the latch instead of every client claiming the radio. Done for now.
+
+# CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 08:17 PM EST
+Scope: demo/lobby/assets/lobby.corn, use_door. Also a read-only diagnosis of the server pose-restore bug (no changes).
+Why: STOPGAP for players stranded outside a locked door (e.g. a pose restored after the server's empty-room reset_objects, which re-locks the door but keeps saved poses).
+What: with the door locked and the player past the door's plane (+z, `outside()`), clicking the door puts the realkey into the key_slot from the outside (KEY_IN_SLOT_OUTSIDE: half-turned about y, bow on the outside face) wherever it is, unless another player carries it (RemoteHeld), and unlocks; the next click opens as usual. Carrying the realkey from outside also uses the outside pose. Slotting moved into slot_key(). Syntax checked with node; not run in game.
+
+# CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 08:18:58 PM EST
+Scope: lobby held-item placement (flashlight).
+Why: the held flashlight took too much screen when looking up or down.
+What: new `Holdable.pitch_below`, extra screen-height share below centre per radian of |camera pitch|, linear, 0 at level view (default 0 so other props are unchanged). Flashlight set to 0.1 in lobby.corn. Applies to both carry and drop poses. Also `Holdable.aim_pitch_up` (optional): beam pitch multiplier when looking up; flashlight 1.0 so the beam follows the view upward, down keeps aim_pitch 0.6. `pitch_below_up` (optional) tunes the hold height separately for looking up; unset falls back to pitch_below.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 08:18:58 PM EST — pitch-dependent hold height
+Added the field and wired it into held_pose; hold tests pass.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 08:22:25 PM EST — upward beam follows view
+Added aim_pitch_up (None = aim_pitch); flashlight 1.0. Hold tests pass.
+
+## CLAUDE: claude-opus-5-5 low — Sat Nov 07 2026 08:27:36 PM EST — separate up/down hold height
+Added pitch_below_up (None = pitch_below); flashlight values left as the user tuned them.

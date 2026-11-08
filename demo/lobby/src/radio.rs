@@ -60,6 +60,8 @@ pub struct Radio {
     pub pickup_tilt_degrees: f32,
     /// CODEX: Duration of the deliberate upright-and-face-player rotation on pickup or tuning.
     pub pickup_turn_seconds: f32,
+    /// CLAUDE: Latched by `near_light_unlock`; shows every `RadioNearLight`. Networked and reset by network.corn.
+    pub near_light: bool,
 }
 
 // CODEX: The radio is already playing the centered station when it first appears.
@@ -86,6 +88,7 @@ impl Default for Radio {
             audio_range: 25.0,
             pickup_tilt_degrees: 50.0,
             pickup_turn_seconds: 0.5,
+            near_light: false,
         }
     }
 }
@@ -102,6 +105,21 @@ pub struct RadioSignal {
 #[derive(Component, Reflect, Clone, Debug, Default)]
 #[reflect(Component, Default)]
 pub struct RadioFalloff;
+
+// CLAUDE: Hidden until a radio stays tuned within `tolerance` of `frequency` for `seconds` in a row.
+// Put it on the light's node; its Visibility is managed here.
+#[derive(Component, Reflect, Clone, Debug)]
+#[reflect(Component, Default)]
+pub struct RadioNearLight {
+    pub frequency: f32,
+    pub tolerance: f32,
+    pub seconds: f32,
+}
+impl Default for RadioNearLight {
+    fn default() -> Self {
+        Self { frequency: 0.9, tolerance: 0.038, seconds: 5.0 }
+    }
+}
 
 // CODEX: Shared input ownership prevents the mouse from also moving the player's camera.
 #[derive(Resource, Reflect, Default)]
@@ -129,6 +147,7 @@ pub fn plugin(app: &mut App) {
         .register_type::<Radio>()
         .register_type::<RadioSignal>()
         .register_type::<RadioFalloff>()
+        .register_type::<RadioNearLight>()
         .add_plugins((audio::plugin, placement::plugin, pickup::plugin, dev_ui::plugin))
         .add_observer(randomize_hidden_knob)
         .add_systems(
@@ -138,6 +157,7 @@ pub fn plugin(app: &mut App) {
                 .before(crate::computer::update_session),
         )
         .add_systems(Update, knobs.after(input))
+        .add_systems(Update, (near_light_unlock.after(input), show_near_light).chain())
         .add_systems(
             PostUpdate,
             hints
@@ -215,6 +235,40 @@ fn input(
                 .clamp(0.0, 1.0);
             }
         }
+    }
+}
+
+// CLAUDE: Each client times the (networked) dial itself; any one latching it is enough.
+// TODO: revisit networking: every client latching it makes each one claim the radio (network.corn
+// pendingRadio) at once; one authority (the radio's owner or the server) should decide it.
+fn near_light_unlock(
+    time: Res<Time>,
+    lights: Query<&RadioNearLight>,
+    mut radios: Query<(Entity, &mut Radio)>,
+    mut held_for: Local<bevy::platform::collections::HashMap<Entity, f32>>,
+) {
+    for (entity, mut radio) in &mut radios {
+        let timer = held_for.entry(entity).or_default();
+        let light = lights
+            .iter()
+            .find(|l| (radio.tuning - l.frequency).abs() <= l.tolerance);
+        let Some(light) = light.filter(|_| !radio.near_light) else {
+            *timer = 0.0;
+            continue;
+        };
+        *timer += time.delta_secs();
+        if *timer >= light.seconds {
+            radio.near_light = true;
+        }
+    }
+}
+
+// CLAUDE: Follows the radio's flag both ways, so a reset turns the light off again.
+fn show_near_light(radios: Query<&Radio>, mut lights: Query<&mut Visibility, With<RadioNearLight>>) {
+    let lit = radios.iter().any(|r| r.near_light);
+    let wanted = if lit { Visibility::Inherited } else { Visibility::Hidden };
+    for mut visibility in &mut lights {
+        visibility.set_if_neq(wanted);
     }
 }
 
@@ -383,6 +437,47 @@ fn hints(
 #[cfg(test)]
 mod tests {
     use super::*;
+    // CLAUDE: 5 s in the band in a row lights it; leaving the band starts the count again.
+    #[test]
+    fn near_light_needs_five_consecutive_seconds_in_band() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+                std::time::Duration::from_secs(1),
+            ))
+            .add_systems(Update, (near_light_unlock, show_near_light).chain());
+        // Virtual time clamps each step to 0.25 s by default.
+        app.world_mut()
+            .resource_mut::<Time<Virtual>>()
+            .set_max_delta(std::time::Duration::from_secs(2));
+        let light = app
+            .world_mut()
+            .spawn((RadioNearLight::default(), Visibility::Hidden))
+            .id();
+        let radio = app.world_mut().spawn(Radio { tuning: 0.93, ..default() }).id();
+        let set = |app: &mut App, tuning: f32| app.world_mut().get_mut::<Radio>(radio).unwrap().tuning = tuning;
+        let lit = |app: &App| app.world().get::<Radio>(radio).unwrap().near_light;
+        for _ in 0..4 {
+            app.update();
+        }
+        assert!(!lit(&app));
+        set(&mut app, 0.95);
+        app.update();
+        set(&mut app, 0.87);
+        for _ in 0..4 {
+            app.update();
+        }
+        assert!(!lit(&app));
+        app.update();
+        assert!(lit(&app));
+        assert_eq!(app.world().get::<Visibility>(light), Some(&Visibility::Inherited));
+        set(&mut app, 0.5);
+        app.update();
+        assert!(lit(&app), "latched until a reset");
+        app.world_mut().get_mut::<Radio>(radio).unwrap().near_light = false;
+        app.update();
+        assert_eq!(app.world().get::<Visibility>(light), Some(&Visibility::Hidden));
+    }
     // CODEX: Viewed from the exported front (+Z), the marker moves clockwise as tuning increases.
     #[test]
     fn dial_turns_clockwise_from_front_with_increasing_frequency() {

@@ -51,6 +51,28 @@ function at_handle(door) {
 }
 // the realkey in its slot: the blade (its local -x) through the door, the bow just out of it
 const KEY_IN_SLOT = { translation: [0, 0, -0.024], rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2], scale: [2.476, 2.476, 2.476] };
+// CLAUDE: the same, put in from outside: turned half round the slot's y, the bow on the outside face
+const KEY_IN_SLOT_OUTSIDE = { translation: [0, 0, 0.024], rotation: [0, -Math.SQRT1_2, 0, Math.SQRT1_2], scale: [2.476, 2.476, 2.476] };
+
+// CLAUDE: STOPGAP for players stranded outside a locked door (e.g. a pose restored after a reset): the door
+// faces +z, so standing past its plane is outside.
+const outside = (door) => get(one(door, "spawn"), "Transform").translation.z > get(door, "Transform").translation.z;
+
+// CLAUDE: the realkey into the door's key_slot at `pose`, unlocking it
+function slot_key(door, key, pose) {
+  remove(key, "Held");
+  remove(key, "Holdable");
+  remove(key, "InteractionText");
+  // in the lock it's part of the door's body, not one of its own
+  remove(key, "Body");
+  remove(key, "RigidBody");
+  insert(key, "ChildOf", one(door, "key_slot"));
+  insert(key, "Transform", pose);
+  // CODEX: slot state, parent and local pose travel separately from Door.open.
+  insert(key, "KeyState", { placement: "slot" });
+  sound("sounds/unlock.ogg", at_handle(door));
+  insert(door, "Door", { unlocked: true });
+}
 
 // "locked" -> "key in" (the realkey is in its slot) -> "open"
 // CODEX (GPT-6): gameplay state lives on the door; scripts contain interaction rules only.
@@ -93,19 +115,12 @@ exports.release_flashlight = function (e) {
 exports.use_door = function (e) {
   const held = holding(e);
   const state = get(e, "Door");
+  const realkey = one(e, "realkey");
   if (!state.unlocked && name(held) === "realkey") {
-    remove(held, "Held");
-    remove(held, "Holdable");
-    remove(held, "InteractionText");
-    // in the lock it's part of the door's body, not one of its own
-    remove(held, "Body");
-    remove(held, "RigidBody");
-    insert(held, "ChildOf", one(e, "key_slot"));
-    insert(held, "Transform", KEY_IN_SLOT);
-    // CODEX: slot state, parent and local pose travel separately from Door.open.
-    insert(held, "KeyState", { placement: "slot" });
-    sound("sounds/unlock.ogg", at_handle(e));
-    insert(e, "Door", { unlocked: true });
+    slot_key(e, held, outside(e) ? KEY_IN_SLOT_OUTSIDE : KEY_IN_SLOT);
+  } else if (!state.unlocked && outside(e) && realkey != null && get(realkey, "RemoteHeld") == null) {
+    // CLAUDE: STOPGAP: from outside, the realkey goes in wherever it is (unless another player carries it)
+    slot_key(e, realkey, KEY_IN_SLOT_OUTSIDE);
   } else if (!state.unlocked && name(held) === "key") {
     say("it's too big, obviously");
   } else if (!state.unlocked) {
@@ -120,7 +135,7 @@ exports.use_door = function (e) {
 // CLAUDE: the door's opening animation started (opened here or by someone else): its creak, in time with it
 // CLAUDE: seconds into dooropen (lobby.gltf#Animation1) before the door moves (still until its 1.08 s key);
 // doorcreak.ogg starts sounding at once, so it waits this long to begin with the swing
-const DOOR_CREAK_DELAY = 0.7;
+const DOOR_CREAK_DELAY = 0.3;
 exports.door_opened = function* (e) {
   yield DOOR_CREAK_DELAY;
   sound("sounds/doorcreak.ogg", at_handle(e), 0.9);
@@ -226,6 +241,8 @@ include "lobby.gltf#Scene0" {
   #radio_signal_near { RadioSignal: { frequency: 0.9; sound: "sounds/radio/near.ogg"; gain: 1; } }
   #radio_signal_numbers { RadioSignal: { frequency: 0.2; sound: "sounds/radio/numbers.ogg"; gain: 1; } }
   #radio_signal_message { RadioSignal: { frequency: 0.9; sound: "sounds/radio/message.ogg"; gain: 1; } }
+  /* CLAUDE: off until the radio stays tuned to 0.9 (±0.038) for 5 s in a row; radio.rs, networked/reset in network.corn. */
+  #radio_near_light { Visibility: Hidden; RadioNearLight: { frequency: 0.9; tolerance: 0.038; seconds: 5; } }
   #radio_signal_drone_falloff, #radio_signal_near_falloff,
   #radio_signal_numbers_falloff, #radio_signal_message_falloff { RadioFalloff: default; }
   /* Bevy's glTF animation player is on this animation's authored hierarchy root. */
@@ -254,7 +271,20 @@ include "lobby.gltf#Scene0" {
   /* Scene entry replaces SoundTrackOnEnter: this standalone lobby starts immediately. */
   #sound {
     AudioPlayer<AudioSource>: "sounds/crickets.ogg";
-    PlaybackSettings: { mode: Loop; volume: Linear(0.25); }
+    PlaybackSettings: { mode: Loop; volume: Linear(0.2); }
+    /* CLAUDE: louder by the windows and out the door (cricket_volume.rs), in [x, z]. Linear ramps:
+       window_range from a window's center; door_range centered on the door's plane, reaching open_extra
+       further in over open_seconds (dooropen's length) once it opens. Outside cabin_min..max is outside.
+       The footprint's door side is the far end of the door's ramp, so stepping out has no jump. */
+    CricketVolume: {
+      inside: 0.17; outside: 0.35;
+      cabin_min: [-2.6, -4.1]; cabin_max: [2.6, 4.74];
+      windows: [[-0.05, -4.0], [-2.3, -1.65], [2.3, 1.7]];
+      window_range: 1.35;
+      door: [0, 3.99]; door_out: [0, 1];
+      door_range: 1.5;
+      open_extra: 1; open_seconds: 3;
+    }
   }
 
   /* The authored SpawnLocation is now the local camera, with no character/network bootstrap. */
@@ -277,6 +307,10 @@ include "lobby.gltf#Scene0" {
     }
   }
 
+  #CLAUDE_barrel_map_bw Mesh3d {
+    NotShadowCaster: default; 
+  }
+
   /* CLAUDE: colliders only where something can touch: the shell's curved walls as meshes (a hull would
      fill the room or the doorway), the furniture and things on it as convex hulls. The floor is a plane
      (`spawn floor` below). None on the corn (LOD2*), roof, ceiling light, sky or the keys. */
@@ -296,7 +330,9 @@ include "lobby.gltf#Scene0" {
      Include the barrel's nested Cylinder so its shared convex rule cannot override this choice.
      TODO: fix convex-hull contact instability or replace these with authored colliders.
      TODO: retry convex hulls when Avian switches from Parry to the author's WIP collision library, Peck. */
-  #tabletop, #barrel_freestanding, #barrel_freestanding #Cylinder {
+  /* CLAUDE: barrel_near_region gets the same setup as the radio-start barrel. */
+  #tabletop, #barrel_freestanding, #barrel_freestanding #Cylinder,
+  #barrel_near_region, #barrel_near_region #Cylinder {
     Body: Static;
     ColliderConstructorHierarchy: { default_constructor: TrimeshFromMesh; }
   }
@@ -345,8 +381,11 @@ include "lobby.gltf#Scene0" {
     SwitchSound: { on: "sounds/interact/flashlight_on.ogg"; off: "sounds/interact/flashlight_off.ogg"; gain: 0.7; }
     Body: Static;
     FittedBox: default;
-    /* CODEX: flashlight-only tuning: 18% below center, closer carry, and 60% camera pitch. */
-    Holdable: { droppable: true; toggle_prompt: "toggle"; below: 0.18; depth_scale: 0.18; aim_forward: [-1, 0, 0]; aim_pitch: 0.6; }
+    /* CODEX: flashlight-only tuning: 18% below center, closer carry, and 60% camera pitch.
+       CLAUDE: pitch_below adds that much more screen height below per radian looked up/down (0.1 -> +16% at 90°);
+       pitch_below_up is the same while looking up (pitch_below then only applies looking down).
+       aim_pitch_up: 1 points the beam where you look when looking up; down keeps aim_pitch. */
+    Holdable: { droppable: true; toggle_prompt: "toggle"; below: 0.2; depth_scale: 0.18; aim_forward: [-1, 0, 0]; aim_pitch: 0.6; aim_pitch_up: 1.0; pitch_below: 0.2; pitch_below_up: 0.15; }
     InteractionText: { name: "flashlight"; prompt: "pick up"; range: 2.5; }
     on Interact: pick_up_flashlight;
     on ToggleHeld: toggle_flashlight;
@@ -444,3 +483,4 @@ spawn previews {
     }
   }
 }
+
